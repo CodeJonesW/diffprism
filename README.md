@@ -59,9 +59,8 @@ DiffPrism ships an MCP server so Claude Code can open reviews during a coding se
 {
   "mcpServers": {
     "diffprism": {
-      "command": "pnpm",
-      "args": ["cli", "serve"],
-      "cwd": "/path/to/diffprism"
+      "command": "npx",
+      "args": ["diffprism", "serve"]
     }
   }
 }

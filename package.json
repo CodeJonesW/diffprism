@@ -1,17 +1,37 @@
 {
   "name": "diffprism",
   "version": "0.2.0",
-  "private": true,
   "type": "module",
+  "description": "Local-first code review tool for agent-generated code changes",
+  "bin": {
+    "diffprism": "dist/bin.js"
+  },
+  "files": [
+    "dist/",
+    "ui-dist/"
+  ],
   "scripts": {
-    "build": "pnpm -r run build",
+    "build": "pnpm -r run build && pnpm run bundle",
+    "bundle": "tsup && rm -rf ui-dist && cp -r packages/ui/dist ui-dist",
     "dev": "pnpm -r run dev",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
-    "cli": "tsx cli/src/index.ts"
+    "cli": "pnpm -F @diffprism/ui build && tsx cli/src/index.ts",
+    "prepublishOnly": "pnpm run build"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "open": "^10.1.0",
+    "get-port": "^7.1.0",
+    "commander": "^13.0.0",
+    "@modelcontextprotocol/sdk": "^1.4.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

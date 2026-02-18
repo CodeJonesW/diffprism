@@ -1,4 +1,4 @@
-name: Release
+name: Publish to npm
 
 on:
   pull_request:
@@ -6,11 +6,12 @@ on:
     branches: [main]
 
 jobs:
-  release:
+  publish:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
     steps:
       - name: Detect version bump from PR title
         id: bump
@@ -26,7 +27,7 @@ jobs:
             echo "type=patch" >> "$GITHUB_OUTPUT"
           else
             echo "type=" >> "$GITHUB_OUTPUT"
-            echo "No version prefix found, skipping release"
+            echo "No version prefix found, skipping publish"
           fi
 
       - if: steps.bump.outputs.type != ''
@@ -39,12 +40,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          registry-url: https://registry.npmjs.org
 
       - if: steps.bump.outputs.type != ''
-        name: Bump version and create release
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - if: steps.bump.outputs.type != ''
+        name: Bump version
         id: version
         env:
-          GH_TOKEN: ${{ github.token }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
@@ -69,18 +75,40 @@ jobs:
           git commit -m "$COMMIT_MSG"
           git push
 
+      - if: steps.bump.outputs.type != ''
+        run: pnpm install --frozen-lockfile
+
+      - if: steps.bump.outputs.type != ''
+        run: pnpm test
+
+      - if: steps.bump.outputs.type != ''
+        run: pnpm build
+
+      - if: steps.bump.outputs.type != ''
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - if: steps.bump.outputs.type != ''
+        name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
           NOTES_FILE=$(mktemp)
-          if [ -n "$PR_BODY" ]; then
-            printf '%s' "$PR_BODY" > "$NOTES_FILE"
+          if [ -n "$RELEASE_BODY" ]; then
+            printf '%s' "$RELEASE_BODY" > "$NOTES_FILE"
           fi
 
           if [ -s "$NOTES_FILE" ]; then
-            gh release create "$NEW_VERSION" \
-              --title "$NEW_VERSION" \
+            gh release create "$VERSION" \
+              --title "$VERSION" \
               --notes-file "$NOTES_FILE"
           else
-            gh release create "$NEW_VERSION" \
-              --title "$NEW_VERSION" \
+            gh release create "$VERSION" \
+              --title "$VERSION" \
               --generate-notes
           fi
 
