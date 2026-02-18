@@ -218,6 +218,14 @@ EOF
 )"
 ```
 
+Before creating the PR, always:
+1. **Suggest a version type** — Analyze the changes and recommend `patch:`, `minor:`, or `major:` based on:
+   - `patch:` — bug fixes, documentation, refactoring, dependency updates, test additions
+   - `minor:` — new features, new CLI flags, new UI components, new API endpoints
+   - `major:` — breaking changes to CLI interface, ReviewResult shape, WebSocket protocol, or MCP tool schema
+2. **Draft release notes** — Write a concise summary of what changed and why, suitable for the GitHub release body. Include in the PR description.
+3. **Present both to the user** for confirmation before running `gh pr create`.
+
 **PR title MUST start with a semver prefix** — this is required by CI for auto-publishing:
 - `patch:` — bug fixes, small tweaks
 - `minor:` — new features, non-breaking additions
