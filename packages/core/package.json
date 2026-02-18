@@ -1,0 +1,23 @@
+{
+  "name": "@diffprism/core",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@diffprism/git": "workspace:*",
+    "@diffprism/analysis": "workspace:*",
+    "ws": "^8.18.0",
+    "open": "^10.1.0",
+    "get-port": "^7.1.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

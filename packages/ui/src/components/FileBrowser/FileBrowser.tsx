@@ -1,0 +1,155 @@
+import { useReviewStore } from "../../store/review";
+import { FileCode, FilePlus, FileMinus, FilePenLine } from "lucide-react";
+import type { DiffFile } from "../../types";
+
+function getStatusBadge(status: DiffFile["status"]) {
+  switch (status) {
+    case "added":
+      return {
+        label: "A",
+        className: "bg-green-600/20 text-green-400 border-green-500/30",
+      };
+    case "modified":
+      return {
+        label: "M",
+        className: "bg-yellow-600/20 text-yellow-400 border-yellow-500/30",
+      };
+    case "deleted":
+      return {
+        label: "D",
+        className: "bg-red-600/20 text-red-400 border-red-500/30",
+      };
+    case "renamed":
+      return {
+        label: "R",
+        className: "bg-purple-600/20 text-purple-400 border-purple-500/30",
+      };
+  }
+}
+
+function getStatusIcon(status: DiffFile["status"]) {
+  const iconClass = "w-4 h-4 flex-shrink-0";
+  switch (status) {
+    case "added":
+      return <FilePlus className={`${iconClass} text-green-400`} />;
+    case "deleted":
+      return <FileMinus className={`${iconClass} text-red-400`} />;
+    case "modified":
+      return <FilePenLine className={`${iconClass} text-yellow-400`} />;
+    case "renamed":
+      return <FileCode className={`${iconClass} text-purple-400`} />;
+  }
+}
+
+function basename(path: string): string {
+  const parts = path.split("/");
+  return parts[parts.length - 1];
+}
+
+function dirname(path: string): string {
+  const parts = path.split("/");
+  if (parts.length <= 1) return "";
+  return parts.slice(0, -1).join("/");
+}
+
+export function FileBrowser() {
+  const { diffSet, selectedFile, selectFile } = useReviewStore();
+
+  if (!diffSet) return null;
+
+  const totalAdditions = diffSet.files.reduce(
+    (sum, f) => sum + f.additions,
+    0,
+  );
+  const totalDeletions = diffSet.files.reduce(
+    (sum, f) => sum + f.deletions,
+    0,
+  );
+
+  return (
+    <div className="flex flex-col h-full bg-surface border-r border-border">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-border">
+        <h2 className="text-text-primary text-sm font-semibold">Files</h2>
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-text-secondary text-xs">
+            {diffSet.files.length} file{diffSet.files.length !== 1 ? "s" : ""}
+          </span>
+          {totalAdditions > 0 && (
+            <span className="text-green-400 text-xs font-mono">
+              +{totalAdditions}
+            </span>
+          )}
+          {totalDeletions > 0 && (
+            <span className="text-red-400 text-xs font-mono">
+              -{totalDeletions}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* File list */}
+      <div className="flex-1 overflow-y-auto py-1">
+        {diffSet.files.map((file) => {
+          const isSelected = file.path === selectedFile;
+          const badge = getStatusBadge(file.status);
+          const dir = dirname(file.path);
+
+          return (
+            <button
+              key={file.path}
+              onClick={() => selectFile(file.path)}
+              className={`
+                w-full text-left px-3 py-2 flex items-center gap-2
+                transition-colors duration-100 cursor-pointer group
+                ${
+                  isSelected
+                    ? "bg-accent/10 border-l-2 border-accent"
+                    : "border-l-2 border-transparent hover:bg-white/5"
+                }
+              `}
+            >
+              {getStatusIcon(file.status)}
+
+              <div className="flex-1 min-w-0">
+                <div
+                  className={`text-sm truncate ${
+                    isSelected ? "text-text-primary" : "text-text-secondary"
+                  } group-hover:text-text-primary`}
+                >
+                  {basename(file.path)}
+                </div>
+                {dir && (
+                  <div className="text-xs text-text-secondary/60 truncate">
+                    {dir}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {file.additions > 0 && (
+                  <span className="text-green-400 text-xs font-mono">
+                    +{file.additions}
+                  </span>
+                )}
+                {file.deletions > 0 && (
+                  <span className="text-red-400 text-xs font-mono">
+                    -{file.deletions}
+                  </span>
+                )}
+                <span
+                  className={`
+                    text-[10px] font-bold px-1.5 py-0.5 rounded border
+                    ${badge.className}
+                  `}
+                >
+                  {badge.label}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

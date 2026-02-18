@@ -1,0 +1,41 @@
+import { startReview } from "@diffprism/core";
+
+interface ReviewFlags {
+  staged?: boolean;
+  unstaged?: boolean;
+  title?: string;
+}
+
+export async function review(
+  ref: string | undefined,
+  flags: ReviewFlags,
+): Promise<void> {
+  let diffRef: string;
+
+  if (flags.staged) {
+    diffRef = "staged";
+  } else if (flags.unstaged) {
+    diffRef = "unstaged";
+  } else if (ref) {
+    diffRef = ref;
+  } else {
+    // Default to staged if no ref specified
+    diffRef = "staged";
+  }
+
+  try {
+    const result = await startReview({
+      diffRef,
+      title: flags.title,
+      cwd: process.cwd(),
+    });
+
+    // Print structured result to stdout
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${message}`);
+    process.exit(1);
+  }
+}

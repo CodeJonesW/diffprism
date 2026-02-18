@@ -1,0 +1,21 @@
+{
+  "name": "diffprism-cli",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "diffprism": "src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@diffprism/core": "workspace:*",
+    "@diffprism/mcp-server": "workspace:*",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
