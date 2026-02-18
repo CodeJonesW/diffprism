@@ -19,8 +19,8 @@ export async function review(
   } else if (ref) {
     diffRef = ref;
   } else {
-    // Default to staged if no ref specified
-    diffRef = "staged";
+    // Default to all changes (staged + unstaged) if no ref specified
+    diffRef = "all";
   }
 
   try {

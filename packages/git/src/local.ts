@@ -39,6 +39,9 @@ export function getGitDiff(
     case "unstaged":
       command = "git diff --no-color";
       break;
+    case "all":
+      command = "git diff HEAD --no-color";
+      break;
     default:
       command = `git diff --no-color ${ref}`;
       break;

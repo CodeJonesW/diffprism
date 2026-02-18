@@ -89,6 +89,17 @@ pnpm cli serve                                  # Start MCP server
 - **Pipeline UI path:** `resolveUiRoot()` walks up from `import.meta.url` to workspace root — fragile if files move.
 - **MCP stdio safety:** Any console output during MCP mode corrupts the protocol. `silent: true` is critical.
 
+## UX Design Notes
+
+**`docs/ux-design-notes.md`** is a living document tracking user experience decisions, observations, and expected behavior. **Update it whenever:**
+
+- A default behavior changes (e.g., CLI flags, diff scope)
+- A UX pain point is discovered or fixed
+- A design decision is made about how the tool should feel or behave
+- The user reports friction or unexpected behavior during a session
+
+Add entries under the appropriate section with the version, rationale, and any linked issues.
+
 ## Roadmap
 
 ### M1: Usable Review Experience
