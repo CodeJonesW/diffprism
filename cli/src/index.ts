@@ -4,12 +4,14 @@ import { Command } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
 
+declare const DIFFPRISM_VERSION: string;
+
 const program = new Command();
 
 program
   .name("diffprism")
   .description("Local-first code review tool for agent-generated changes")
-  .version("0.0.1");
+  .version(typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev");
 
 program
   .command("review [ref]")

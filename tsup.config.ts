@@ -1,4 +1,7 @@
 import { defineConfig } from "tsup";
+import { readFileSync } from "fs";
+
+const { version } = JSON.parse(readFileSync("./package.json", "utf-8"));
 
 export default defineConfig({
   entry: {
@@ -11,6 +14,9 @@ export default defineConfig({
   outDir: "dist",
   splitting: true,
   clean: true,
+  define: {
+    DIFFPRISM_VERSION: JSON.stringify(version),
+  },
   // Inline all @diffprism/* workspace packages
   noExternal: [/@diffprism\/.*/],
   // Keep third-party deps external (installed from npm)
