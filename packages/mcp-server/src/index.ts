@@ -3,10 +3,12 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { startReview } from "@diffprism/core";
 
+declare const DIFFPRISM_VERSION: string;
+
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "diffprism",
-    version: "0.0.1",
+    version: typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev",
   });
 
   server.tool(
