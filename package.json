@@ -19,6 +19,10 @@
     "cli": "pnpm -F @diffprism/ui build && tsx cli/src/index.ts",
     "prepublishOnly": "pnpm run build"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CodeJonesW/diffprism"
+  },
   "engines": {
     "node": ">=20"
   },
