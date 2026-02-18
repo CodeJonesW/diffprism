@@ -180,13 +180,15 @@ Both must pass. Fix any failures before proceeding.
 
 ### 5. Review with diffprism
 
-Before committing, use diffprism to review your own changes:
+Before committing, **always** use the diffprism MCP tool to open a review for the user. Call `mcp__diffprism__open_review` with:
+- `diff_ref`: the appropriate ref (e.g. `"unstaged"`, `"staged"`, or a range like `"HEAD~3..HEAD"`)
+- `title`: short description of the changes
+- `description`: summary of what changed and why
+- `reasoning`: your reasoning about the implementation decisions
 
-```bash
-diffprism review
-```
+This opens the diffprism review UI in the browser and **blocks until the user submits their review**. The tool returns the user's decision (approved, changes requested, etc.) and any comments. Fix anything they flag before proceeding.
 
-Tell the user: **"The diffprism review UI is open in your browser — please review the changes."** Wait for their feedback before proceeding. Fix anything they flag.
+This is critical for dogfooding — we use our own tool to review every change to this repo.
 
 ### 6. Commit
 
