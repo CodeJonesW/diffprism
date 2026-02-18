@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
@@ -8,11 +8,31 @@ export default function App() {
   const { sendResult, connectionStatus } = useWebSocket();
   const { diffSet, metadata } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
+  const [countdown, setCountdown] = useState(3);
 
   function handleSubmit(result: ReviewResult) {
     sendResult(result);
     setSubmitted(true);
   }
+
+  const closeWindow = useCallback(() => {
+    window.close();
+  }, []);
+
+  useEffect(() => {
+    if (!submitted) return;
+
+    if (countdown <= 0) {
+      closeWindow();
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setCountdown((c) => c - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [submitted, countdown, closeWindow]);
 
   // Review submitted confirmation
   if (submitted) {
@@ -38,8 +58,7 @@ export default function App() {
             Review Submitted
           </h1>
           <p className="text-text-secondary text-sm">
-            Your review has been submitted successfully. You can close this
-            window.
+            Closing in {countdown}s...
           </p>
         </div>
       </div>
