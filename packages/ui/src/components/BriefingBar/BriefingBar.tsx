@@ -6,6 +6,9 @@ import {
   Package,
   FolderOpen,
   FlaskConical,
+  Gauge,
+  ShieldAlert,
+  Search,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 
@@ -15,10 +18,13 @@ export function BriefingBar() {
 
   if (!briefing) return null;
 
-  const { impact, verification } = briefing;
+  const { impact, verification, complexity, testCoverage, patterns } = briefing;
   const hasBreaking = impact.breakingChanges.length > 0;
   const hasNewDeps = impact.newDependencies.length > 0;
   const moduleCount = impact.affectedModules.length;
+  const highComplexity = complexity?.filter((c) => c.score >= 5) ?? [];
+  const coverageGaps = testCoverage?.filter((t) => t.testFile === null) ?? [];
+  const patternCount = patterns?.length ?? 0;
 
   return (
     <div className="bg-surface border-b border-border flex-shrink-0">
@@ -51,6 +57,27 @@ export function BriefingBar() {
               <Package className="w-3 h-3" />
               {impact.newDependencies.length} new dep
               {impact.newDependencies.length !== 1 ? "s" : ""}
+            </span>
+          )}
+
+          {highComplexity.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-600/20 text-orange-400 border border-orange-500/30">
+              <Gauge className="w-3 h-3" />
+              {highComplexity.length} complex
+            </span>
+          )}
+
+          {coverageGaps.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
+              <ShieldAlert className="w-3 h-3" />
+              {coverageGaps.length} untested
+            </span>
+          )}
+
+          {patternCount > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-600/20 text-purple-400 border border-purple-500/30">
+              <Search className="w-3 h-3" />
+              {patternCount} flag{patternCount !== 1 ? "s" : ""}
             </span>
           )}
 
@@ -136,6 +163,77 @@ export function BriefingBar() {
                     className="text-text-primary text-xs font-mono"
                   >
                     {dep}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* High Complexity */}
+          {highComplexity.length > 0 && (
+            <div>
+              <h4 className="text-orange-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5" />
+                High Complexity
+              </h4>
+              <ul className="space-y-0.5">
+                {highComplexity.map((c) => (
+                  <li key={c.path} className="text-text-primary text-xs">
+                    <span className="font-mono">{c.path}</span>
+                    <span className="text-orange-400 ml-1">({c.score}/10)</span>
+                    {c.factors.length > 0 && (
+                      <span className="text-text-secondary ml-1">
+                        — {c.factors.join(", ")}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Test Coverage Gaps */}
+          {coverageGaps.length > 0 && (
+            <div>
+              <h4 className="text-yellow-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Missing Test Changes
+              </h4>
+              <ul className="space-y-0.5">
+                {coverageGaps.map((gap) => (
+                  <li
+                    key={gap.sourceFile}
+                    className="text-text-primary text-xs font-mono"
+                  >
+                    {gap.sourceFile}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Pattern Flags */}
+          {patterns && patterns.length > 0 && (
+            <div>
+              <h4 className="text-purple-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <Search className="w-3.5 h-3.5" />
+                Pattern Flags
+              </h4>
+              <ul className="space-y-0.5">
+                {patterns.map((p, i) => (
+                  <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
+                    <span className="inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 bg-purple-600/20 text-purple-400 border border-purple-500/30">
+                      {p.pattern}
+                    </span>
+                    <span className="font-mono text-text-secondary">
+                      {p.file}
+                      {p.line > 0 ? `:${p.line}` : ""}
+                    </span>
+                    {p.line > 0 && (
+                      <span className="text-text-secondary ml-1 truncate">
+                        — {p.content}
+                      </span>
+                    )}
                   </li>
                 ))}
               </ul>

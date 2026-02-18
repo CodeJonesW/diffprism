@@ -7,6 +7,9 @@ import {
   detectAffectedTests,
   detectNewDependencies,
   generateSummary,
+  computeComplexityScores,
+  detectTestCoverageGaps,
+  detectPatterns,
 } from "./deterministic.js";
 
 export {
@@ -16,11 +19,13 @@ export {
   detectAffectedTests,
   detectNewDependencies,
   generateSummary,
+  computeComplexityScores,
+  detectTestCoverageGaps,
+  detectPatterns,
 } from "./deterministic.js";
 
 /**
  * Produce a ReviewBriefing from a DiffSet using deterministic analysis only.
- * M0 implementation — no AI, no complexity scoring.
  */
 export function analyze(diffSet: DiffSet): ReviewBriefing {
   const { files } = diffSet;
@@ -31,6 +36,9 @@ export function analyze(diffSet: DiffSet): ReviewBriefing {
   const affectedTests = detectAffectedTests(files);
   const newDependencies = detectNewDependencies(files);
   const summary = generateSummary(files);
+  const complexity = computeComplexityScores(files);
+  const testCoverage = detectTestCoverageGaps(files);
+  const patterns = detectPatterns(files);
 
   return {
     summary,
@@ -48,5 +56,8 @@ export function analyze(diffSet: DiffSet): ReviewBriefing {
       lintClean: null,
     },
     fileStats,
+    complexity,
+    testCoverage,
+    patterns,
   };
 }

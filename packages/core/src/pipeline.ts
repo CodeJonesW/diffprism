@@ -54,6 +54,44 @@ function resolveUiDist(): string {
 }
 
 /**
+ * Resolve the path to the UI source directory (packages/ui).
+ * Used in dev mode to run Vite's dev server with HMR.
+ */
+function resolveUiRoot(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const thisDir = path.dirname(thisFile);
+  const workspaceRoot = path.resolve(thisDir, "..", "..", "..");
+  const uiRoot = path.join(workspaceRoot, "packages", "ui");
+
+  if (fs.existsSync(path.join(uiRoot, "index.html"))) {
+    return uiRoot;
+  }
+
+  throw new Error(
+    "Could not find UI source directory. Dev mode requires the diffprism workspace.",
+  );
+}
+
+/**
+ * Start a Vite dev server for the UI with HMR support.
+ * Dynamically imports vite to avoid requiring it as a hard dependency.
+ */
+async function startViteDevServer(
+  uiRoot: string,
+  port: number,
+  silent: boolean,
+): Promise<{ close: () => Promise<void> }> {
+  const { createServer } = await import("vite");
+  const vite = await createServer({
+    root: uiRoot,
+    server: { port, strictPort: true, open: false },
+    logLevel: silent ? "silent" : "warn",
+  });
+  await vite.listen();
+  return vite;
+}
+
+/**
  * Create a static file server for the pre-built UI with SPA fallback.
  */
 function createStaticServer(
@@ -91,7 +129,7 @@ function createStaticServer(
 export async function startReview(
   options: ReviewOptions,
 ): Promise<ReviewResult> {
-  const { diffRef, title, description, reasoning, cwd, silent } = options;
+  const { diffRef, title, description, reasoning, cwd, silent, dev } = options;
 
   // 1. Get the diff
   const { diffSet, rawDiff } = getDiff(diffRef, { cwd });
@@ -124,12 +162,18 @@ export async function startReview(
   // 5. Start WebSocket bridge
   const bridge = createWsBridge(wsPort);
 
-  // 6. Start static file server
-  const uiDist = resolveUiDist();
+  // 6. Start UI server (dev mode uses Vite dev server with HMR, otherwise static files)
   let httpServer: http.Server | null = null;
+  let viteServer: { close: () => Promise<void> } | null = null;
 
   try {
-    httpServer = await createStaticServer(uiDist, httpPort);
+    if (dev) {
+      const uiRoot = resolveUiRoot();
+      viteServer = await startViteDevServer(uiRoot, httpPort, !!silent);
+    } else {
+      const uiDist = resolveUiDist();
+      httpServer = await createStaticServer(uiDist, httpPort);
+    }
 
     // 7. Build the URL and open browser
     const url = `http://localhost:${httpPort}?wsPort=${wsPort}&reviewId=${session.id}`;
@@ -162,6 +206,9 @@ export async function startReview(
   } finally {
     // 11. Cleanup
     bridge.close();
+    if (viteServer) {
+      await viteServer.close();
+    }
     if (httpServer) {
       httpServer.close();
     }

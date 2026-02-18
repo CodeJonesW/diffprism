@@ -8,6 +8,9 @@ import {
   detectAffectedTests,
   detectNewDependencies,
   generateSummary,
+  computeComplexityScores,
+  detectTestCoverageGaps,
+  detectPatterns,
 } from "../deterministic.js";
 
 function makeFile(overrides: Partial<DiffFile> = {}): DiffFile {
@@ -150,6 +153,248 @@ describe("generateSummary", () => {
   });
 });
 
+describe("computeComplexityScores", () => {
+  it("scores a small simple file low", () => {
+    const files = [makeFile({ additions: 5, deletions: 2, hunks: [] })];
+    const scores = computeComplexityScores(files);
+
+    expect(scores).toHaveLength(1);
+    expect(scores[0].score).toBe(1); // clamped minimum
+    expect(scores[0].factors).toHaveLength(0);
+  });
+
+  it("scores a large multi-hunk file high", () => {
+    const hunks = Array.from({ length: 5 }, (_, i) => ({
+      oldStart: i * 20,
+      oldLines: 10,
+      newStart: i * 20,
+      newLines: 15,
+      changes: [
+        { type: "add" as const, lineNumber: i * 20 + 1, content: "  if (x) {" },
+        { type: "add" as const, lineNumber: i * 20 + 2, content: "    return y;" },
+        { type: "add" as const, lineNumber: i * 20 + 3, content: "  } else {" },
+        { type: "add" as const, lineNumber: i * 20 + 4, content: "    return z || w;" },
+        { type: "add" as const, lineNumber: i * 20 + 5, content: "  }" },
+      ],
+    }));
+
+    const files = [makeFile({ additions: 120, deletions: 30, hunks })];
+    const scores = computeComplexityScores(files);
+
+    expect(scores[0].score).toBeGreaterThanOrEqual(5);
+    expect(scores[0].factors.length).toBeGreaterThan(0);
+  });
+
+  it("populates human-readable factors", () => {
+    const files = [
+      makeFile({
+        additions: 60,
+        deletions: 10,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 5, newStart: 1, newLines: 10,
+            changes: [],
+          },
+          {
+            oldStart: 20, oldLines: 5, newStart: 25, newLines: 10,
+            changes: [],
+          },
+          {
+            oldStart: 40, oldLines: 5, newStart: 50, newLines: 10,
+            changes: [],
+          },
+        ],
+      }),
+    ];
+    const scores = computeComplexityScores(files);
+
+    expect(scores[0].factors.some((f) => f.includes("diff"))).toBe(true);
+    expect(scores[0].factors.some((f) => f.includes("hunks"))).toBe(true);
+  });
+
+  it("sorts by score descending", () => {
+    const files = [
+      makeFile({ path: "small.ts", additions: 5, deletions: 0 }),
+      makeFile({ path: "big.ts", additions: 150, deletions: 50 }),
+    ];
+    const scores = computeComplexityScores(files);
+
+    expect(scores[0].path).toBe("big.ts");
+    expect(scores[1].path).toBe("small.ts");
+  });
+});
+
+describe("detectTestCoverageGaps", () => {
+  it("returns testFile when source and test are both in diff", () => {
+    const files = [
+      makeFile({ path: "src/utils.ts", status: "modified" }),
+      makeFile({ path: "src/utils.test.ts", status: "modified" }),
+    ];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].sourceFile).toBe("src/utils.ts");
+    expect(gaps[0].testFile).toBe("src/utils.test.ts");
+  });
+
+  it("returns null testFile when no matching test in diff", () => {
+    const files = [makeFile({ path: "src/handler.ts", status: "added" })];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps).toHaveLength(1);
+    expect(gaps[0].sourceFile).toBe("src/handler.ts");
+    expect(gaps[0].testFile).toBeNull();
+  });
+
+  it("matches __tests__ directory pattern", () => {
+    const files = [
+      makeFile({ path: "src/foo/bar.ts", status: "modified" }),
+      makeFile({ path: "src/foo/__tests__/bar.ts", status: "modified" }),
+    ];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps[0].testFile).toBe("src/foo/__tests__/bar.ts");
+  });
+
+  it("excludes test-only files from results", () => {
+    const files = [
+      makeFile({ path: "src/foo.test.ts", status: "added" }),
+      makeFile({ path: "src/__tests__/bar.ts", status: "added" }),
+    ];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps).toHaveLength(0);
+  });
+
+  it("excludes deleted files", () => {
+    const files = [makeFile({ path: "src/old.ts", status: "deleted" })];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps).toHaveLength(0);
+  });
+
+  it("excludes non-code files", () => {
+    const files = [
+      makeFile({ path: "README.md", status: "modified" }),
+      makeFile({ path: "package.json", status: "modified" }),
+      makeFile({ path: "styles.css", status: "added" }),
+    ];
+    const gaps = detectTestCoverageGaps(files);
+
+    expect(gaps).toHaveLength(0);
+  });
+});
+
+describe("detectPatterns", () => {
+  it("detects TODO and FIXME in added lines", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 3,
+            changes: [
+              { type: "add", lineNumber: 1, content: "// TODO: implement this" },
+              { type: "add", lineNumber: 2, content: "// FIXME: broken logic" },
+              { type: "add", lineNumber: 3, content: "const x = 1;" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags.filter((f) => f.pattern === "todo")).toHaveLength(1);
+    expect(flags.filter((f) => f.pattern === "fixme")).toHaveLength(1);
+  });
+
+  it("detects console.log statements", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  console.log("debug");' },
+              { type: "add", lineNumber: 2, content: '  console.error("err");' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags.filter((f) => f.pattern === "console")).toHaveLength(2);
+  });
+
+  it("detects disabled tests", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  it.skip("should work", () => {' },
+              { type: "add", lineNumber: 2, content: '  xdescribe("suite", () => {' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags.filter((f) => f.pattern === "disabled_test")).toHaveLength(2);
+  });
+
+  it("ignores patterns in deleted lines", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 2, newStart: 1, newLines: 0,
+            changes: [
+              { type: "delete", lineNumber: 1, content: "// TODO: old todo" },
+              { type: "delete", lineNumber: 2, content: '  console.log("removed");' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags).toHaveLength(0);
+  });
+
+  it("detects large added files", () => {
+    const files = [
+      makeFile({ status: "added", additions: 600, hunks: [] }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags).toHaveLength(1);
+    expect(flags[0].pattern).toBe("large_file");
+  });
+
+  it("detects debugger statements", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 5, content: "  debugger;" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectPatterns(files);
+
+    expect(flags).toHaveLength(1);
+    expect(flags[0].pattern).toBe("debug");
+    expect(flags[0].line).toBe(5);
+  });
+});
+
 describe("analyze", () => {
   it("produces a complete ReviewBriefing", () => {
     const diffSet = makeDiffSet([
@@ -164,5 +409,13 @@ describe("analyze", () => {
     expect(briefing.impact.affectedTests).toEqual(["src/index.test.ts"]);
     expect(briefing.verification.testsPass).toBeNull();
     expect(briefing.fileStats).toHaveLength(2);
+
+    // New analysis fields
+    expect(briefing.complexity).toBeDefined();
+    expect(briefing.complexity).toHaveLength(2);
+    expect(briefing.testCoverage).toBeDefined();
+    expect(briefing.testCoverage!.length).toBeGreaterThan(0);
+    expect(briefing.patterns).toBeDefined();
+    expect(Array.isArray(briefing.patterns)).toBe(true);
   });
 });

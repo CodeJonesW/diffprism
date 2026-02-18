@@ -59,6 +59,31 @@ export interface AnnotatedChange {
   reason: string;
 }
 
+export interface ComplexityScore {
+  path: string;
+  score: number;
+  factors: string[];
+}
+
+export interface TestCoverageGap {
+  sourceFile: string;
+  testFile: string | null;
+}
+
+export interface PatternFlag {
+  file: string;
+  line: number;
+  pattern:
+    | "todo"
+    | "fixme"
+    | "hack"
+    | "console"
+    | "debug"
+    | "disabled_test"
+    | "large_file";
+  content: string;
+}
+
 export interface ReviewBriefing {
   summary: string;
   triage: {
@@ -85,6 +110,9 @@ export interface ReviewBriefing {
     additions: number;
     deletions: number;
   }>;
+  complexity?: ComplexityScore[];
+  testCoverage?: TestCoverageGap[];
+  patterns?: PatternFlag[];
 }
 
 // ─── WebSocket Protocol ───
@@ -122,4 +150,5 @@ export interface ReviewOptions {
   reasoning?: string;
   cwd?: string;
   silent?: boolean; // suppress stdout (for MCP mode)
+  dev?: boolean; // use Vite dev server instead of static files
 }

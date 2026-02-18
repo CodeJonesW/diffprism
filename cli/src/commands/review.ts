@@ -4,6 +4,7 @@ interface ReviewFlags {
   staged?: boolean;
   unstaged?: boolean;
   title?: string;
+  dev?: boolean;
 }
 
 export async function review(
@@ -28,6 +29,7 @@ export async function review(
       diffRef,
       title: flags.title,
       cwd: process.cwd(),
+      dev: flags.dev,
     });
 
     // Print structured result to stdout

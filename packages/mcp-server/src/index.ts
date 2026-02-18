@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -32,6 +34,11 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ diff_ref, title, description, reasoning }) => {
       try {
+        // Auto-detect dev mode when running inside the diffprism workspace
+        const isDev = fs.existsSync(
+          path.join(process.cwd(), "packages", "ui", "src", "App.tsx"),
+        );
+
         const result = await startReview({
           diffRef: diff_ref,
           title,
@@ -39,6 +46,7 @@ export async function startMcpServer(): Promise<void> {
           reasoning,
           cwd: process.cwd(),
           silent: true, // Suppress stdout — MCP uses stdio
+          dev: isDev,
         });
 
         return {
