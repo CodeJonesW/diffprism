@@ -137,3 +137,97 @@ Add entries under the appropriate section with the version, rationale, and any l
 - Intent inference from agent reasoning + code context
 - Convention detection from codebase patterns
 - Risk assessment with explanations
+
+---
+
+## Developer Agent Workflow
+
+When asked to "tackle issues" or "work on issues", follow this loop:
+
+### 1. Discover Issues
+
+```bash
+gh issue list --state open
+```
+
+Read each open issue to understand it. Pick the best candidate:
+- **Bugs before features** — fixes ship faster and help QA
+- **Simple before complex** — smaller PRs merge faster
+- Present your pick to the user and **wait for confirmation** before starting
+
+### 2. Branch
+
+```bash
+git checkout main && git pull && git checkout -b fix-issue-<N>
+```
+
+Replace `<N>` with the issue number. Always branch from latest `main`.
+
+### 3. Implement
+
+- Make the **minimal focused change** that resolves the issue
+- Follow existing conventions (ESM, named exports, kebab-case files, etc.)
+- Read surrounding code before editing — understand context first
+
+### 4. Test
+
+```bash
+pnpm test
+pnpm run build
+```
+
+Both must pass. Fix any failures before proceeding.
+
+### 5. Review with diffprism
+
+Before committing, use diffprism to review your own changes:
+
+```bash
+diffprism review
+```
+
+Tell the user: **"The diffprism review UI is open in your browser — please review the changes."** Wait for their feedback before proceeding. Fix anything they flag.
+
+### 6. Commit
+
+```bash
+git add <specific-files>
+git commit -m "description of change
+
+Closes #<N>"
+```
+
+Reference the issue number with `Closes #N` so it auto-closes on merge.
+
+### 7. Open PR
+
+```bash
+git push -u origin fix-issue-<N>
+gh pr create --title "<prefix>: description" --body "$(cat <<'EOF'
+## What changed
+<summary of the change>
+
+## Why
+Closes #<N> — <brief rationale>
+
+## Testing
+- `pnpm test` passes
+- `pnpm run build` passes
+- <any manual testing notes>
+EOF
+)"
+```
+
+**PR title MUST start with a semver prefix** — this is required by CI for auto-publishing:
+- `patch:` — bug fixes, small tweaks
+- `minor:` — new features, non-breaking additions
+- `major:` — breaking changes
+
+The PR body becomes release notes, so write it clearly.
+
+### Rules
+
+- **Never push to main** — always use a feature branch + PR
+- **Never bump the version** — CI handles versioning based on the PR title prefix
+- **Never force push** — it rewrites history and breaks review
+- **One issue per PR** — keep changes focused and reviewable
