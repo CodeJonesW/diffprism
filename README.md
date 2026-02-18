@@ -78,6 +78,18 @@ DiffPrism ships an MCP server so Claude Code can open reviews during a coding se
 
 The tool opens a browser, blocks until you submit a review, and returns the `ReviewResult` to Claude Code.
 
+**Auto-approve the tool:** By default Claude Code prompts for confirmation each time. To skip that, add `mcp__diffprism__open_review` to the `permissions.allow` array in your project's `.claude/settings.json` or your user-level `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "mcp__diffprism__open_review"
+    ]
+  }
+}
+```
+
 ## How It Works
 
 1. **Extract** — runs `git diff` and parses the output into a structured `DiffSet`
