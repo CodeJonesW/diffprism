@@ -1,3 +1,4 @@
+import { useEffect, useCallback } from "react";
 import { useReviewStore } from "../../store/review";
 import { FileCode, FilePlus, FileMinus, FilePenLine } from "lucide-react";
 import type { DiffFile } from "../../types";
@@ -54,6 +55,50 @@ function dirname(path: string): string {
 
 export function FileBrowser() {
   const { diffSet, selectedFile, selectFile } = useReviewStore();
+
+  const navigateFiles = useCallback(
+    (direction: "up" | "down") => {
+      if (!diffSet || diffSet.files.length === 0) return;
+
+      const currentIndex = diffSet.files.findIndex(
+        (f) => f.path === selectedFile,
+      );
+      let nextIndex: number;
+
+      if (currentIndex === -1) {
+        nextIndex = 0;
+      } else if (direction === "up") {
+        nextIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex;
+      } else {
+        nextIndex =
+          currentIndex < diffSet.files.length - 1
+            ? currentIndex + 1
+            : currentIndex;
+      }
+
+      selectFile(diffSet.files[nextIndex].path);
+    },
+    [diffSet, selectedFile, selectFile],
+  );
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      // Don't capture when user is typing in an input/textarea
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+      if (e.key === "ArrowUp" || e.key === "k") {
+        e.preventDefault();
+        navigateFiles("up");
+      } else if (e.key === "ArrowDown" || e.key === "j") {
+        e.preventDefault();
+        navigateFiles("down");
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [navigateFiles]);
 
   if (!diffSet) return null;
 
