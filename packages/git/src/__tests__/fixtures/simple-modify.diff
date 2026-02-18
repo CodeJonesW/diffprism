@@ -1,0 +1,12 @@
+diff --git a/src/index.ts b/src/index.ts
+index abc1234..def5678 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1,5 +1,6 @@
+ import { foo } from "./foo";
+
+-export function main() {
++export function main(): void {
+   foo();
++  console.log("hello");
+ }

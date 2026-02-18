@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "type": "module",
   "bin": {
-    "diffprism": "src/index.ts"
+    "diffprism": "bin/diffprism.mjs"
   },
   "scripts": {
     "build": "tsc",
@@ -12,10 +12,10 @@
   "dependencies": {
     "@diffprism/core": "workspace:*",
     "@diffprism/mcp-server": "workspace:*",
-    "commander": "^13.0.0"
+    "commander": "^13.0.0",
+    "tsx": "^4.19.0"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }
 }

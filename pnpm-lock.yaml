@@ -19,10 +19,10 @@ importers:
       commander:
         specifier: ^13.0.0
         version: 13.1.0
-    devDependencies:
       tsx:
         specifier: ^4.19.0
         version: 4.21.0
+    devDependencies:
       typescript:
         specifier: ^5.7.0
         version: 5.9.3

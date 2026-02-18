@@ -127,11 +127,21 @@ export function parseDiff(
       } else if (line.startsWith("rename to ")) {
         renameTo = line.slice("rename to ".length);
         status = "renamed";
+      } else if (line.startsWith("new file mode")) {
+        status = "added";
+      } else if (line.startsWith("deleted file mode")) {
+        status = "deleted";
       } else if (
         line.startsWith("Binary files") ||
         line === "GIT binary patch"
       ) {
         binary = true;
+        // Detect added/deleted from "Binary files /dev/null and b/..."
+        if (line.includes("/dev/null") && line.includes(" and b/")) {
+          status = "added";
+        } else if (line.includes("a/") && line.includes("/dev/null")) {
+          status = "deleted";
+        }
       }
 
       // If we hit a hunk header, break out to parse hunks

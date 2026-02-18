@@ -1,0 +1,29 @@
+diff --git a/src/new-file.py b/src/new-file.py
+new file mode 100644
+index 0000000..abc1234
+--- /dev/null
++++ b/src/new-file.py
+@@ -0,0 +1,3 @@
++def hello():
++    print("hello")
++    return True
+diff --git a/src/old-file.ts b/src/old-file.ts
+deleted file mode 100644
+index abc1234..0000000
+--- a/src/old-file.ts
++++ /dev/null
+@@ -1,2 +0,0 @@
+-export const x = 1;
+-export const y = 2;
+diff --git a/src/before.ts b/src/after.ts
+similarity index 95%
+rename from src/before.ts
+rename to src/after.ts
+index abc1234..def5678 100644
+--- a/src/before.ts
++++ b/src/after.ts
+@@ -1,3 +1,3 @@
+-export const name = "before";
++export const name = "after";
+ export const value = 42;
+ export const flag = true;

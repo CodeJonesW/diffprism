@@ -1,0 +1,19 @@
+diff --git a/src/utils.ts b/src/utils.ts
+index abc1234..def5678 100644
+--- a/src/utils.ts
++++ b/src/utils.ts
+@@ -1,5 +1,5 @@
+-import { old } from "./old";
++import { newer } from "./newer";
+
+ export function first() {
+   return 1;
+ }
+@@ -20,6 +20,7 @@
+ export function third() {
+   return 3;
+ }
++
++export function fourth() {
++  return 4;
++}
