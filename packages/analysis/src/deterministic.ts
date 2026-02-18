@@ -1,4 +1,10 @@
-import type { DiffFile, AnnotatedChange } from "@diffprism/core";
+import type {
+  DiffFile,
+  AnnotatedChange,
+  ComplexityScore,
+  TestCoverageGap,
+  PatternFlag,
+} from "@diffprism/core";
 
 // ─── File Categorization ───
 
@@ -172,4 +178,242 @@ export function generateSummary(files: DiffFile[]): string {
   const breakdown = parts.length > 0 ? `: ${parts.join(", ")}` : "";
 
   return `${totalFiles} files changed${breakdown} (+${totalAdditions} -${totalDeletions})`;
+}
+
+// ─── Complexity Scoring ───
+
+const BRANCH_PATTERN =
+  /\b(if|else|switch|case|catch)\b|\?\s|&&|\|\|/;
+
+/**
+ * Compute a 1-10 complexity score per file based on diff size,
+ * hunk count, logic branches, and nesting depth.
+ */
+export function computeComplexityScores(files: DiffFile[]): ComplexityScore[] {
+  const results: ComplexityScore[] = [];
+
+  for (const file of files) {
+    let score = 0;
+    const factors: string[] = [];
+    const totalChanges = file.additions + file.deletions;
+
+    // Diff size
+    if (totalChanges > 100) {
+      score += 3;
+      factors.push(`large diff (+${file.additions} -${file.deletions})`);
+    } else if (totalChanges > 50) {
+      score += 2;
+      factors.push(`medium diff (+${file.additions} -${file.deletions})`);
+    } else if (totalChanges > 20) {
+      score += 1;
+      factors.push(`moderate diff (+${file.additions} -${file.deletions})`);
+    }
+
+    // Hunk count
+    const hunkCount = file.hunks.length;
+    if (hunkCount > 4) {
+      score += 2;
+      factors.push(`many hunks (${hunkCount})`);
+    } else if (hunkCount > 2) {
+      score += 1;
+      factors.push(`multiple hunks (${hunkCount})`);
+    }
+
+    // Logic branches in added lines
+    let branchCount = 0;
+    let deepNestCount = 0;
+
+    for (const hunk of file.hunks) {
+      for (const change of hunk.changes) {
+        if (change.type !== "add") continue;
+        const line = change.content;
+
+        if (BRANCH_PATTERN.test(line)) {
+          branchCount++;
+        }
+
+        // Deep indentation: 4+ tabs or 16+ leading spaces
+        const leadingSpaces = line.match(/^(\s*)/);
+        if (leadingSpaces) {
+          const ws = leadingSpaces[1];
+          const tabCount = (ws.match(/\t/g) || []).length;
+          const spaceCount = ws.replace(/\t/g, "").length;
+          if (tabCount >= 4 || spaceCount >= 16) {
+            deepNestCount++;
+          }
+        }
+      }
+    }
+
+    const branchScore = Math.floor(branchCount / 5);
+    if (branchScore > 0) {
+      score += branchScore;
+      factors.push(`${branchCount} logic branches`);
+    }
+
+    const nestScore = Math.floor(deepNestCount / 5);
+    if (nestScore > 0) {
+      score += nestScore;
+      factors.push(`${deepNestCount} deeply nested lines`);
+    }
+
+    // Clamp to 1-10
+    score = Math.max(1, Math.min(10, score));
+
+    results.push({ path: file.path, score, factors });
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results;
+}
+
+// ─── Test Coverage Gap Detection ───
+
+const NON_CODE_EXTENSIONS = new Set([
+  ".json",
+  ".md",
+  ".css",
+  ".scss",
+  ".less",
+  ".svg",
+  ".png",
+  ".jpg",
+  ".gif",
+  ".ico",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".lock",
+  ".html",
+]);
+
+const CONFIG_PATTERNS = [
+  /\.config\./,
+  /\.rc\./,
+  /eslint/,
+  /prettier/,
+  /tsconfig/,
+  /tailwind/,
+  /vite\.config/,
+  /vitest\.config/,
+];
+
+function isTestFile(path: string): boolean {
+  return TEST_PATTERNS.some((re) => re.test(path));
+}
+
+function isNonCodeFile(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf("."));
+  return NON_CODE_EXTENSIONS.has(ext);
+}
+
+function isConfigFile(path: string): boolean {
+  return CONFIG_PATTERNS.some((re) => re.test(path));
+}
+
+/**
+ * For each non-test source file that was added or modified,
+ * check if a corresponding test file is also in the diff.
+ */
+export function detectTestCoverageGaps(files: DiffFile[]): TestCoverageGap[] {
+  const filePaths = new Set(files.map((f) => f.path));
+  const results: TestCoverageGap[] = [];
+
+  for (const file of files) {
+    // Only check added/modified source files
+    if (file.status !== "added" && file.status !== "modified") continue;
+    if (isTestFile(file.path)) continue;
+    if (isNonCodeFile(file.path)) continue;
+    if (isConfigFile(file.path)) continue;
+
+    // Generate possible test file paths
+    const dir = file.path.slice(0, file.path.lastIndexOf("/") + 1);
+    const basename = file.path.slice(file.path.lastIndexOf("/") + 1);
+    const extDot = basename.lastIndexOf(".");
+    const name = extDot > 0 ? basename.slice(0, extDot) : basename;
+    const ext = extDot > 0 ? basename.slice(extDot) : "";
+
+    const candidates = [
+      `${dir}${name}.test${ext}`,
+      `${dir}${name}.spec${ext}`,
+      `${dir}__tests__/${name}${ext}`,
+      `${dir}__tests__/${name}.test${ext}`,
+      `${dir}__tests__/${name}.spec${ext}`,
+    ];
+
+    const matchedTest = candidates.find((c) => filePaths.has(c));
+    results.push({
+      sourceFile: file.path,
+      testFile: matchedTest ?? null,
+    });
+  }
+
+  return results;
+}
+
+// ─── Pattern Detection ───
+
+type PatternType = PatternFlag["pattern"];
+
+interface PatternMatcher {
+  pattern: PatternType;
+  test: (line: string) => boolean;
+}
+
+const PATTERN_MATCHERS: PatternMatcher[] = [
+  { pattern: "todo", test: (l) => /\btodo\b/i.test(l) },
+  { pattern: "fixme", test: (l) => /\bfixme\b/i.test(l) },
+  { pattern: "hack", test: (l) => /\bhack\b/i.test(l) },
+  {
+    pattern: "console",
+    test: (l) => /\bconsole\.(log|debug|warn|error)\b/.test(l),
+  },
+  { pattern: "debug", test: (l) => /\bdebugger\b/.test(l) },
+  {
+    pattern: "disabled_test",
+    test: (l) => /\.(skip)\(|(\bxit|xdescribe|xtest)\(/.test(l),
+  },
+];
+
+/**
+ * Scan added lines for patterns like TODO, console.log, disabled tests, etc.
+ */
+export function detectPatterns(files: DiffFile[]): PatternFlag[] {
+  const results: PatternFlag[] = [];
+
+  for (const file of files) {
+    // Large generated file detection
+    if (file.status === "added" && file.additions > 500) {
+      results.push({
+        file: file.path,
+        line: 0,
+        pattern: "large_file",
+        content: `Large added file: ${file.additions} lines`,
+      });
+    }
+
+    for (const hunk of file.hunks) {
+      for (const change of hunk.changes) {
+        if (change.type !== "add") continue;
+
+        for (const matcher of PATTERN_MATCHERS) {
+          if (matcher.test(change.content)) {
+            results.push({
+              file: file.path,
+              line: change.lineNumber,
+              pattern: matcher.pattern,
+              content: change.content.trim(),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by file then line number
+  results.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+
+  return results;
 }

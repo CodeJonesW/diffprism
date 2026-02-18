@@ -19,6 +19,7 @@ program
   .option("--staged", "Review staged changes")
   .option("--unstaged", "Review unstaged changes")
   .option("-t, --title <title>", "Review title")
+  .option("--dev", "Use Vite dev server with HMR instead of static files")
   .action(review);
 
 program

@@ -27,5 +27,6 @@ export default defineConfig({
     "commander",
     "@modelcontextprotocol/sdk",
     "zod",
+    "vite",
   ],
 });
