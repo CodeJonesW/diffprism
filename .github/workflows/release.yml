@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Detect version bump from PR title
+        id: bump
+        run: |
+          TITLE="${{ github.event.pull_request.title }}"
+          echo "PR title: $TITLE"
+
+          if echo "$TITLE" | grep -qi '^major:'; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif echo "$TITLE" | grep -qi '^minor:'; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          elif echo "$TITLE" | grep -qi '^patch:'; then
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=" >> "$GITHUB_OUTPUT"
+            echo "No version prefix found, skipping release"
+          fi
+
+      - if: steps.bump.outputs.type != ''
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: steps.bump.outputs.type != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - if: steps.bump.outputs.type != ''
+        name: Bump version and create release
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          NEW_VERSION=$(npm version ${{ steps.bump.outputs.type }} --no-git-tag-version)
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bumped to $NEW_VERSION"
+
+          git add package.json
+
+          COMMIT_MSG="release: $NEW_VERSION
+
+          $PR_TITLE"
+          if [ -n "$PR_BODY" ]; then
+            COMMIT_MSG="$COMMIT_MSG
+
+          $PR_BODY"
+          fi
+
+          git commit -m "$COMMIT_MSG"
+          git push
+
+          NOTES_FILE=$(mktemp)
+          if [ -n "$PR_BODY" ]; then
+            printf '%s' "$PR_BODY" > "$NOTES_FILE"
+          fi
+
+          if [ -s "$NOTES_FILE" ]; then
+            gh release create "$NEW_VERSION" \
+              --title "$NEW_VERSION" \
+              --notes-file "$NOTES_FILE"
+          else
+            gh release create "$NEW_VERSION" \
+              --title "$NEW_VERSION" \
+              --generate-notes
+          fi
+
+          rm -f "$NOTES_FILE"
