@@ -15,6 +15,8 @@ const FILE_STATUS_CYCLE: FileReviewStatus[] = [
   "needs_changes",
 ];
 
+export type Theme = "dark" | "light";
+
 export interface ReviewState {
   reviewId: string | null;
   diffSet: DiffSet | null;
@@ -27,6 +29,7 @@ export interface ReviewState {
   fileStatuses: Record<string, FileReviewStatus>;
   comments: ReviewComment[];
   activeCommentKey: string | null;
+  theme: Theme;
 
   // Actions
   initReview: (payload: ReviewInitPayload) => void;
@@ -39,6 +42,7 @@ export interface ReviewState {
   updateComment: (index: number, comment: ReviewComment) => void;
   deleteComment: (index: number) => void;
   setActiveCommentKey: (key: string | null) => void;
+  toggleTheme: () => void;
 }
 
 export const useReviewStore = create<ReviewState>((set, get) => ({
@@ -53,6 +57,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   fileStatuses: {},
   comments: [],
   activeCommentKey: null,
+  theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
 
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
@@ -126,5 +131,11 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setActiveCommentKey: (key: string | null) => {
     set({ activeCommentKey: key });
+  },
+
+  toggleTheme: () => {
+    const next = get().theme === "dark" ? "light" : "dark";
+    localStorage.setItem("diffprism-theme", next);
+    set({ theme: next });
   },
 }));

@@ -4,12 +4,148 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Theme variables ─── */
+
+:root {
+  /* Layout */
+  --color-background: #ffffff;
+  --color-surface: #f6f8fa;
+  --color-border: #d0d7de;
+  --color-text-primary: #1f2328;
+  --color-text-secondary: #656d76;
+  --color-accent: #0969da;
+
+  /* Diff */
+  --color-diff-bg: #ffffff;
+  --color-diff-text: #1f2328;
+  --color-gutter-bg: #f6f8fa;
+  --color-gutter-text: #656d76;
+  --color-gutter-border: #d0d7de;
+
+  /* Diff additions */
+  --color-diff-insert-bg: rgba(46, 160, 67, 0.15);
+  --color-diff-insert-gutter-bg: rgba(46, 160, 67, 0.2);
+  --color-diff-insert-gutter-text: #1a7f37;
+
+  /* Diff deletions */
+  --color-diff-delete-bg: rgba(248, 81, 73, 0.15);
+  --color-diff-delete-gutter-bg: rgba(248, 81, 73, 0.2);
+  --color-diff-delete-gutter-text: #cf222e;
+
+  /* Diff hunks */
+  --color-hunk-bg: rgba(9, 105, 218, 0.1);
+  --color-hunk-border: #d0d7de;
+  --color-hunk-gutter-bg: rgba(9, 105, 218, 0.15);
+  --color-hunk-gutter-text: #0969da;
+  --color-hunk-content-text: #656d76;
+
+  /* Word-level diff */
+  --color-diff-edit-insert: rgba(46, 160, 67, 0.4);
+  --color-diff-edit-delete: rgba(248, 81, 73, 0.4);
+
+  /* Split view divider */
+  --color-split-divider: #d0d7de;
+
+  /* Widget */
+  --color-widget-bg: #f6f8fa;
+
+  /* Inline comment button */
+  --color-comment-btn-bg: #238636;
+  --color-comment-indicator: #0969da;
+
+  /* Scrollbar */
+  --color-scrollbar-track: #ffffff;
+  --color-scrollbar-thumb: #d0d7de;
+  --color-scrollbar-thumb-hover: #afb8c1;
+
+  /* Syntax tokens */
+  --color-token-comment: #6e7781;
+  --color-token-punctuation: #1f2328;
+  --color-token-property: #0550ae;
+  --color-token-string: #0a3069;
+  --color-token-operator: #cf222e;
+  --color-token-keyword: #cf222e;
+  --color-token-function: #8250df;
+  --color-token-variable: #953800;
+
+  /* Semantic colors for Tailwind */
+  --color-added: rgba(46, 160, 67, 0.44);
+  --color-deleted: rgba(248, 81, 73, 0.44);
+}
+
+.dark {
+  /* Layout */
+  --color-background: #0d1117;
+  --color-surface: #161b22;
+  --color-border: #30363d;
+  --color-text-primary: #e6edf3;
+  --color-text-secondary: #8b949e;
+  --color-accent: #58a6ff;
+
+  /* Diff */
+  --color-diff-bg: #0d1117;
+  --color-diff-text: #e6edf3;
+  --color-gutter-bg: #161b22;
+  --color-gutter-text: #8b949e;
+  --color-gutter-border: #30363d;
+
+  /* Diff additions */
+  --color-diff-insert-bg: rgba(46, 160, 67, 0.15);
+  --color-diff-insert-gutter-bg: rgba(46, 160, 67, 0.2);
+  --color-diff-insert-gutter-text: #7ee787;
+
+  /* Diff deletions */
+  --color-diff-delete-bg: rgba(248, 81, 73, 0.15);
+  --color-diff-delete-gutter-bg: rgba(248, 81, 73, 0.2);
+  --color-diff-delete-gutter-text: #f85149;
+
+  /* Diff hunks */
+  --color-hunk-bg: rgba(88, 166, 255, 0.1);
+  --color-hunk-border: #30363d;
+  --color-hunk-gutter-bg: rgba(88, 166, 255, 0.15);
+  --color-hunk-gutter-text: #58a6ff;
+  --color-hunk-content-text: #8b949e;
+
+  /* Word-level diff */
+  --color-diff-edit-insert: rgba(46, 160, 67, 0.4);
+  --color-diff-edit-delete: rgba(248, 81, 73, 0.4);
+
+  /* Split view divider */
+  --color-split-divider: #30363d;
+
+  /* Widget */
+  --color-widget-bg: #161b22;
+
+  /* Inline comment button */
+  --color-comment-btn-bg: #238636;
+  --color-comment-indicator: #58a6ff;
+
+  /* Scrollbar */
+  --color-scrollbar-track: #0d1117;
+  --color-scrollbar-thumb: #30363d;
+  --color-scrollbar-thumb-hover: #484f58;
+
+  /* Syntax tokens */
+  --color-token-comment: #8b949e;
+  --color-token-punctuation: #e6edf3;
+  --color-token-property: #79c0ff;
+  --color-token-string: #a5d6ff;
+  --color-token-operator: #ff7b72;
+  --color-token-keyword: #ff7b72;
+  --color-token-function: #d2a8ff;
+  --color-token-variable: #ffa657;
+
+  /* Semantic colors for Tailwind */
+  --color-added: rgba(46, 160, 67, 0.44);
+  --color-deleted: rgba(248, 81, 73, 0.44);
+}
+
 /* ─── Dark theme overrides for react-diff-view ─── */
 
 .diff-unified,
 .diff-split {
-  background-color: #0d1117;
-  color: #e6edf3;
+  background-color: var(--color-diff-bg);
+  color: var(--color-diff-text);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
   font-size: 13px;
@@ -18,9 +154,9 @@
 
 .diff-unified .diff-gutter,
 .diff-split .diff-gutter {
-  background-color: #161b22;
-  color: #8b949e;
-  border-right: 1px solid #30363d;
+  background-color: var(--color-gutter-bg);
+  color: var(--color-gutter-text);
+  border-right: 1px solid var(--color-gutter-border);
   padding: 0 8px;
   min-width: 50px;
   text-align: right;
@@ -43,7 +179,7 @@
 /* Addition lines */
 .diff-unified .diff-code-insert,
 .diff-split .diff-code-insert {
-  background-color: rgba(46, 160, 67, 0.15);
+  background-color: var(--color-diff-insert-bg);
 }
 
 .diff-unified .diff-code-insert .diff-code-text,
@@ -53,14 +189,14 @@
 
 .diff-unified .diff-gutter-insert,
 .diff-split .diff-gutter-insert {
-  background-color: rgba(46, 160, 67, 0.2);
-  color: #7ee787;
+  background-color: var(--color-diff-insert-gutter-bg);
+  color: var(--color-diff-insert-gutter-text);
 }
 
 /* Deletion lines */
 .diff-unified .diff-code-delete,
 .diff-split .diff-code-delete {
-  background-color: rgba(248, 81, 73, 0.15);
+  background-color: var(--color-diff-delete-bg);
 }
 
 .diff-unified .diff-code-delete .diff-code-text,
@@ -70,8 +206,8 @@
 
 .diff-unified .diff-gutter-delete,
 .diff-split .diff-gutter-delete {
-  background-color: rgba(248, 81, 73, 0.2);
-  color: #f85149;
+  background-color: var(--color-diff-delete-gutter-bg);
+  color: var(--color-diff-delete-gutter-text);
 }
 
 /* Context lines */
@@ -82,26 +218,26 @@
 
 .diff-unified .diff-gutter-normal,
 .diff-split .diff-gutter-normal {
-  background-color: #161b22;
+  background-color: var(--color-gutter-bg);
 }
 
 /* Hunk headers */
 .diff-unified .diff-hunk-header,
 .diff-split .diff-hunk-header {
-  background-color: rgba(88, 166, 255, 0.1);
-  border-top: 1px solid #30363d;
-  border-bottom: 1px solid #30363d;
+  background-color: var(--color-hunk-bg);
+  border-top: 1px solid var(--color-hunk-border);
+  border-bottom: 1px solid var(--color-hunk-border);
 }
 
 .diff-unified .diff-hunk-header-gutter,
 .diff-split .diff-hunk-header-gutter {
-  background-color: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  background-color: var(--color-hunk-gutter-bg);
+  color: var(--color-hunk-gutter-text);
 }
 
 .diff-unified .diff-hunk-header-content,
 .diff-split .diff-hunk-header-content {
-  color: #8b949e;
+  color: var(--color-hunk-content-text);
   padding: 4px 12px;
   font-style: italic;
 }
@@ -109,13 +245,13 @@
 /* Word-level diff highlighting */
 .diff-unified .diff-code-edit .diff-code-text .diff-code-edit-text,
 .diff-split .diff-code-edit .diff-code-text .diff-code-edit-text {
-  background-color: rgba(46, 160, 67, 0.4);
+  background-color: var(--color-diff-edit-insert);
   border-radius: 2px;
 }
 
 .diff-unified .diff-code-delete .diff-code-text .diff-code-edit-text,
 .diff-split .diff-code-delete .diff-code-text .diff-code-edit-text {
-  background-color: rgba(248, 81, 73, 0.4);
+  background-color: var(--color-diff-edit-delete);
   border-radius: 2px;
 }
 
@@ -134,7 +270,7 @@
 
 /* Split view: add a visible divider between old/new sides */
 .diff-split .diff-split-side-new .diff-gutter {
-  border-left: 1px solid #30363d;
+  border-left: 1px solid var(--color-split-divider);
 }
 
 /* Syntax highlighting tokens (refractor) */
@@ -146,12 +282,12 @@
 .diff-split .token.prolog,
 .diff-split .token.doctype,
 .diff-split .token.cdata {
-  color: #8b949e;
+  color: var(--color-token-comment);
 }
 
 .diff-unified .token.punctuation,
 .diff-split .token.punctuation {
-  color: #e6edf3;
+  color: var(--color-token-punctuation);
 }
 
 .diff-unified .token.property,
@@ -166,7 +302,7 @@
 .diff-split .token.number,
 .diff-split .token.constant,
 .diff-split .token.symbol {
-  color: #79c0ff;
+  color: var(--color-token-property);
 }
 
 .diff-unified .token.selector,
@@ -179,7 +315,7 @@
 .diff-split .token.string,
 .diff-split .token.char,
 .diff-split .token.builtin {
-  color: #a5d6ff;
+  color: var(--color-token-string);
 }
 
 .diff-unified .token.operator,
@@ -188,7 +324,7 @@
 .diff-split .token.operator,
 .diff-split .token.entity,
 .diff-split .token.url {
-  color: #ff7b72;
+  color: var(--color-token-operator);
 }
 
 .diff-unified .token.atrule,
@@ -197,14 +333,14 @@
 .diff-split .token.atrule,
 .diff-split .token.attr-value,
 .diff-split .token.keyword {
-  color: #ff7b72;
+  color: var(--color-token-keyword);
 }
 
 .diff-unified .token.function,
 .diff-unified .token.class-name,
 .diff-split .token.function,
 .diff-split .token.class-name {
-  color: #d2a8ff;
+  color: var(--color-token-function);
 }
 
 .diff-unified .token.regex,
@@ -213,12 +349,12 @@
 .diff-split .token.regex,
 .diff-split .token.important,
 .diff-split .token.variable {
-  color: #ffa657;
+  color: var(--color-token-variable);
 }
 
 .diff-unified .token.string,
 .diff-split .token.string {
-  color: #a5d6ff;
+  color: var(--color-token-string);
 }
 
 /* ─── Inline commenting ─── */
@@ -238,7 +374,7 @@
   width: 16px;
   height: 16px;
   border-radius: 3px;
-  background-color: #238636;
+  background-color: var(--color-comment-btn-bg);
   color: #ffffff;
   font-size: 12px;
   font-weight: bold;
@@ -255,7 +391,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background-color: #58a6ff;
+  background-color: var(--color-comment-indicator);
   position: absolute;
   left: 4px;
   top: 50%;
@@ -264,28 +400,28 @@
 
 /* Widget row styling */
 .diff-widget {
-  background-color: #161b22;
+  background-color: var(--color-widget-bg);
 }
 
 .diff-widget-content {
   padding: 0;
 }
 
-/* Scrollbar styling for dark theme */
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1117;
+  background: var(--color-scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--color-scrollbar-thumb);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: var(--color-scrollbar-thumb-hover);
 }

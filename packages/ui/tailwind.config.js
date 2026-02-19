@@ -10,14 +10,14 @@ export default {
   theme: {
     extend: {
       colors: {
-        background: "#0d1117",
-        surface: "#161b22",
-        border: "#30363d",
-        "text-primary": "#e6edf3",
-        "text-secondary": "#8b949e",
-        accent: "#58a6ff",
-        added: "#2ea04370",
-        deleted: "#f8514970",
+        background: "var(--color-background)",
+        surface: "var(--color-surface)",
+        border: "var(--color-border)",
+        "text-primary": "var(--color-text-primary)",
+        "text-secondary": "var(--color-text-secondary)",
+        accent: "var(--color-accent)",
+        added: "var(--color-added)",
+        deleted: "var(--color-deleted)",
       },
     },
   },
