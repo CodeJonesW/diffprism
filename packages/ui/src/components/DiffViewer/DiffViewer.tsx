@@ -1,8 +1,19 @@
-import { useMemo } from "react";
-import { parseDiff, Diff, Hunk as DiffHunk, tokenize } from "react-diff-view";
+import { useMemo, useCallback, type ReactNode } from "react";
+import {
+  parseDiff,
+  Diff,
+  Hunk as DiffHunk,
+  tokenize,
+  getChangeKey,
+  isInsert,
+  isDelete,
+  isNormal,
+} from "react-diff-view";
+import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2 } from "lucide-react";
+import { InlineCommentForm, InlineCommentThread } from "../InlineComment";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -76,6 +87,38 @@ function mapLanguage(lang: string): string | null {
 }
 
 /**
+ * Get the relevant line number from a change for comment mapping.
+ * For inserts and normal changes, use the new line number.
+ * For deletes, use the old line number.
+ */
+function getLineFromChange(change: ChangeData): number {
+  if (isInsert(change)) return change.lineNumber;
+  if (isDelete(change)) return change.lineNumber;
+  if (isNormal(change)) return change.newLineNumber;
+  return 0;
+}
+
+/**
+ * Build a mapping from "file:line" to change keys for widget placement.
+ */
+function buildLineToKeyMap(
+  hunks: HunkData[],
+  filePath: string,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const hunk of hunks) {
+    for (const change of hunk.changes) {
+      const line = getLineFromChange(change);
+      const compositeKey = `${filePath}:${line}`;
+      if (!map[compositeKey]) {
+        map[compositeKey] = getChangeKey(change);
+      }
+    }
+  }
+  return map;
+}
+
+/**
  * Extract the raw diff text for a single file from the full rawDiff string.
  */
 function extractFileDiff(rawDiff: string, filePath: string): string | null {
@@ -109,8 +152,19 @@ function extractFileDiff(rawDiff: string, filePath: string): string | null {
 }
 
 export function DiffViewer() {
-  const { diffSet, rawDiff, selectedFile, viewMode, setViewMode } =
-    useReviewStore();
+  const {
+    diffSet,
+    rawDiff,
+    selectedFile,
+    viewMode,
+    setViewMode,
+    comments,
+    activeCommentKey,
+    addComment,
+    updateComment,
+    deleteComment,
+    setActiveCommentKey,
+  } = useReviewStore();
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -156,6 +210,144 @@ export function DiffViewer() {
       return undefined;
     }
   }, [parsedFiles, selectedDiffFile, viewMode]);
+
+  // Map of "file:line" → changeKey for the current file
+  const lineToKeyMap = useMemo(() => {
+    if (parsedFiles.length === 0 || !selectedFile) return {};
+    return buildLineToKeyMap(parsedFiles[0].hunks, selectedFile);
+  }, [parsedFiles, selectedFile]);
+
+  // Reverse map: changeKey → line number
+  const keyToLineMap = useMemo(() => {
+    if (parsedFiles.length === 0) return {} as Record<string, number>;
+    const map: Record<string, number> = {};
+    for (const hunk of parsedFiles[0].hunks) {
+      for (const change of hunk.changes) {
+        map[getChangeKey(change)] = getLineFromChange(change);
+      }
+    }
+    return map;
+  }, [parsedFiles]);
+
+  // Comments for the currently selected file
+  const fileComments = useMemo(() => {
+    if (!selectedFile) return [];
+    return comments
+      .map((c, i) => ({ comment: c, index: i }))
+      .filter((c) => c.comment.file === selectedFile);
+  }, [comments, selectedFile]);
+
+  // Gutter click handler — toggle comment form for the clicked line
+  const gutterEvents: EventMap = useMemo(
+    () => ({
+      onClick({ change }: ChangeEventArgs) {
+        if (!change) return;
+        const key = getChangeKey(change);
+        setActiveCommentKey(activeCommentKey === key ? null : key);
+      },
+    }),
+    [activeCommentKey, setActiveCommentKey],
+  );
+
+  // Custom gutter renderer — show "+" on hover, blue dot for commented lines
+  const renderGutter = useCallback(
+    ({ change, inHoverState, renderDefault }: GutterOptions) => {
+      const key = getChangeKey(change);
+      const line = getLineFromChange(change);
+      const hasComments =
+        selectedFile &&
+        fileComments.some((c) => c.comment.line === line);
+
+      if (inHoverState) {
+        return (
+          <>
+            <span className="diff-gutter-add-comment">+</span>
+            {renderDefault()}
+          </>
+        );
+      }
+
+      if (hasComments) {
+        return (
+          <>
+            <span className="diff-comment-indicator" />
+            {renderDefault()}
+          </>
+        );
+      }
+
+      return renderDefault();
+    },
+    [selectedFile, fileComments],
+  );
+
+  // Build widgets — inline comment threads and/or open forms
+  const widgets = useMemo(() => {
+    if (!selectedFile) return {};
+    const w: Record<string, ReactNode> = {};
+
+    // Group file comments by line
+    const commentsByLine = new Map<number, { comment: typeof comments[0]; index: number }[]>();
+    for (const fc of fileComments) {
+      const line = fc.comment.line;
+      if (!commentsByLine.has(line)) commentsByLine.set(line, []);
+      commentsByLine.get(line)!.push(fc);
+    }
+
+    // Render threads for lines with existing comments
+    for (const [line, lineComments] of commentsByLine) {
+      const changeKey = lineToKeyMap[`${selectedFile}:${line}`];
+      if (!changeKey) continue;
+
+      w[changeKey] = (
+        <InlineCommentThread
+          comments={lineComments}
+          isFormOpen={activeCommentKey === changeKey}
+          file={selectedFile}
+          line={line}
+          onAdd={(body, type) => {
+            addComment({ file: selectedFile, line, body, type });
+          }}
+          onUpdate={(index, body, type) => {
+            updateComment(index, { file: selectedFile, line, body, type });
+          }}
+          onDelete={deleteComment}
+          onOpenForm={() => setActiveCommentKey(changeKey)}
+          onCloseForm={() => setActiveCommentKey(null)}
+        />
+      );
+    }
+
+    // Render standalone form for active key with no existing comments
+    if (activeCommentKey && !w[activeCommentKey]) {
+      const line = keyToLineMap[activeCommentKey];
+      if (line !== undefined) {
+        w[activeCommentKey] = (
+          <div className="border-t border-border bg-[#161b22]">
+            <InlineCommentForm
+              onSave={(body, type) => {
+                addComment({ file: selectedFile, line, body, type });
+                setActiveCommentKey(null);
+              }}
+              onCancel={() => setActiveCommentKey(null)}
+            />
+          </div>
+        );
+      }
+    }
+
+    return w;
+  }, [
+    selectedFile,
+    fileComments,
+    activeCommentKey,
+    lineToKeyMap,
+    keyToLineMap,
+    addComment,
+    updateComment,
+    deleteComment,
+    setActiveCommentKey,
+  ]);
 
   // No file selected state
   if (!selectedFile || !diffSet) {
@@ -215,7 +407,15 @@ export function DiffViewer() {
         onViewModeChange={setViewMode}
       />
       <div className="flex-1 overflow-auto">
-        <Diff viewType={viewMode} diffType={diffData.type} hunks={diffData.hunks} tokens={tokens}>
+        <Diff
+          viewType={viewMode}
+          diffType={diffData.type}
+          hunks={diffData.hunks}
+          tokens={tokens}
+          widgets={widgets}
+          gutterEvents={gutterEvents}
+          renderGutter={renderGutter}
+        >
           {(hunks) =>
             hunks.map((hunk) => (
               <DiffHunk key={hunk.content} hunk={hunk} />

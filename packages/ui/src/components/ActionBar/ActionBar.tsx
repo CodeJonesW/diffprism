@@ -9,7 +9,7 @@ interface ActionBarProps {
 
 export function ActionBar({ onSubmit }: ActionBarProps) {
   const [summary, setSummary] = useState("");
-  const { diffSet, fileStatuses } = useReviewStore();
+  const { diffSet, fileStatuses, comments } = useReviewStore();
 
   const totalAdditions =
     diffSet?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0;
@@ -23,7 +23,7 @@ export function ActionBar({ onSubmit }: ActionBarProps) {
     );
     onSubmit({
       decision,
-      comments: [],
+      comments,
       fileStatuses: hasStatuses ? fileStatuses : undefined,
       summary: summary.trim() || undefined,
     });
@@ -44,6 +44,12 @@ export function ActionBar({ onSubmit }: ActionBarProps) {
         {totalDeletions > 0 && (
           <span className="text-red-400 text-xs font-mono">
             -{totalDeletions}
+          </span>
+        )}
+        {comments.length > 0 && (
+          <span className="flex items-center gap-1 text-accent text-xs">
+            <MessageSquare className="w-3 h-3" />
+            {comments.length} comment{comments.length !== 1 ? "s" : ""}
           </span>
         )}
       </div>

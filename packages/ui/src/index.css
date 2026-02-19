@@ -221,6 +221,56 @@
   color: #a5d6ff;
 }
 
+/* ─── Inline commenting ─── */
+
+/* Make gutters clickable */
+.diff-unified .diff-gutter,
+.diff-split .diff-gutter {
+  cursor: pointer;
+  position: relative;
+}
+
+/* Green "+" button on gutter hover */
+.diff-gutter-add-comment {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background-color: #238636;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Blue dot for lines with existing comments */
+.diff-comment-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #58a6ff;
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Widget row styling */
+.diff-widget {
+  background-color: #161b22;
+}
+
+.diff-widget-content {
+  padding: 0;
+}
+
 /* Scrollbar styling for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
