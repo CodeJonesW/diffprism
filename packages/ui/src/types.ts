@@ -39,6 +39,12 @@ export type ReviewDecision =
   | "changes_requested"
   | "approved_with_comments";
 
+export type FileReviewStatus =
+  | "unreviewed"
+  | "reviewed"
+  | "approved"
+  | "needs_changes";
+
 export interface ReviewComment {
   file: string;
   line: number;
@@ -49,6 +55,7 @@ export interface ReviewComment {
 export interface ReviewResult {
   decision: ReviewDecision;
   comments: ReviewComment[];
+  fileStatuses?: Record<string, FileReviewStatus>;
   summary?: string;
 }
 

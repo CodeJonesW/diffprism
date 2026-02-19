@@ -9,7 +9,7 @@ interface ActionBarProps {
 
 export function ActionBar({ onSubmit }: ActionBarProps) {
   const [summary, setSummary] = useState("");
-  const { diffSet } = useReviewStore();
+  const { diffSet, fileStatuses } = useReviewStore();
 
   const totalAdditions =
     diffSet?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0;
@@ -18,9 +18,13 @@ export function ActionBar({ onSubmit }: ActionBarProps) {
   const fileCount = diffSet?.files.length ?? 0;
 
   function handleSubmit(decision: ReviewDecision) {
+    const hasStatuses = Object.values(fileStatuses).some(
+      (s) => s !== "unreviewed",
+    );
     onSubmit({
       decision,
       comments: [],
+      fileStatuses: hasStatuses ? fileStatuses : undefined,
       summary: summary.trim() || undefined,
     });
   }
