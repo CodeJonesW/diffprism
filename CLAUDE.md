@@ -102,37 +102,49 @@ Add entries under the appropriate section with the version, rationale, and any l
 
 ## Roadmap
 
-### M1: Usable Review Experience
-- Split diff view (side-by-side) with toggle
-- Inline line-level commenting (click any line to add comment)
-- Comment types: must_fix, suggestion, question, nitpick
-- File-level status tracking (reviewed/approved/needs changes)
-- Agent reasoning display in context panel
-- Change narrative view (group files by story chapter)
-- Async mode: `open_review({ mode: "async" })` returns review_id, poll with `review_status()`
-- Dark/light mode toggle
-- Keyboard shortcuts: j/k navigate files, n/p changes, c to comment
+### M1: Usable Review Experience — ~75% complete
+- ~~Split diff view (side-by-side) with toggle~~ ✅ v0.6.0
+- ~~Inline line-level commenting (click any line to add comment)~~ ✅ v0.8.0
+- ~~Comment types: must_fix, suggestion, question, nitpick~~ ✅ v0.8.0
+- ~~File-level status tracking (reviewed/approved/needs changes)~~ ✅ v0.7.0
+- ~~Agent reasoning display in context panel~~ ✅ v0.5.0
+- ~~Dark/light mode toggle~~ ✅ v0.9.0
+- ~~Keyboard shortcuts: j/k navigate files~~ ✅ v0.2.12
+- Keyboard shortcuts: n/p changes, c to comment (#41)
+- Change narrative view — group files by story chapter (#43)
+- Async mode: `open_review({ mode: "async" })` returns review_id, poll with `review_status()` (#42)
+- Create PR from review UI (#23)
 
-### M2: Analysis + Triage
-- Enhanced deterministic analysis: complexity scoring, test coverage detection, pattern flags
-- Review briefing bar: summary stats, risk indicators, verification status
-- Triage view: critical/notable/mechanical grouping
-- Batch approve mechanical changes
-- Run tests/lint/typecheck from UI
+### M2: Analysis + Triage — ~50% complete
+- ~~Enhanced deterministic analysis: complexity scoring, test coverage detection, pattern flags~~ ✅ v0.4.0
+- ~~Review briefing bar: summary stats, risk indicators, verification status~~ ✅ v0.3.0
+- Triage view: critical/notable/mechanical grouping + batch approve (#25)
+- Run tests/lint/typecheck from UI (#44)
 
-### M3: GitHub Integration — Read
+### M3: Multi-Agent & Worktree Support (new)
+The core vision: developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer. See `docs/ux-design-notes.md` for full design notes.
+
+- Review session persistence — save to disk, survive restarts (#47) *(foundational)*
+- Async review mode — fire-and-forget + polling (#42) *(enables non-blocking agent workflows)*
+- Worktree detection & metadata — identify branch, worktree path, agent context (#45)
+- Multi-review dashboard — single view of all active reviews across worktrees (#46)
+- Review queuing — don't flood the developer with N browser tabs
+
+**Build order:** #47 (persistence) → #42 (async) → #45 (worktree detection) → #46 (dashboard)
+
+### M4: GitHub Integration — Read
 - GitHub auth (PAT config)
 - Fetch PR data (diff, comments, CI status, review threads)
 - Normalize to DiffSet
 - CLI: `diffprism review owner/repo#123`
 - MCP: `open_pr_review()`
 
-### M4: GitHub Integration — Write
+### M5: GitHub Integration — Write
 - Post inline comments to GitHub
 - Submit review (approve/changes) to GitHub
 - Sync comment threads
 
-### M5: AI-Powered Analysis
+### M6: AI-Powered Analysis
 - Claude API for deep diff analysis
 - Intent inference from agent reasoning + code context
 - Convention detection from codebase patterns
