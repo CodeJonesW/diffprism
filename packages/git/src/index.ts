@@ -2,7 +2,7 @@ import type { DiffSet } from "@diffprism/core";
 import { getGitDiff } from "./local.js";
 import { parseDiff } from "./parser.js";
 
-export { getGitDiff } from "./local.js";
+export { getGitDiff, getCurrentBranch } from "./local.js";
 export { parseDiff } from "./parser.js";
 
 /**
