@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { parseDiff, Diff, Hunk as DiffHunk, tokenize } from "react-diff-view";
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
-import { FileCode } from "lucide-react";
+import { FileCode, Columns2, Rows2 } from "lucide-react";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -109,7 +109,8 @@ function extractFileDiff(rawDiff: string, filePath: string): string | null {
 }
 
 export function DiffViewer() {
-  const { diffSet, rawDiff, selectedFile } = useReviewStore();
+  const { diffSet, rawDiff, selectedFile, viewMode, setViewMode } =
+    useReviewStore();
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -154,7 +155,7 @@ export function DiffViewer() {
       // Syntax highlighting is best-effort
       return undefined;
     }
-  }, [parsedFiles, selectedDiffFile]);
+  }, [parsedFiles, selectedDiffFile, viewMode]);
 
   // No file selected state
   if (!selectedFile || !diffSet) {
@@ -210,9 +211,11 @@ export function DiffViewer() {
         path={selectedFile}
         additions={selectedDiffFile?.additions}
         deletions={selectedDiffFile?.deletions}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
       <div className="flex-1 overflow-auto">
-        <Diff viewType="unified" diffType={diffData.type} hunks={diffData.hunks} tokens={tokens}>
+        <Diff viewType={viewMode} diffType={diffData.type} hunks={diffData.hunks} tokens={tokens}>
           {(hunks) =>
             hunks.map((hunk) => (
               <DiffHunk key={hunk.content} hunk={hunk} />
@@ -228,10 +231,14 @@ function FileHeader({
   path,
   additions,
   deletions,
+  viewMode,
+  onViewModeChange,
 }: {
   path: string;
   additions?: number;
   deletions?: number;
+  viewMode?: "unified" | "split";
+  onViewModeChange?: (mode: "unified" | "split") => void;
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-surface border-b border-border flex-shrink-0">
@@ -239,20 +246,44 @@ function FileHeader({
       <span className="text-text-primary text-sm font-mono truncate">
         {path}
       </span>
-      {(additions !== undefined || deletions !== undefined) && (
-        <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-          {additions !== undefined && additions > 0 && (
-            <span className="text-green-400 text-xs font-mono">
-              +{additions}
-            </span>
-          )}
-          {deletions !== undefined && deletions > 0 && (
-            <span className="text-red-400 text-xs font-mono">
-              -{deletions}
-            </span>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+        {additions !== undefined && additions > 0 && (
+          <span className="text-green-400 text-xs font-mono">
+            +{additions}
+          </span>
+        )}
+        {deletions !== undefined && deletions > 0 && (
+          <span className="text-red-400 text-xs font-mono">
+            -{deletions}
+          </span>
+        )}
+        {viewMode && onViewModeChange && (
+          <div className="flex items-center rounded border border-border ml-2">
+            <button
+              onClick={() => onViewModeChange("unified")}
+              className={`p-1 ${
+                viewMode === "unified"
+                  ? "bg-white/10 text-text-primary"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+              title="Unified view"
+            >
+              <Rows2 className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onViewModeChange("split")}
+              className={`p-1 ${
+                viewMode === "split"
+                  ? "bg-white/10 text-text-primary"
+                  : "text-text-secondary hover:text-text-primary"
+              }`}
+              title="Split view"
+            >
+              <Columns2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -14,11 +14,13 @@ export interface ReviewState {
   metadata: ReviewMetadata | null;
   selectedFile: string | null;
   connectionStatus: "connecting" | "connected" | "disconnected";
+  viewMode: "unified" | "split";
 
   // Actions
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
   setConnectionStatus: (status: ReviewState["connectionStatus"]) => void;
+  setViewMode: (mode: "unified" | "split") => void;
 }
 
 export const useReviewStore = create<ReviewState>((set) => ({
@@ -29,6 +31,7 @@ export const useReviewStore = create<ReviewState>((set) => ({
   metadata: null,
   selectedFile: null,
   connectionStatus: "connecting",
+  viewMode: "unified",
 
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
@@ -52,5 +55,9 @@ export const useReviewStore = create<ReviewState>((set) => ({
 
   setConnectionStatus: (status: ReviewState["connectionStatus"]) => {
     set({ connectionStatus: status });
+  },
+
+  setViewMode: (mode: "unified" | "split") => {
+    set({ viewMode: mode });
   },
 }));

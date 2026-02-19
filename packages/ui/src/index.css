@@ -6,7 +6,8 @@
 
 /* ─── Dark theme overrides for react-diff-view ─── */
 
-.diff-unified {
+.diff-unified,
+.diff-split {
   background-color: #0d1117;
   color: #e6edf3;
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -15,7 +16,8 @@
   line-height: 20px;
 }
 
-.diff-unified .diff-gutter {
+.diff-unified .diff-gutter,
+.diff-split .diff-gutter {
   background-color: #161b22;
   color: #8b949e;
   border-right: 1px solid #30363d;
@@ -26,102 +28,129 @@
   cursor: default;
 }
 
-.diff-unified .diff-gutter-col {
+.diff-unified .diff-gutter-col,
+.diff-split .diff-gutter-col {
   width: 60px;
   min-width: 60px;
 }
 
-.diff-unified .diff-code {
+.diff-unified .diff-code,
+.diff-split .diff-code {
   padding: 0 12px;
   white-space: pre;
 }
 
 /* Addition lines */
-.diff-unified .diff-code-insert {
+.diff-unified .diff-code-insert,
+.diff-split .diff-code-insert {
   background-color: rgba(46, 160, 67, 0.15);
 }
 
-.diff-unified .diff-code-insert .diff-code-text {
+.diff-unified .diff-code-insert .diff-code-text,
+.diff-split .diff-code-insert .diff-code-text {
   background-color: transparent;
 }
 
-.diff-unified .diff-gutter-insert {
+.diff-unified .diff-gutter-insert,
+.diff-split .diff-gutter-insert {
   background-color: rgba(46, 160, 67, 0.2);
   color: #7ee787;
 }
 
 /* Deletion lines */
-.diff-unified .diff-code-delete {
+.diff-unified .diff-code-delete,
+.diff-split .diff-code-delete {
   background-color: rgba(248, 81, 73, 0.15);
 }
 
-.diff-unified .diff-code-delete .diff-code-text {
+.diff-unified .diff-code-delete .diff-code-text,
+.diff-split .diff-code-delete .diff-code-text {
   background-color: transparent;
 }
 
-.diff-unified .diff-gutter-delete {
+.diff-unified .diff-gutter-delete,
+.diff-split .diff-gutter-delete {
   background-color: rgba(248, 81, 73, 0.2);
   color: #f85149;
 }
 
 /* Context lines */
-.diff-unified .diff-code-normal {
+.diff-unified .diff-code-normal,
+.diff-split .diff-code-normal {
   background-color: transparent;
 }
 
-.diff-unified .diff-gutter-normal {
+.diff-unified .diff-gutter-normal,
+.diff-split .diff-gutter-normal {
   background-color: #161b22;
 }
 
 /* Hunk headers */
-.diff-unified .diff-hunk-header {
+.diff-unified .diff-hunk-header,
+.diff-split .diff-hunk-header {
   background-color: rgba(88, 166, 255, 0.1);
   border-top: 1px solid #30363d;
   border-bottom: 1px solid #30363d;
 }
 
-.diff-unified .diff-hunk-header-gutter {
+.diff-unified .diff-hunk-header-gutter,
+.diff-split .diff-hunk-header-gutter {
   background-color: rgba(88, 166, 255, 0.15);
   color: #58a6ff;
 }
 
-.diff-unified .diff-hunk-header-content {
+.diff-unified .diff-hunk-header-content,
+.diff-split .diff-hunk-header-content {
   color: #8b949e;
   padding: 4px 12px;
   font-style: italic;
 }
 
 /* Word-level diff highlighting */
-.diff-unified .diff-code-edit .diff-code-text .diff-code-edit-text {
+.diff-unified .diff-code-edit .diff-code-text .diff-code-edit-text,
+.diff-split .diff-code-edit .diff-code-text .diff-code-edit-text {
   background-color: rgba(46, 160, 67, 0.4);
   border-radius: 2px;
 }
 
-.diff-unified .diff-code-delete .diff-code-text .diff-code-edit-text {
+.diff-unified .diff-code-delete .diff-code-text .diff-code-edit-text,
+.diff-split .diff-code-delete .diff-code-text .diff-code-edit-text {
   background-color: rgba(248, 81, 73, 0.4);
   border-radius: 2px;
 }
 
 /* Table styling */
-.diff-unified table {
+.diff-unified table,
+.diff-split table {
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
 }
 
-.diff-unified td {
+.diff-unified td,
+.diff-split td {
   vertical-align: top;
+}
+
+/* Split view: add a visible divider between old/new sides */
+.diff-split .diff-split-side-new .diff-gutter {
+  border-left: 1px solid #30363d;
 }
 
 /* Syntax highlighting tokens (refractor) */
 .diff-unified .token.comment,
 .diff-unified .token.prolog,
 .diff-unified .token.doctype,
-.diff-unified .token.cdata {
+.diff-unified .token.cdata,
+.diff-split .token.comment,
+.diff-split .token.prolog,
+.diff-split .token.doctype,
+.diff-split .token.cdata {
   color: #8b949e;
 }
 
-.diff-unified .token.punctuation {
+.diff-unified .token.punctuation,
+.diff-split .token.punctuation {
   color: #e6edf3;
 }
 
@@ -130,7 +159,13 @@
 .diff-unified .token.boolean,
 .diff-unified .token.number,
 .diff-unified .token.constant,
-.diff-unified .token.symbol {
+.diff-unified .token.symbol,
+.diff-split .token.property,
+.diff-split .token.tag,
+.diff-split .token.boolean,
+.diff-split .token.number,
+.diff-split .token.constant,
+.diff-split .token.symbol {
   color: #79c0ff;
 }
 
@@ -138,34 +173,51 @@
 .diff-unified .token.attr-name,
 .diff-unified .token.string,
 .diff-unified .token.char,
-.diff-unified .token.builtin {
+.diff-unified .token.builtin,
+.diff-split .token.selector,
+.diff-split .token.attr-name,
+.diff-split .token.string,
+.diff-split .token.char,
+.diff-split .token.builtin {
   color: #a5d6ff;
 }
 
 .diff-unified .token.operator,
 .diff-unified .token.entity,
-.diff-unified .token.url {
+.diff-unified .token.url,
+.diff-split .token.operator,
+.diff-split .token.entity,
+.diff-split .token.url {
   color: #ff7b72;
 }
 
 .diff-unified .token.atrule,
 .diff-unified .token.attr-value,
-.diff-unified .token.keyword {
+.diff-unified .token.keyword,
+.diff-split .token.atrule,
+.diff-split .token.attr-value,
+.diff-split .token.keyword {
   color: #ff7b72;
 }
 
 .diff-unified .token.function,
-.diff-unified .token.class-name {
+.diff-unified .token.class-name,
+.diff-split .token.function,
+.diff-split .token.class-name {
   color: #d2a8ff;
 }
 
 .diff-unified .token.regex,
 .diff-unified .token.important,
-.diff-unified .token.variable {
+.diff-unified .token.variable,
+.diff-split .token.regex,
+.diff-split .token.important,
+.diff-split .token.variable {
   color: #ffa657;
 }
 
-.diff-unified .token.string {
+.diff-unified .token.string,
+.diff-split .token.string {
   color: #a5d6ff;
 }
 
