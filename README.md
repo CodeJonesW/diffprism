@@ -53,7 +53,7 @@ Decisions are one of: `approved`, `changes_requested`, or `approved_with_comment
 
 DiffPrism ships an MCP server so Claude Code can open reviews during a coding session.
 
-**Setup:** Add to your Claude Code MCP config (`.mcp.json` or project settings):
+**Setup:** Add to your Claude Code MCP config (`.mcp.json` or project settings). See the [full setup guide](docs/claude-setup.md) for detailed instructions covering Claude Code, Claude Desktop, auto-approval, and troubleshooting.
 
 ```json
 {
