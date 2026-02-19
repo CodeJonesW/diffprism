@@ -17,7 +17,7 @@ export function BriefingBar() {
   const { briefing } = useReviewStore();
 
   if (!briefing) return null;
-
+  
   const { impact, verification, complexity, testCoverage, patterns } = briefing;
   const hasBreaking = impact.breakingChanges.length > 0;
   const hasNewDeps = impact.newDependencies.length > 0;
