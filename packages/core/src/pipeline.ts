@@ -5,7 +5,7 @@ import getPort from "get-port";
 import open from "open";
 import { fileURLToPath } from "node:url";
 
-import { getDiff } from "@diffprism/git";
+import { getDiff, getCurrentBranch } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import type { ReviewResult, ReviewOptions, ReviewInitPayload } from "./types.js";
@@ -133,6 +133,7 @@ export async function startReview(
 
   // 1. Get the diff
   const { diffSet, rawDiff } = getDiff(diffRef, { cwd });
+  const currentBranch = getCurrentBranch({ cwd });
 
   // Handle empty diff
   if (diffSet.files.length === 0) {
@@ -191,7 +192,7 @@ export async function startReview(
       diffSet,
       rawDiff,
       briefing,
-      metadata: { title, description, reasoning },
+      metadata: { title, description, reasoning, currentBranch },
     };
 
     bridge.sendInit(initPayload);

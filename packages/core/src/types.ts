@@ -136,6 +136,7 @@ export interface ReviewMetadata {
   title?: string;
   description?: string;
   reasoning?: string;
+  currentBranch?: string;
 }
 
 export type ServerMessage = {

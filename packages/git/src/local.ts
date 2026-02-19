@@ -73,6 +73,25 @@ export function getGitDiff(
 }
 
 /**
+ * Get the current git branch name.
+ *
+ * @param options.cwd - Working directory for the git command.  Defaults to process.cwd().
+ * @returns The current branch name, or "unknown" on failure.
+ */
+export function getCurrentBranch(options?: { cwd?: string }): string {
+  const cwd = options?.cwd ?? process.cwd();
+  try {
+    return execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
  * Find untracked files and generate unified diff output for each one,
  * so they appear as "added" files in the parsed DiffSet.
  */

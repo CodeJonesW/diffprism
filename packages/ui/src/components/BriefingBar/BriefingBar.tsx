@@ -9,12 +9,13 @@ import {
   Gauge,
   ShieldAlert,
   Search,
+  GitBranch,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
-  const { briefing } = useReviewStore();
+  const { briefing, metadata } = useReviewStore();
 
   if (!briefing) return null;
   
@@ -31,13 +32,20 @@ export function BriefingBar() {
       {/* Collapsed row */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-white/5 transition-colors"
+        className="w-full px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-text-primary/5 transition-colors"
       >
         <span className="text-text-primary text-sm flex-1 text-left truncate">
           {briefing.summary}
         </span>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {metadata?.currentBranch && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-600/20 text-gray-400 border border-gray-500/30 font-mono">
+              <GitBranch className="w-3 h-3" />
+              {metadata.currentBranch}
+            </span>
+          )}
+
           {moduleCount > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30">
               <FolderOpen className="w-3 h-3" />
