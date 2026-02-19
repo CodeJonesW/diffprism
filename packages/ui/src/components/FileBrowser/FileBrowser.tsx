@@ -178,7 +178,7 @@ export function FileBrowser() {
                 ${
                   isSelected
                     ? "bg-accent/10 border-l-2 border-accent"
-                    : "border-l-2 border-transparent hover:bg-white/5"
+                    : "border-l-2 border-transparent hover:bg-text-primary/5"
                 }
               `}
             >
@@ -209,7 +209,7 @@ export function FileBrowser() {
                         e.stopPropagation();
                         cycleFileStatus(file.path);
                       }}
-                      className={`p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer ${
+                      className={`p-0.5 rounded hover:bg-text-primary/10 transition-colors cursor-pointer ${
                         icon
                           ? ""
                           : "opacity-0 group-hover:opacity-40"

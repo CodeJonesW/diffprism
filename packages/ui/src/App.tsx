@@ -6,9 +6,19 @@ import type { ReviewResult } from "./types";
 
 export default function App() {
   const { sendResult, connectionStatus } = useWebSocket();
-  const { diffSet, metadata } = useReviewStore();
+  const { diffSet, metadata, theme } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
+
+  // Sync dark class on <html> with store theme
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("dark");
+    } else {
+      root.classList.remove("dark");
+    }
+  }, [theme]);
 
   function handleSubmit(result: ReviewResult) {
     sendResult(result);

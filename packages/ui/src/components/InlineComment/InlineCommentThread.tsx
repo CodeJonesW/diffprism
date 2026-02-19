@@ -43,7 +43,7 @@ export function InlineCommentThread({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   return (
-    <div className="border-t border-border bg-[#161b22]">
+    <div className="border-t border-border bg-surface">
       {comments.map(({ comment, index }) => {
         if (editingIndex === index) {
           return (

@@ -14,6 +14,7 @@ import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2 } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread } from "../InlineComment";
+import { ThemeToggle } from "../ThemeToggle";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -323,7 +324,7 @@ export function DiffViewer() {
       const line = keyToLineMap[activeCommentKey];
       if (line !== undefined) {
         w[activeCommentKey] = (
-          <div className="border-t border-border bg-[#161b22]">
+          <div className="border-t border-border bg-surface">
             <InlineCommentForm
               onSave={(body, type) => {
                 addComment({ file: selectedFile, line, body, type });
@@ -463,7 +464,7 @@ function FileHeader({
               onClick={() => onViewModeChange("unified")}
               className={`p-1 ${
                 viewMode === "unified"
-                  ? "bg-white/10 text-text-primary"
+                  ? "bg-text-primary/10 text-text-primary"
                   : "text-text-secondary hover:text-text-primary"
               }`}
               title="Unified view"
@@ -474,7 +475,7 @@ function FileHeader({
               onClick={() => onViewModeChange("split")}
               className={`p-1 ${
                 viewMode === "split"
-                  ? "bg-white/10 text-text-primary"
+                  ? "bg-text-primary/10 text-text-primary"
                   : "text-text-secondary hover:text-text-primary"
               }`}
               title="Split view"
@@ -483,6 +484,7 @@ function FileHeader({
             </button>
           </div>
         )}
+        <ThemeToggle />
       </div>
     </div>
   );
