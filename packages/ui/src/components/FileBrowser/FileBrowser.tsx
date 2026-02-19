@@ -1,7 +1,15 @@
 import { useEffect, useCallback } from "react";
 import { useReviewStore } from "../../store/review";
-import { FileCode, FilePlus, FileMinus, FilePenLine } from "lucide-react";
-import type { DiffFile } from "../../types";
+import {
+  FileCode,
+  FilePlus,
+  FileMinus,
+  FilePenLine,
+  Eye,
+  CheckCircle,
+  AlertCircle,
+} from "lucide-react";
+import type { DiffFile, FileReviewStatus } from "../../types";
 
 function getStatusBadge(status: DiffFile["status"]) {
   switch (status) {
@@ -42,6 +50,20 @@ function getStatusIcon(status: DiffFile["status"]) {
   }
 }
 
+function getReviewStatusIcon(status: FileReviewStatus) {
+  const iconClass = "w-3.5 h-3.5 flex-shrink-0";
+  switch (status) {
+    case "unreviewed":
+      return null;
+    case "reviewed":
+      return <Eye className={`${iconClass} text-blue-400`} />;
+    case "approved":
+      return <CheckCircle className={`${iconClass} text-green-400`} />;
+    case "needs_changes":
+      return <AlertCircle className={`${iconClass} text-yellow-400`} />;
+  }
+}
+
 function basename(path: string): string {
   const parts = path.split("/");
   return parts[parts.length - 1];
@@ -54,7 +76,8 @@ function dirname(path: string): string {
 }
 
 export function FileBrowser() {
-  const { diffSet, selectedFile, selectFile } = useReviewStore();
+  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus } =
+    useReviewStore();
 
   const navigateFiles = useCallback(
     (direction: "up" | "down") => {
@@ -93,12 +116,17 @@ export function FileBrowser() {
       } else if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
         navigateFiles("down");
+      } else if (e.key === "s") {
+        e.preventDefault();
+        if (selectedFile) {
+          cycleFileStatus(selectedFile);
+        }
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [navigateFiles]);
+  }, [navigateFiles, selectedFile, cycleFileStatus]);
 
   if (!diffSet) return null;
 
@@ -172,6 +200,32 @@ export function FileBrowser() {
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
+                {(() => {
+                  const reviewStatus = fileStatuses[file.path] ?? "unreviewed";
+                  const icon = getReviewStatusIcon(reviewStatus);
+                  return (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        cycleFileStatus(file.path);
+                      }}
+                      className={`p-0.5 rounded hover:bg-white/10 transition-colors cursor-pointer ${
+                        icon
+                          ? ""
+                          : "opacity-0 group-hover:opacity-40"
+                      }`}
+                      title={
+                        icon
+                          ? `Status: ${reviewStatus} (click to cycle)`
+                          : "Mark as reviewed (click to cycle)"
+                      }
+                    >
+                      {icon ?? (
+                        <Eye className="w-3.5 h-3.5 text-text-secondary" />
+                      )}
+                    </button>
+                  );
+                })()}
                 {file.additions > 0 && (
                   <span className="text-green-400 text-xs font-mono">
                     +{file.additions}
