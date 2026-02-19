@@ -1,4 +1,5 @@
 import { BriefingBar } from "./BriefingBar";
+import { ReasoningPanel } from "./ReasoningPanel";
 import { FileBrowser } from "./FileBrowser";
 import { DiffViewer } from "./DiffViewer";
 import { ActionBar } from "./ActionBar";
@@ -12,6 +13,7 @@ export function ReviewView({ onSubmit }: ReviewViewProps) {
   return (
     <div className="h-screen flex flex-col bg-background">
       <BriefingBar />
+      <ReasoningPanel />
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar — File Browser */}
         <div className="w-[280px] flex-shrink-0">
