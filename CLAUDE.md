@@ -106,7 +106,7 @@ Add entries under the appropriate section with the version, rationale, and any l
 
 ## Roadmap
 
-### M1: Usable Review Experience — ~75% complete
+### M1: Usable Review Experience — ~80% complete
 - ~~Split diff view (side-by-side) with toggle~~ ✅ v0.6.0
 - ~~Inline line-level commenting (click any line to add comment)~~ ✅ v0.8.0
 - ~~Comment types: must_fix, suggestion, question, nitpick~~ ✅ v0.8.0
@@ -114,16 +114,21 @@ Add entries under the appropriate section with the version, rationale, and any l
 - ~~Agent reasoning display in context panel~~ ✅ v0.5.0
 - ~~Dark/light mode toggle~~ ✅ v0.9.0
 - ~~Keyboard shortcuts: j/k navigate files~~ ✅ v0.2.12
+- ~~`diffprism setup` — one-command Claude Code integration~~ ✅ v0.11.0
+- ~~`/review` skill for Claude Code~~ ✅ v0.11.0
 - Keyboard shortcuts: n/p changes, c to comment (#41)
 - Change narrative view — group files by story chapter (#43)
-- Async mode: `open_review({ mode: "async" })` returns review_id, poll with `review_status()` (#42)
 - Create PR from review UI (#23)
+
+### M1 (UI polish)
+- Color readability fix (#50)
 
 ### M2: Analysis + Triage — ~50% complete
 - ~~Enhanced deterministic analysis: complexity scoring, test coverage detection, pattern flags~~ ✅ v0.4.0
 - ~~Review briefing bar: summary stats, risk indicators, verification status~~ ✅ v0.3.0
 - Triage view: critical/notable/mechanical grouping + batch approve (#25)
 - Run tests/lint/typecheck from UI (#44)
+- Analysis enhancements: #51-68 (churn ratio, change concentration, net LOC, cross-package detection, type safety flags, error handling detection, security patterns, API surface detection, estimated review time, logic/boilerplate ratio, removed deps, lock file analysis, config file detection, commit structure analysis, renamed files highlighting, hardcoded values, comment tracking, dead code indicators)
 
 ### M3: Multi-Agent & Worktree Support (new)
 The core vision: developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer. See `docs/ux-design-notes.md` for full design notes.
@@ -159,7 +164,7 @@ The core vision: developers using git worktrees to run multiple agents in parall
 ## Plan Alignment
 
 DiffPrism has two planning documents that define the roadmap:
-- **`product-plan.md`** — Strategic product vision, milestones, and priorities
+- **`product-plan.md`** — Strategic product vision, market positioning, and directional roadmap
 - **`diffprism-technical-plan.md`** — Technical architecture decisions and implementation approach
 
 **Before starting feature work**, check both plans to confirm the work maps to an active milestone.

@@ -1,95 +1,76 @@
-# DiffPrism Product Plan
+# DiffPrism — Product Vision
+
+## The Problem
+
+The AI code review space has stratified into two tiers, and neither is built for how engineers actually work with agents.
+
+**PR-layer tools** — CodeRabbit, Qodo, Copilot PR Reviews, Bito — hook into GitHub webhooks and comment on pull requests after they're opened. They're mature, well-funded, and competing on context depth. But they arrive too late. By the time a PR exists, the code is already committed, pushed, and psychologically "done." Review becomes defense, not discovery.
+
+**Pre-PR CLI tools** — ZapCircle, diffray, various Claude Code plugins — run `git diff` locally, pipe it to an LLM, and dump feedback to the terminal. They're fast and frictionless, but they treat code review as a text problem. Reading a 400-line diff in a terminal is not reviewing it. There's no visual structure, no annotation layer, no way to track what you've looked at and what you haven't.
+
+**The moment nobody owns** is the one between agent output and pull request. Claude Code just rewrote your auth middleware across 8 files. Cursor just generated a new API endpoint with tests. You need to actually understand and approve those changes before they become a PR. That's a UI problem, not a CLI problem. It requires a purpose-built review surface — and nothing on the market provides one.
 
 ---
 
-## The Market Right Now (Feb 2026)
+## The Thesis
 
-The AI code review space has exploded but it's stratified into two clear tiers:
+DiffPrism is the purpose-built review surface for agent-generated code.
 
-**PR-layer tools** (CodeRabbit, Qodo/PR-Agent, Copilot PR Reviews, Bito) — these all hook into GitHub/GitLab webhooks and comment on PRs after they're opened. They're mature, well-funded, and competing on context depth (cross-repo awareness, system-level reasoning). CodeRabbit is the market leader for PR automation. Qodo is the enterprise play.
+Local-first. Visual. Zero-config. It opens a browser-based diff viewer — GitHub-quality syntax highlighting, split and unified views, inline commenting, file-level status tracking — directly from your working directory. No GitHub app install. No API keys. No PR required.
 
-**Pre-PR / local tools** (ZapCircle, diffray, review-now Claude Code plugin) — this is the newer, scrappier category. These run git diff locally, pipe it to an LLM, and give you feedback before you push. They're CLI-first, mostly single-developer tools.
+The insight is that code review for agent output is a fundamentally different activity than traditional PR review. The reviewer didn't write the code. They may not have even specified the approach. They need to build understanding from scratch, in real time, across a set of changes they didn't author. That demands a dedicated environment: one that combines the diff with the agent's reasoning, surfaces what matters, lets you annotate and approve file by file, and returns structured feedback to the agent so it can iterate.
 
-**DiffPrism's gap** — and your opportunity — is that nobody owns the visual, local-first review experience for agent-generated code. Every tool in category 2 is CLI-only. Every tool in category 1 requires a PR to exist. You're building for the moment between — when Claude Code or Cursor just wrote 400 lines across 8 files and you need to actually understand and approve those changes before they become a PR. That's a UI problem, not a CLI problem.
-
----
-
-## Phase 1: Own the Local Agent Review UX — COMPLETE
-
-Your core value prop is clear: *"GitHub-quality diff review for agent-generated code, before it's a PR."* The key differentiators to double down on:
-
-- [x] **Visual diff viewer** — split/unified view, syntax highlighting, file tree navigation. This is table stakes but it's what separates you from CLI tools.
-- [x] **Session-based review** — group changes by agent session/task, not just by git diff. When Claude Code runs a task, it touches N files. DiffPrism should understand that as a single reviewable unit.
-- [x] **Annotation layer** — let the engineer mark files as "reviewed," "needs changes," "skip." This is what makes it a review OS not just a diff viewer.
-- [x] **Local-first, zero config** — `npx diffprism` in any git repo, opens in browser. No GitHub app install, no API keys for the basic experience.
-- [x] **`diffprism setup`** — one-command Claude Code integration (MCP config, permissions, `/review` skill)
+DiffPrism is the IDE for code review. The diff viewer is the foundation. Everything else — analysis, triage, multi-agent support, GitHub integration, AI-powered annotations — layers on top of that surface.
 
 ---
 
-## Phase 2: Multi-Agent & Worktree Support — NOT STARTED
+## Where We Are
 
-The core vision: developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer. This is the immediate next unlock — as agent-driven development scales, engineers will have 2-5 agents working concurrently, each producing changes that need review.
+DiffPrism ships today as an npm package and Claude Code MCP integration. Run `npx diffprism review --staged` in any git repo and a browser tab opens with a full diff viewer. Or use `diffprism setup` to integrate with Claude Code in one command — the agent calls `open_review()`, the browser opens, you review, and your structured decision flows back to the agent automatically.
 
-- [ ] **Review session persistence** — save to disk, survive restarts
-- [ ] **Async review mode** — `open_review({ mode: "async" })` returns review_id, poll with `review_status()`
-- [ ] **Worktree detection & metadata** — identify branch, worktree path, agent context
-- [ ] **Multi-review dashboard** — single view of all active reviews across worktrees
-- [ ] **Review queuing** — don't flood the developer with N browser tabs
+The core review experience is solid. Split and unified diff views with syntax highlighting. Inline line-level commenting with typed comments (must-fix, suggestion, question, nitpick). File-level status tracking so you know what you've reviewed and what you haven't. An agent reasoning panel that shows why the changes were made. Dark and light mode. Keyboard navigation.
 
----
+The analysis engine runs deterministic checks on every review: file categorization, complexity scoring, test coverage gap detection, dependency change detection, pattern flags (leftover console.logs, TODOs, disabled tests). These surface in a briefing bar at the top of every review — a quick orientation before you dive into the diff.
 
-## Phase 3: GitHub PR Integration — The Big Unlock
-
-This is where your iframe/frame wrapper idea gets really interesting. Here's how I'd think about it architecturally:
-
-**The concept:** DiffPrism as a web app that can pull GitHub PRs via the API, render them in your own diff viewer with your own AI analysis layer on top — essentially a better PR review experience than GitHub's native one.
-
-**The review workbench vision** — a browser-based environment where:
-
-- [ ] **PR access** — the engineer opens a PR in DiffPrism (either via URL or OAuth-connected repo list)
-- [ ] **Native rendering** — DiffPrism renders the diff with its own viewer
-- [ ] **Embedded AI** — a Claude instance (via API, not literally iframe-ing claude.ai) can analyze the PR in context
-- [ ] **Conversational review** — the engineer can have a conversation with Claude about the PR — *"why did this change the auth middleware?" / "is this migration safe?" / "write me a test for this edge case"*
-- [ ] **Anchored responses** — Claude's responses are anchored to specific lines/files in the diff, not floating in a chat window
-
-This is not an iframe wrapping Claude. It's DiffPrism as the **orchestration layer** that:
-
-- [ ] Fetches PR data via GitHub API
-- [ ] Renders it in your diff UI
-- [ ] Pipes relevant context (diff hunks, file contents, repo structure) to Claude via the Anthropic API
-- [ ] Renders Claude's analysis inline in the diff view
-- [ ] Lets the engineer respond/iterate, with the conversation context maintained
-
-> Think of it less as "Claude in an iframe" and more as *"DiffPrism is the IDE for code review, Claude is the copilot inside it."*
+The tool dogfoods itself. Every change to this repo goes through DiffPrism review before it becomes a PR.
 
 ---
 
-## Phase 4: AI-Powered Analysis
+## Where We're Going
 
-Once the review surface is established across local, worktree, and GitHub contexts, layer in AI-powered analysis:
+### Multi-Agent Review
 
-- [ ] **Inline AI annotations** — security issues, logic bugs, style violations surfaced as comments alongside the diff (like CodeRabbit does on PRs, but locally and before push)
-- [ ] **Change summary generation** — auto-generate the PR description you'll use when you do push
-- [ ] **Risk scoring** — flag high-risk files (auth, payment, data models) so engineers know where to focus human attention
-- [ ] **Configurable review profiles** — `.diffprism.yml` with team-specific rules, similar to how diffray does agent configs
-- [ ] **Intent inference** — from agent reasoning + code context
-- [ ] **Convention detection** — from codebase patterns
+The immediate unlock. As agent-driven development scales, engineers will have 2-5 agents working concurrently across git worktrees, each producing changes that need review. DiffPrism becomes the unified review layer: persistent sessions that survive restarts, async review mode so agents don't block waiting for approval, worktree-aware metadata, and a multi-review dashboard that gives you a single view of all active reviews. No more N browser tabs. One surface, all your agent output.
+
+### AI-Powered Analysis
+
+The analysis engine today is deterministic — pattern matching, heuristics, file categorization. The next layer uses the Claude API for deep analysis: intent inference from agent reasoning and code context, convention detection from codebase patterns, risk assessment with explanations, and inline annotations that surface security issues, logic bugs, and style violations alongside the diff. Think CodeRabbit's analysis quality, but local and before push.
+
+### GitHub PR Integration
+
+DiffPrism as a review workbench for pull requests. Fetch PR data via the GitHub API, render it in DiffPrism's diff viewer with the full briefing experience, and layer in conversational review — ask Claude about the PR, get responses anchored to specific lines in the diff. Post your review back to GitHub when you're done. AI analysis stays private; only your human review comments hit the PR.
+
+### Team and Enterprise Workflows
+
+The progression from developer tool to team product. Configurable review profiles (`.diffprism.yml`) with team-specific rules. Convention learning that tracks what you consistently flag and turns patterns into automated checks. Org-level policies, review templates, approval workflows. Shareable convention configs so the whole team benefits from review patterns.
 
 ---
 
 ## Why This Wins
 
-The strategic moat here is the **review surface**. Every other AI code review tool is either:
+The strategic moat is the **review surface**. Every other AI code review tool renders its output in someone else's UI — GitHub's comment thread, your terminal, a VS Code sidebar. DiffPrism owns the environment where review happens. That's a fundamentally different position.
 
-- A GitHub bot that posts comments (you're reading reviews in GitHub's UI, which is mediocre)
-- A CLI that dumps text (you're reading reviews in your terminal)
-- An IDE extension (you're reading reviews in VS Code, which isn't built for review)
+GitHub bots post comments into GitHub's mediocre diff viewer. CLI tools dump text into your terminal. IDE extensions wedge review into an editor that wasn't built for it. DiffPrism is the place engineers go specifically to review code — purpose-built for that single activity, optimized for agent-generated changes, designed to amplify the human reviewer rather than replace them.
 
-DiffPrism would be the **purpose-built review environment** — the place engineers go specifically to review code, whether it's local agent output or remote PRs. That's a new category.
+The progression:
 
-### The Progression
+1. **Local diff viewer** — npm package, opens in browser, zero-config. Developer tool, bottom-up adoption. Engineers adopt it because it's the fastest way to review agent output.
+2. **Multi-agent review hub** — worktree support, async mode, dashboard. Power-user tool for agent-heavy workflows. Becomes essential infrastructure as teams scale agent usage.
+3. **PR review workbench + AI analysis** — GitHub integration, conversational review with Claude, deep analysis layer. Team product with SaaS potential.
+4. **Review OS** — org-level policies, convention learning, approval workflows, trust calibration. Enterprise product.
 
-- [x] **Local diff viewer** (npm package, opens in browser) → developer tool, bottom-up adoption
-- [ ] **Multi-agent review hub** (worktree support, async mode, dashboard) → power-user tool for agent-heavy workflows
-- [ ] **PR review app + AI analysis + collaborative conversation** → team product, SaaS revenue
-- [ ] **Review OS** with org-level policies, review templates, approval workflows → enterprise product
+Each layer builds on the one below it. The review surface is the foundation. Everything else is leverage.
+
+---
+
+*Feature tracking, milestones, and implementation details live in `diffprism-technical-plan.md`.*
