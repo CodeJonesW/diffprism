@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
+import { setup } from "./commands/setup.js";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -26,5 +27,12 @@ program
   .command("serve")
   .description("Start the MCP server for Claude Code integration")
   .action(serve);
+
+program
+  .command("setup")
+  .description("Configure DiffPrism for Claude Code integration")
+  .option("--global", "Install skill globally (~/.claude/skills/)")
+  .option("--force", "Overwrite existing configuration files")
+  .action(setup);
 
 program.parse();

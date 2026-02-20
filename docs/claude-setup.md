@@ -8,7 +8,30 @@ This guide walks you through configuring Claude Code and Claude Desktop to use D
 - **Git** — must be available on your PATH (DiffPrism shells out to `git diff`)
 - **A git repository** — DiffPrism operates on local git diffs, so run it inside a repo
 
-## Step 1: Install DiffPrism
+## Quick Setup (Recommended)
+
+Run this from your project root:
+
+```bash
+npx diffprism setup
+```
+
+This single command:
+- Creates `.mcp.json` with the DiffPrism MCP server config
+- Creates `.claude/settings.json` with auto-approve permissions
+- Installs a `/review` skill so you can type `/review` in Claude Code at any time
+
+After running, restart Claude Code to pick up the new configuration. The first time you use `/review`, Claude will ask your preferences (when to review, default diff scope, etc.) and save them to `diffprism.config.json`.
+
+**Options:**
+- `--global` — Install the `/review` skill globally (`~/.claude/skills/`) instead of project-level
+- `--force` — Overwrite existing configuration files
+
+## Manual Setup
+
+If you prefer to configure things manually, follow the steps below.
+
+### Step 1: Install DiffPrism
 
 **Option A: Use via npx (no install needed)**
 
@@ -32,9 +55,9 @@ cd diffprism
 pnpm install
 ```
 
-## Step 2: Configure the MCP Server
+### Step 2: Configure the MCP Server
 
-### Claude Code
+#### Claude Code
 
 Create or edit `.mcp.json` in your project root:
 
@@ -43,7 +66,7 @@ Create or edit `.mcp.json` in your project root:
   "mcpServers": {
     "diffprism": {
       "command": "npx",
-      "args": ["diffprism", "serve"]
+      "args": ["diffprism@latest", "serve"]
     }
   }
 }
@@ -63,7 +86,7 @@ This tells Claude Code to start DiffPrism's MCP server when it needs the `open_r
 > }
 > ```
 
-### Claude Desktop
+#### Claude Desktop
 
 Edit the Claude Desktop config file:
 
@@ -80,7 +103,7 @@ Add the `diffprism` entry under `mcpServers`:
   "mcpServers": {
     "diffprism": {
       "command": "npx",
-      "args": ["diffprism", "serve"]
+      "args": ["diffprism@latest", "serve"]
     }
   }
 }
@@ -88,7 +111,7 @@ Add the `diffprism` entry under `mcpServers`:
 
 Restart Claude Desktop after saving.
 
-## Step 3: Auto-Approve the Tool (Optional)
+### Step 3: Auto-Approve the Tool (Optional)
 
 By default, Claude Code prompts for confirmation each time the `open_review` tool is called. To skip the prompt, add the tool to your permissions allowlist.
 
@@ -110,7 +133,7 @@ Same format, but applies to all projects.
 
 Commit the project-level file to your repo so your whole team gets the same config.
 
-## Step 4: Verify the Setup
+### Step 4: Verify the Setup
 
 Once configured, ask Claude to run a review:
 
@@ -149,9 +172,29 @@ The MCP server exposes one tool: **`open_review`**
 
 `decision` is one of: `approved`, `changes_requested`, or `approved_with_comments`.
 
+## The `/review` Skill
+
+If you ran `npx diffprism setup`, the `/review` skill is already installed. Type `/review` in Claude Code to open a DiffPrism review at any time.
+
+On first use, Claude will ask your preferences and save them to `diffprism.config.json`:
+
+```json
+{
+  "reviewTrigger": "ask",
+  "defaultDiffScope": "all",
+  "includeReasoning": true
+}
+```
+
+- `reviewTrigger` — When Claude should open reviews automatically: `"ask"` (only when asked), `"before_commit"` (before every commit), `"always"` (after every code change)
+- `defaultDiffScope` — What to diff by default: `"all"`, `"staged"`, or `"unstaged"`
+- `includeReasoning` — Whether Claude includes its reasoning in the review
+
+To re-run onboarding, delete `diffprism.config.json` and use `/review` again.
+
 ## Adding DiffPrism to Your CLAUDE.md
 
-To make Claude automatically use DiffPrism for code review, add instructions to your project's `CLAUDE.md`:
+If you prefer manual configuration over the `/review` skill, add instructions to your project's `CLAUDE.md`:
 
 ```markdown
 ## Code Review
