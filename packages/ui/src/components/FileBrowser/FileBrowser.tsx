@@ -16,22 +16,22 @@ function getStatusBadge(status: DiffFile["status"]) {
     case "added":
       return {
         label: "A",
-        className: "bg-green-600/20 text-green-400 border-green-500/30",
+        className: "bg-green-100 dark:bg-green-600/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30",
       };
     case "modified":
       return {
         label: "M",
-        className: "bg-yellow-600/20 text-yellow-400 border-yellow-500/30",
+        className: "bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30",
       };
     case "deleted":
       return {
         label: "D",
-        className: "bg-red-600/20 text-red-400 border-red-500/30",
+        className: "bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border-red-300 dark:border-red-500/30",
       };
     case "renamed":
       return {
         label: "R",
-        className: "bg-purple-600/20 text-purple-400 border-purple-500/30",
+        className: "bg-purple-100 dark:bg-purple-600/20 text-purple-700 dark:text-purple-400 border-purple-300 dark:border-purple-500/30",
       };
   }
 }
@@ -40,13 +40,13 @@ function getStatusIcon(status: DiffFile["status"]) {
   const iconClass = "w-4 h-4 flex-shrink-0";
   switch (status) {
     case "added":
-      return <FilePlus className={`${iconClass} text-green-400`} />;
+      return <FilePlus className={`${iconClass} text-green-700 dark:text-green-400`} />;
     case "deleted":
-      return <FileMinus className={`${iconClass} text-red-400`} />;
+      return <FileMinus className={`${iconClass} text-red-700 dark:text-red-400`} />;
     case "modified":
-      return <FilePenLine className={`${iconClass} text-yellow-400`} />;
+      return <FilePenLine className={`${iconClass} text-yellow-700 dark:text-yellow-400`} />;
     case "renamed":
-      return <FileCode className={`${iconClass} text-purple-400`} />;
+      return <FileCode className={`${iconClass} text-purple-700 dark:text-purple-400`} />;
   }
 }
 
@@ -56,11 +56,11 @@ function getReviewStatusIcon(status: FileReviewStatus) {
     case "unreviewed":
       return null;
     case "reviewed":
-      return <Eye className={`${iconClass} text-blue-400`} />;
+      return <Eye className={`${iconClass} text-blue-700 dark:text-blue-400`} />;
     case "approved":
-      return <CheckCircle className={`${iconClass} text-green-400`} />;
+      return <CheckCircle className={`${iconClass} text-green-700 dark:text-green-400`} />;
     case "needs_changes":
-      return <AlertCircle className={`${iconClass} text-yellow-400`} />;
+      return <AlertCircle className={`${iconClass} text-yellow-700 dark:text-yellow-400`} />;
   }
 }
 
@@ -149,12 +149,12 @@ export function FileBrowser() {
             {diffSet.files.length} file{diffSet.files.length !== 1 ? "s" : ""}
           </span>
           {totalAdditions > 0 && (
-            <span className="text-green-400 text-xs font-mono">
+            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
               +{totalAdditions}
             </span>
           )}
           {totalDeletions > 0 && (
-            <span className="text-red-400 text-xs font-mono">
+            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
               -{totalDeletions}
             </span>
           )}
@@ -193,7 +193,7 @@ export function FileBrowser() {
                   {basename(file.path)}
                 </div>
                 {dir && (
-                  <div className="text-xs text-text-secondary/60 truncate">
+                  <div className="text-xs text-text-secondary/80 dark:text-text-secondary/60 truncate">
                     {dir}
                   </div>
                 )}
@@ -227,12 +227,12 @@ export function FileBrowser() {
                   );
                 })()}
                 {file.additions > 0 && (
-                  <span className="text-green-400 text-xs font-mono">
+                  <span className="text-green-700 dark:text-green-400 text-xs font-mono">
                     +{file.additions}
                   </span>
                 )}
                 {file.deletions > 0 && (
-                  <span className="text-red-400 text-xs font-mono">
+                  <span className="text-red-700 dark:text-red-400 text-xs font-mono">
                     -{file.deletions}
                   </span>
                 )}

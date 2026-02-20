@@ -449,12 +449,12 @@ function FileHeader({
       </span>
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
         {additions !== undefined && additions > 0 && (
-          <span className="text-green-400 text-xs font-mono">
+          <span className="text-green-700 dark:text-green-400 text-xs font-mono">
             +{additions}
           </span>
         )}
         {deletions !== undefined && deletions > 0 && (
-          <span className="text-red-400 text-xs font-mono">
+          <span className="text-red-700 dark:text-red-400 text-xs font-mono">
             -{deletions}
           </span>
         )}
