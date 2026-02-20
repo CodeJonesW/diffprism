@@ -3,5 +3,5 @@ dist
 ui-dist
 .vite
 *.tsbuildinfo
-.claude/skills
+
 inline-commenting

@@ -544,55 +544,71 @@ diffprism/
 
 ## Milestone Plan
 
-### M0: Foundation (Week 1-2)
+### M0: Foundation — COMPLETE
 
 **Goal:** Open a browser-based diff viewer from both CLI and Claude Code via MCP.
 
-- [ ] Monorepo scaffold with pnpm workspaces
-- [ ] Core pipeline: accepts a diff ref, produces DiffSet, serves UI, collects result
-- [ ] Git engine: parse `git diff` output into DiffSet
-- [ ] Minimal React UI: file list + unified diff view with syntax highlighting
-- [ ] WebSocket bridge: server pushes DiffSet to UI
-- [ ] Action bar: Approve / Request Changes buttons
-- [ ] WebSocket return: UI sends ReviewResult back to server
-- [ ] Standalone CLI: `diffprism review` / `diffprism review --staged` / `diffprism review HEAD~3..HEAD`
-- [ ] MCP server: thin wrapper that calls core pipeline, exposes `open_review` tool (blocking mode)
-- [ ] MCP serve command: `diffprism serve` starts the MCP server for Claude Code
+- [x] Monorepo scaffold with pnpm workspaces
+- [x] Core pipeline: accepts a diff ref, produces DiffSet, serves UI, collects result
+- [x] Git engine: parse `git diff` output into DiffSet
+- [x] Minimal React UI: file list + unified diff view with syntax highlighting
+- [x] WebSocket bridge: server pushes DiffSet to UI
+- [x] Action bar: Approve / Request Changes buttons
+- [x] WebSocket return: UI sends ReviewResult back to server
+- [x] Standalone CLI: `diffprism review` / `diffprism review --staged` / `diffprism review HEAD~3..HEAD`
+- [x] MCP server: thin wrapper that calls core pipeline, exposes `open_review` tool (blocking mode)
+- [x] MCP serve command: `diffprism serve` starts the MCP server for Claude Code
 
 **Demo:** Two paths work:
 - `diffprism review --staged` → browser opens with diff → engineer clicks Approve → result prints to stdout
 - Claude Code calls `open_review` → browser opens → engineer clicks Approve → Claude Code receives structured result
 
-### M1: Usable Review Experience (Week 3-4)
+### M1: Usable Review Experience — ~75% COMPLETE
 
 **Goal:** An experience that's genuinely better than reading diffs in the terminal.
 
-- [ ] Split diff view (side-by-side) with toggle
-- [ ] Inline commenting: click any line to add a comment
-- [ ] Comment types: must_fix, suggestion, question, nitpick
-- [ ] File-level status tracking (reviewed, approved, needs changes)
-- [ ] Agent reasoning display in context panel
-- [ ] Change narrative view: group files by story chapter
-- [ ] Async mode: `open_review({ mode: "async" })` returns review_id, `review_status()` polls
-- [ ] Dark mode (default) with light mode toggle
-- [ ] Keyboard shortcuts: j/k navigate files, n/p navigate changes, c to comment
+- [x] Split diff view (side-by-side) with toggle *(v0.6.0)*
+- [x] Inline commenting: click any line to add a comment *(v0.8.0)*
+- [x] Comment types: must_fix, suggestion, question, nitpick *(v0.8.0)*
+- [x] File-level status tracking (reviewed, approved, needs changes) *(v0.7.0)*
+- [x] Agent reasoning display in context panel *(v0.5.0)*
+- [x] Dark mode (default) with light mode toggle *(v0.9.0)*
+- [x] Keyboard shortcuts: j/k navigate files *(v0.2.12)*
+- [x] `diffprism setup` command — one-step Claude Code integration *(v0.11.0)*
+- [x] `/review` skill for Claude Code *(v0.11.0)*
+- [ ] Keyboard shortcuts: n/p navigate changes, c to comment (#41)
+- [ ] Change narrative view: group files by story chapter (#43)
+- [ ] Async mode: `open_review({ mode: "async" })` returns review_id, `review_status()` polls (#42)
+- [ ] Create PR from review UI (#23)
 
-### M2: Analysis + Triage (Week 5-6)
+### M2: Analysis + Triage — ~50% COMPLETE
 
 **Goal:** The tool starts doing prep work for the reviewer.
 
-- [ ] Deterministic analysis engine:
-  - File categorization (new, modified, deleted, renamed)
-  - Change complexity scoring (lines changed, cyclomatic delta)
-  - Test coverage detection (does changed code have test changes?)
-  - Pattern flags (console.log, TODO, hardcoded values)
-  - Import/dependency change detection
-- [ ] Review briefing bar: summary stats, risk indicators, verification status
-- [ ] Triage view: critical / notable / mechanical grouping
-- [ ] Batch approve mechanical changes
-- [ ] Run tests/lint/typecheck from UI and display results
+- [x] Deterministic analysis engine *(v0.4.0)*:
+  - [x] File categorization (new, modified, deleted, renamed)
+  - [x] Language detection
+  - [x] Line count / complexity scoring (1-10 scale)
+  - [x] Test coverage gap detection (source files without corresponding test changes)
+  - [x] Pattern flags (console.log, TODO/FIXME, debugger, disabled tests)
+  - [x] Import/dependency change detection
+- [x] Review briefing bar: summary stats, risk indicators, verification status *(v0.3.0)*
+- [ ] Triage view: critical / notable / mechanical grouping + batch approve (#25)
+- [ ] Run tests/lint/typecheck from UI and display results (#44)
 
-### M3: GitHub Integration — Read (Week 7-8)
+### M3: Multi-Agent & Worktree Support — NOT STARTED
+
+**Goal:** Support developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer.
+
+- [ ] Review session persistence — save to disk, survive restarts (#47)
+- [ ] Async review mode — fire-and-forget + polling (#42)
+- [ ] Worktree detection & metadata — identify branch, worktree path, agent context (#45)
+- [ ] Multi-review dashboard — single view of all active reviews across worktrees (#46)
+- [ ] Review queuing — don't flood the developer with N browser tabs
+
+**Build order:** #47 (persistence) → #42 (async) → #45 (worktree detection) → #46 (dashboard)
+
+### M4: GitHub Integration — Read — NOT STARTED
 
 **Goal:** Review GitHub PRs in DiffPrism with the full briefing experience.
 
@@ -603,7 +619,7 @@ diffprism/
 - [ ] CLI: `diffprism review owner/repo#123`
 - [ ] MCP: `open_pr_review({ repo: "owner/repo", pr_number: 123 })`
 
-### M4: GitHub Integration — Write (Week 9-10)
+### M5: GitHub Integration — Write
 
 **Goal:** DiffPrism becomes your PR review workflow.
 
@@ -612,7 +628,7 @@ diffprism/
 - [ ] Sync comment threads: replies in DiffPrism appear on GitHub
 - [ ] Private AI annotations: never posted to GitHub, only visible locally
 
-### M5: AI-Powered Analysis (Week 11-12)
+### M6: AI-Powered Analysis
 
 **Goal:** The briefing gets smart.
 

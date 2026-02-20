@@ -78,6 +78,8 @@ export interface TestCoverageGap {
   testFile: string | null;
 }
 
+export type SecuritySeverity = "critical" | "warning";
+
 export interface PatternFlag {
   file: string;
   line: number;
@@ -88,8 +90,15 @@ export interface PatternFlag {
     | "console"
     | "debug"
     | "disabled_test"
-    | "large_file";
+    | "large_file"
+    | "eval"
+    | "inner_html"
+    | "sql_injection"
+    | "exec"
+    | "hardcoded_secret"
+    | "insecure_url";
   content: string;
+  severity?: SecuritySeverity;
 }
 
 export interface ReviewBriefing {

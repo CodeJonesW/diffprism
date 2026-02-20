@@ -10,6 +10,7 @@ export type {
   ComplexityScore,
   TestCoverageGap,
   PatternFlag,
+  SecuritySeverity,
   ReviewBriefing,
   ReviewInitPayload,
   ReviewMetadata,
