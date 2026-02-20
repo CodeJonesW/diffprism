@@ -156,6 +156,24 @@ The core vision: developers using git worktrees to run multiple agents in parall
 
 ---
 
+## Plan Alignment
+
+DiffPrism has two planning documents that define the roadmap:
+- **`product-plan.md`** — Strategic product vision, milestones, and priorities
+- **`diffprism-technical-plan.md`** — Technical architecture decisions and implementation approach
+
+**Before starting feature work**, check both plans to confirm the work maps to an active milestone.
+
+**Flag misalignment when:**
+- Work targets a feature outside the current active milestones (M1/M2)
+- The plans contradict each other (e.g., different phase ordering, conflicting scope)
+- CLAUDE.md `## Roadmap` has drifted from the plan files (missing items, wrong status)
+- A request pulls in future-phase work (M4+) without explicit user approval
+
+Use **`/align`** for a deeper consistency check across plans, current work, and open issues.
+
+---
+
 ## Developer Agent Workflow
 
 When asked to "tackle issues" or "work on issues", follow this loop:
