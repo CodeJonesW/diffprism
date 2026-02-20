@@ -20,45 +20,20 @@ DiffPrism gives you a visual review step for AI-written code — stage your chan
 
 ### Use with Claude Code (recommended)
 
-**1. Add the MCP server** — create `.mcp.json` in your project root:
+Run this from your project root:
 
-```json
-{
-  "mcpServers": {
-    "diffprism": {
-      "command": "npx",
-      "args": ["diffprism", "serve"]
-    }
-  }
-}
+```bash
+npx diffprism setup
 ```
 
-**2. Auto-approve the tool** (optional) — add to `.claude/settings.json` so Claude can open reviews without prompting:
+This single command configures everything:
+- Creates `.mcp.json` with the DiffPrism MCP server
+- Creates `.claude/settings.json` with auto-approve permissions
+- Installs a `/review` skill so you can type `/review` in Claude Code at any time
 
-```json
-{
-  "permissions": {
-    "allow": [
-      "mcp__diffprism__open_review"
-    ]
-  }
-}
-```
+After running, restart Claude Code. The first time you use `/review`, Claude will ask your preferences and save them to `diffprism.config.json`.
 
-**3. Tell Claude to use it** — add to your project's `CLAUDE.md`:
-
-```markdown
-## Code Review
-
-Before committing changes, use the diffprism MCP tool to open a review:
-- Call `open_review` with the appropriate `diff_ref` (e.g. `"staged"`, `"HEAD~1..HEAD"`)
-- Include a `title` and `description` summarizing the changes
-- Wait for the user's review decision before proceeding
-```
-
-That's it. Claude will now open a browser-based review before committing. You review the diff, leave comments, and the result goes back to Claude as structured JSON.
-
-See the [full setup guide](docs/claude-setup.md) for Claude Desktop config, troubleshooting, and advanced options.
+See the [full setup guide](docs/claude-setup.md) for manual configuration, Claude Desktop config, troubleshooting, and advanced options.
 
 ### Use from the CLI
 
