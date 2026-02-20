@@ -4,6 +4,7 @@ import type {
   ComplexityScore,
   TestCoverageGap,
   PatternFlag,
+  SecuritySeverity,
 } from "@diffprism/core";
 
 // ─── File Categorization ───
@@ -414,6 +415,94 @@ export function detectPatterns(files: DiffFile[]): PatternFlag[] {
 
   // Sort by file then line number
   results.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+
+  return results;
+}
+
+// ─── Security Pattern Detection ───
+
+type SecurityPatternType = PatternFlag["pattern"];
+
+interface SecurityPatternMatcher {
+  pattern: SecurityPatternType;
+  severity: SecuritySeverity;
+  test: (line: string) => boolean;
+}
+
+const SECURITY_MATCHERS: SecurityPatternMatcher[] = [
+  {
+    pattern: "eval",
+    severity: "critical",
+    test: (l) => /\beval\s*\(/.test(l),
+  },
+  {
+    pattern: "inner_html",
+    severity: "warning",
+    test: (l) => /\.innerHTML\b|dangerouslySetInnerHTML/.test(l),
+  },
+  {
+    pattern: "sql_injection",
+    severity: "critical",
+    test: (l) =>
+      /`[^`]*\b(SELECT|INSERT|UPDATE|DELETE)\b/i.test(l) ||
+      /\b(SELECT|INSERT|UPDATE|DELETE)\b[^`]*\$\{/i.test(l),
+  },
+  {
+    pattern: "exec",
+    severity: "critical",
+    test: (l) =>
+      /child_process/.test(l) ||
+      /\bexec\s*\(/.test(l) ||
+      /\bexecSync\s*\(/.test(l),
+  },
+  {
+    pattern: "hardcoded_secret",
+    severity: "critical",
+    test: (l) =>
+      /\b(token|secret|api_key|apikey|password|passwd|credential)\s*=\s*["']/i.test(l),
+  },
+  {
+    pattern: "insecure_url",
+    severity: "warning",
+    test: (l) => /http:\/\/(?!localhost|127\.0\.0\.1|0\.0\.0\.0)/.test(l),
+  },
+];
+
+/**
+ * Scan added lines for security-sensitive patterns like eval(), innerHTML,
+ * SQL injection, exec, hardcoded secrets, and insecure URLs.
+ */
+export function detectSecurityPatterns(files: DiffFile[]): PatternFlag[] {
+  const results: PatternFlag[] = [];
+
+  for (const file of files) {
+    for (const hunk of file.hunks) {
+      for (const change of hunk.changes) {
+        if (change.type !== "add") continue;
+
+        for (const matcher of SECURITY_MATCHERS) {
+          if (matcher.test(change.content)) {
+            results.push({
+              file: file.path,
+              line: change.lineNumber,
+              pattern: matcher.pattern,
+              content: change.content.trim(),
+              severity: matcher.severity,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by severity (critical first) then file then line
+  results.sort((a, b) => {
+    const severityOrder = { critical: 0, warning: 1 };
+    const aSev = severityOrder[a.severity!];
+    const bSev = severityOrder[b.severity!];
+    if (aSev !== bSev) return aSev - bSev;
+    return a.file.localeCompare(b.file) || a.line - b.line;
+  });
 
   return results;
 }

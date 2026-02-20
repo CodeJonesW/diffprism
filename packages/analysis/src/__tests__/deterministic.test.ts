@@ -11,6 +11,7 @@ import {
   computeComplexityScores,
   detectTestCoverageGaps,
   detectPatterns,
+  detectSecurityPatterns,
 } from "../deterministic.js";
 
 function makeFile(overrides: Partial<DiffFile> = {}): DiffFile {
@@ -392,6 +393,192 @@ describe("detectPatterns", () => {
     expect(flags).toHaveLength(1);
     expect(flags[0].pattern).toBe("debug");
     expect(flags[0].line).toBe(5);
+  });
+});
+
+describe("detectSecurityPatterns", () => {
+  it("detects eval() calls", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  const result = eval(userInput);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags).toHaveLength(1);
+    expect(flags[0].pattern).toBe("eval");
+    expect(flags[0].severity).toBe("critical");
+  });
+
+  it("detects innerHTML and dangerouslySetInnerHTML", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  el.innerHTML = userInput;' },
+              { type: "add", lineNumber: 2, content: '  <div dangerouslySetInnerHTML={{ __html: data }} />' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags).toHaveLength(2);
+    expect(flags.every((f) => f.pattern === "inner_html")).toBe(true);
+    expect(flags.every((f) => f.severity === "warning")).toBe(true);
+  });
+
+  it("detects SQL injection in template literals", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  const q = `SELECT * FROM users WHERE id = ${userId}`;" },
+              { type: "add", lineNumber: 2, content: "  db.query(`INSERT INTO logs VALUES (${msg})`);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags).toHaveLength(2);
+    expect(flags.every((f) => f.pattern === "sql_injection")).toBe(true);
+    expect(flags.every((f) => f.severity === "critical")).toBe(true);
+  });
+
+  it("detects child_process.exec and execSync", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const { exec } = require("child_process");' },
+              { type: "add", lineNumber: 2, content: "  execSync(command);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags.some((f) => f.pattern === "exec")).toBe(true);
+    expect(flags.filter((f) => f.pattern === "exec").every((f) => f.severity === "critical")).toBe(true);
+  });
+
+  it("detects hardcoded secrets", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 3,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const token = "abc123secret";' },
+              { type: "add", lineNumber: 2, content: "  const api_key = 'sk-1234';" },
+              { type: "add", lineNumber: 3, content: '  const password = "hunter2";' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags.filter((f) => f.pattern === "hardcoded_secret")).toHaveLength(3);
+    expect(flags.every((f) => f.severity === "critical")).toBe(true);
+  });
+
+  it("detects insecure http:// URLs but allows localhost", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 3,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const api = "http://example.com/api";' },
+              { type: "add", lineNumber: 2, content: '  const local = "http://localhost:3000";' },
+              { type: "add", lineNumber: 3, content: '  const loopback = "http://127.0.0.1:8080";' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags.filter((f) => f.pattern === "insecure_url")).toHaveLength(1);
+    expect(flags[0].severity).toBe("warning");
+    expect(flags[0].content).toContain("example.com");
+  });
+
+  it("ignores security patterns in deleted lines", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 2, newStart: 1, newLines: 0,
+            changes: [
+              { type: "delete", lineNumber: 1, content: "  eval(code);" },
+              { type: "delete", lineNumber: 2, content: '  const secret = "abc123";' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags).toHaveLength(0);
+  });
+
+  it("sorts critical before warning", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const api = "http://example.com";' },
+              { type: "add", lineNumber: 2, content: "  eval(input);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags.length).toBeGreaterThanOrEqual(2);
+    expect(flags[0].severity).toBe("critical");
+    expect(flags[flags.length - 1].severity).toBe("warning");
+  });
+
+  it("returns empty for clean code", () => {
+    const files = [
+      makeFile({
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 2,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const x = 1;' },
+              { type: "add", lineNumber: 2, content: '  return x + 2;' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const flags = detectSecurityPatterns(files);
+
+    expect(flags).toHaveLength(0);
   });
 });
 

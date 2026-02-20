@@ -25,7 +25,9 @@ export function BriefingBar() {
   const moduleCount = impact.affectedModules.length;
   const highComplexity = complexity?.filter((c) => c.score >= 5) ?? [];
   const coverageGaps = testCoverage?.filter((t) => t.testFile === null) ?? [];
-  const patternCount = patterns?.length ?? 0;
+  const securityFlags = patterns?.filter((p) => p.severity) ?? [];
+  const nonSecurityPatterns = patterns?.filter((p) => !p.severity) ?? [];
+  const patternCount = nonSecurityPatterns.length;
 
   return (
     <div className="bg-surface border-b border-border flex-shrink-0">
@@ -39,6 +41,13 @@ export function BriefingBar() {
         </span>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {securityFlags.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-600/20 text-red-400 border border-red-500/30 font-semibold">
+              <ShieldAlert className="w-3 h-3" />
+              {securityFlags.length} security flag{securityFlags.length !== 1 ? "s" : ""}
+            </span>
+          )}
+
           {metadata?.currentBranch && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-600/20 text-gray-400 border border-gray-500/30 font-mono">
               <GitBranch className="w-3 h-3" />
@@ -85,7 +94,7 @@ export function BriefingBar() {
           {patternCount > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-600/20 text-purple-400 border border-purple-500/30">
               <Search className="w-3 h-3" />
-              {patternCount} flag{patternCount !== 1 ? "s" : ""}
+              {patternCount} pattern{patternCount !== 1 ? "s" : ""}
             </span>
           )}
 
@@ -100,6 +109,44 @@ export function BriefingBar() {
       {/* Expanded details */}
       {expanded && (
         <div className="px-4 pb-3 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-border/50 pt-3">
+          {/* Security Flags */}
+          {securityFlags.length > 0 && (
+            <div className="col-span-2">
+              <h4 className="text-red-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+                <ShieldAlert className="w-3.5 h-3.5" />
+                Security Flags
+              </h4>
+              <ul className="space-y-0.5">
+                {securityFlags.map((p, i) => (
+                  <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
+                    <span
+                      className={`inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 ${
+                        p.severity === "critical"
+                          ? "bg-red-600/20 text-red-400 border border-red-500/30"
+                          : "bg-yellow-600/20 text-yellow-400 border border-yellow-500/30"
+                      }`}
+                    >
+                      {p.pattern.replace("_", " ")}
+                    </span>
+                    <span
+                      className={`text-[10px] font-medium uppercase mr-1.5 ${
+                        p.severity === "critical" ? "text-red-400" : "text-yellow-400"
+                      }`}
+                    >
+                      {p.severity}
+                    </span>
+                    <span className="font-mono text-text-secondary">
+                      {p.file}:{p.line}
+                    </span>
+                    <span className="text-text-secondary ml-1 truncate">
+                      — {p.content}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Affected Modules */}
           {impact.affectedModules.length > 0 && (
             <div>
@@ -221,14 +268,14 @@ export function BriefingBar() {
           )}
 
           {/* Pattern Flags */}
-          {patterns && patterns.length > 0 && (
+          {nonSecurityPatterns.length > 0 && (
             <div>
               <h4 className="text-purple-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <Search className="w-3.5 h-3.5" />
                 Pattern Flags
               </h4>
               <ul className="space-y-0.5">
-                {patterns.map((p, i) => (
+                {nonSecurityPatterns.map((p, i) => (
                   <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
                     <span className="inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 bg-purple-600/20 text-purple-400 border border-purple-500/30">
                       {p.pattern}

@@ -10,6 +10,7 @@ import {
   computeComplexityScores,
   detectTestCoverageGaps,
   detectPatterns,
+  detectSecurityPatterns,
 } from "./deterministic.js";
 
 export {
@@ -22,6 +23,7 @@ export {
   computeComplexityScores,
   detectTestCoverageGaps,
   detectPatterns,
+  detectSecurityPatterns,
 } from "./deterministic.js";
 
 /**
@@ -38,7 +40,9 @@ export function analyze(diffSet: DiffSet): ReviewBriefing {
   const summary = generateSummary(files);
   const complexity = computeComplexityScores(files);
   const testCoverage = detectTestCoverageGaps(files);
-  const patterns = detectPatterns(files);
+  const codePatterns = detectPatterns(files);
+  const securityPatterns = detectSecurityPatterns(files);
+  const patterns = [...securityPatterns, ...codePatterns];
 
   return {
     summary,
