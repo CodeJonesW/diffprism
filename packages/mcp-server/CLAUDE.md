@@ -26,12 +26,18 @@ npx tsx packages/mcp-server/src/index.ts
 # Via CLI
 diffprism serve
 
-# Claude Code config (~/.claude.json)
+# Recommended: auto-configure Claude Code integration
+npx diffprism setup
+```
+
+For manual configuration, create `.mcp.json` in your project root:
+
+```json
 {
   "mcpServers": {
     "diffprism": {
       "command": "npx",
-      "args": ["tsx", "/path/to/diffprism/cli/src/index.ts", "serve"]
+      "args": ["diffprism@latest", "serve"]
     }
   }
 }

@@ -13,7 +13,7 @@ packages/analysis   — Deterministic review briefing (no deps beyond core types
 packages/ui         — React 19 + Vite 6 + Tailwind 3 + Zustand 5 + react-diff-view + refractor
 packages/mcp-server — MCP tool server (open_review), @modelcontextprotocol/sdk + zod
 packages/github     — Placeholder (M3+)
-cli/                — Commander CLI (review, serve commands), bin shim using tsx
+cli/                — Commander CLI (review, serve, setup commands), bin shim using tsx
 ```
 
 **Dependency flow:** `git` + `analysis` → `core` (pipeline) → `cli` + `mcp-server`. UI is standalone Vite app connected via WebSocket.
@@ -34,6 +34,8 @@ cli/                — Commander CLI (review, serve commands), bin shim using t
 | `packages/ui/src/hooks/useWebSocket.ts` | WS connection + state dispatch |
 | `packages/ui/vite.config.ts` | Vite config with inline PostCSS (Tailwind path fix) |
 | `packages/mcp-server/src/index.ts` | MCP server + open_review tool |
+| `cli/src/commands/setup.ts` | `diffprism setup` — one-command Claude Code integration |
+| `cli/src/templates/skill.ts` | Embedded `/review` skill content (SKILL.md template) |
 | `cli/bin/diffprism.mjs` | Executable shim (tsx → src/index.ts) |
 
 ## Key Commands
@@ -44,6 +46,7 @@ pnpm test                                       # Run all tests
 npx tsc --noEmit -p packages/X/tsconfig.json    # Type-check one package
 pnpm cli review --staged                        # CLI review (via tsx)
 pnpm cli serve                                  # Start MCP server
+pnpm cli setup                                  # Configure Claude Code integration
 ```
 
 ## Data Flow
@@ -79,6 +82,7 @@ pnpm cli serve                                  # Start MCP server
 - **packages/git/src/__tests__/parser.test.ts** — 9 suites: empty input, simple modify, add/delete/rename, binary, multi-hunk, no-newline, language detection
 - **packages/git/src/__tests__/fixtures/** — 5 diff fixture files
 - **packages/analysis/src/__tests__/deterministic.test.ts** — 6 suites: categorize, stats, modules, tests, deps, summary, full analyze
+- **cli/src/__tests__/setup.test.ts** — 5 suites: git root detection, .mcp.json, .claude/settings.json, skill file, summary output
 - **Run:** `pnpm test` or `npx vitest run` per package
 
 ## Lessons Learned (M0)
