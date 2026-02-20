@@ -49,9 +49,9 @@ export default function App() {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
         <div className="text-center">
-          <div className="w-16 h-16 rounded-full bg-green-600/20 border border-green-500/30 flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-600/20 border border-green-300 dark:border-green-500/30 flex items-center justify-center mx-auto mb-4">
             <svg
-              className="w-8 h-8 text-green-400"
+              className="w-8 h-8 text-green-700 dark:text-green-400"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -82,9 +82,9 @@ export default function App() {
         <div className="text-center">
           {connectionStatus === "disconnected" ? (
             <>
-              <div className="w-12 h-12 rounded-full bg-red-600/20 border border-red-500/30 flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-600/20 border border-red-300 dark:border-red-500/30 flex items-center justify-center mx-auto mb-4">
                 <svg
-                  className="w-6 h-6 text-red-400"
+                  className="w-6 h-6 text-red-700 dark:text-red-400"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"

@@ -42,35 +42,35 @@ export function BriefingBar() {
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {securityFlags.length > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-600/20 text-red-400 border border-red-500/30 font-semibold">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-500/30 font-semibold">
               <ShieldAlert className="w-3 h-3" />
               {securityFlags.length} security flag{securityFlags.length !== 1 ? "s" : ""}
             </span>
           )}
 
           {metadata?.currentBranch && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-600/20 text-gray-400 border border-gray-500/30 font-mono">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 font-mono">
               <GitBranch className="w-3 h-3" />
               {metadata.currentBranch}
             </span>
           )}
 
           {moduleCount > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-600/20 text-blue-400 border border-blue-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-500/30">
               <FolderOpen className="w-3 h-3" />
               {moduleCount} module{moduleCount !== 1 ? "s" : ""}
             </span>
           )}
 
           {hasBreaking && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-600/20 text-red-400 border border-red-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-500/30">
               <AlertTriangle className="w-3 h-3" />
               breaking
             </span>
           )}
 
           {hasNewDeps && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-500/30">
               <Package className="w-3 h-3" />
               {impact.newDependencies.length} new dep
               {impact.newDependencies.length !== 1 ? "s" : ""}
@@ -78,21 +78,21 @@ export function BriefingBar() {
           )}
 
           {highComplexity.length > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-600/20 text-orange-400 border border-orange-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-orange-100 dark:bg-orange-600/20 text-orange-700 dark:text-orange-400 border border-orange-300 dark:border-orange-500/30">
               <Gauge className="w-3 h-3" />
               {highComplexity.length} complex
             </span>
           )}
 
           {coverageGaps.length > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-500/30">
               <ShieldAlert className="w-3 h-3" />
               {coverageGaps.length} untested
             </span>
           )}
 
           {patternCount > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-600/20 text-purple-400 border border-purple-500/30">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-100 dark:bg-purple-600/20 text-purple-700 dark:text-purple-400 border border-purple-300 dark:border-purple-500/30">
               <Search className="w-3 h-3" />
               {patternCount} pattern{patternCount !== 1 ? "s" : ""}
             </span>
@@ -112,7 +112,7 @@ export function BriefingBar() {
           {/* Security Flags */}
           {securityFlags.length > 0 && (
             <div className="col-span-2">
-              <h4 className="text-red-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-red-700 dark:text-red-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5" />
                 Security Flags
               </h4>
@@ -122,15 +122,15 @@ export function BriefingBar() {
                     <span
                       className={`inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 ${
                         p.severity === "critical"
-                          ? "bg-red-600/20 text-red-400 border border-red-500/30"
-                          : "bg-yellow-600/20 text-yellow-400 border border-yellow-500/30"
+                          ? "bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-500/30"
+                          : "bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border border-yellow-300 dark:border-yellow-500/30"
                       }`}
                     >
                       {p.pattern.replace("_", " ")}
                     </span>
                     <span
                       className={`text-[10px] font-medium uppercase mr-1.5 ${
-                        p.severity === "critical" ? "text-red-400" : "text-yellow-400"
+                        p.severity === "critical" ? "text-red-700 dark:text-red-400" : "text-yellow-700 dark:text-yellow-400"
                       }`}
                     >
                       {p.severity}
@@ -190,13 +190,13 @@ export function BriefingBar() {
           {/* Breaking Changes */}
           {hasBreaking && (
             <div>
-              <h4 className="text-red-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-red-700 dark:text-red-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 Breaking Changes
               </h4>
               <ul className="space-y-0.5">
                 {impact.breakingChanges.map((bc) => (
-                  <li key={bc} className="text-red-400 text-xs">
+                  <li key={bc} className="text-red-700 dark:text-red-400 text-xs">
                     {bc}
                   </li>
                 ))}
@@ -207,7 +207,7 @@ export function BriefingBar() {
           {/* New Dependencies */}
           {hasNewDeps && (
             <div>
-              <h4 className="text-yellow-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-yellow-700 dark:text-yellow-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <Package className="w-3.5 h-3.5" />
                 New Dependencies
               </h4>
@@ -227,7 +227,7 @@ export function BriefingBar() {
           {/* High Complexity */}
           {highComplexity.length > 0 && (
             <div>
-              <h4 className="text-orange-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-orange-700 dark:text-orange-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <Gauge className="w-3.5 h-3.5" />
                 High Complexity
               </h4>
@@ -235,7 +235,7 @@ export function BriefingBar() {
                 {highComplexity.map((c) => (
                   <li key={c.path} className="text-text-primary text-xs">
                     <span className="font-mono">{c.path}</span>
-                    <span className="text-orange-400 ml-1">({c.score}/10)</span>
+                    <span className="text-orange-700 dark:text-orange-400 ml-1">({c.score}/10)</span>
                     {c.factors.length > 0 && (
                       <span className="text-text-secondary ml-1">
                         — {c.factors.join(", ")}
@@ -250,7 +250,7 @@ export function BriefingBar() {
           {/* Test Coverage Gaps */}
           {coverageGaps.length > 0 && (
             <div>
-              <h4 className="text-yellow-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-yellow-700 dark:text-yellow-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5" />
                 Missing Test Changes
               </h4>
@@ -270,14 +270,14 @@ export function BriefingBar() {
           {/* Pattern Flags */}
           {nonSecurityPatterns.length > 0 && (
             <div>
-              <h4 className="text-purple-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
+              <h4 className="text-purple-700 dark:text-purple-400 text-xs font-medium uppercase tracking-wide mb-1 flex items-center gap-1.5">
                 <Search className="w-3.5 h-3.5" />
                 Pattern Flags
               </h4>
               <ul className="space-y-0.5">
                 {nonSecurityPatterns.map((p, i) => (
                   <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
-                    <span className="inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 bg-purple-600/20 text-purple-400 border border-purple-500/30">
+                    <span className="inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 bg-purple-100 dark:bg-purple-600/20 text-purple-700 dark:text-purple-400 border border-purple-300 dark:border-purple-500/30">
                       {p.pattern}
                     </span>
                     <span className="font-mono text-text-secondary">
@@ -333,7 +333,7 @@ function VerificationBadge({
 
   return (
     <span
-      className={`text-xs ${value ? "text-green-400" : "text-red-400"}`}
+      className={`text-xs ${value ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}`}
     >
       {label}: <span className="font-mono">{value ? "pass" : "fail"}</span>
     </span>
