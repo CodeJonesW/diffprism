@@ -563,7 +563,7 @@ diffprism/
 - `diffprism review --staged` → browser opens with diff → engineer clicks Approve → result prints to stdout
 - Claude Code calls `open_review` → browser opens → engineer clicks Approve → Claude Code receives structured result
 
-### M1: Usable Review Experience — ~75% COMPLETE
+### M1: Usable Review Experience — ~80% COMPLETE
 
 **Goal:** An experience that's genuinely better than reading diffs in the terminal.
 
@@ -576,9 +576,9 @@ diffprism/
 - [x] Keyboard shortcuts: j/k navigate files *(v0.2.12)*
 - [x] `diffprism setup` command — one-step Claude Code integration *(v0.11.0)*
 - [x] `/review` skill for Claude Code *(v0.11.0)*
+- [ ] Color readability fix (#50)
 - [ ] Keyboard shortcuts: n/p navigate changes, c to comment (#41)
 - [ ] Change narrative view: group files by story chapter (#43)
-- [ ] Async mode: `open_review({ mode: "async" })` returns review_id, `review_status()` polls (#42)
 - [ ] Create PR from review UI (#23)
 
 ### M2: Analysis + Triage — ~50% COMPLETE
@@ -595,6 +595,25 @@ diffprism/
 - [x] Review briefing bar: summary stats, risk indicators, verification status *(v0.3.0)*
 - [ ] Triage view: critical / notable / mechanical grouping + batch approve (#25)
 - [ ] Run tests/lint/typecheck from UI and display results (#44)
+- [ ] Analysis enhancements (backlog — pick as capacity allows):
+  - [ ] Security-sensitive pattern detection (#57)
+  - [ ] Cross-package changes detection (#54)
+  - [ ] Type safety flags (#55)
+  - [ ] Error handling changes detection (#56)
+  - [ ] API surface changes detection (#58)
+  - [ ] Config file change detection (#63)
+  - [ ] Removed dependencies detection (#61)
+  - [ ] Lock file impact analysis (#62)
+  - [ ] Dead code indicators (#68)
+  - [ ] Hardcoded values detection (#66)
+  - [ ] Renamed/moved files highlighting (#65)
+  - [ ] Comment change tracking (#67)
+  - [ ] Commit structure analysis (#64)
+  - [ ] Churn ratio stat (#51)
+  - [ ] Change concentration score (#52)
+  - [ ] Net lines of code stat (#53)
+  - [ ] Estimated review time (#59)
+  - [ ] Logic vs boilerplate ratio (#60)
 
 ### M3: Multi-Agent & Worktree Support — NOT STARTED
 
