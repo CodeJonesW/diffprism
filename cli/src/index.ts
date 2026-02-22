@@ -7,6 +7,7 @@ import { setup } from "./commands/setup.js";
 import { start } from "./commands/start.js";
 import { watch } from "./commands/watch.js";
 import { notifyStop } from "./commands/notify-stop.js";
+import { server, serverStatus, serverStop } from "./commands/server.js";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -64,5 +65,23 @@ program
   .option("--global", "Install skill globally (~/.claude/skills/)")
   .option("--force", "Overwrite existing configuration files")
   .action((flags) => { setup(flags); });
+
+const serverCmd = program
+  .command("server")
+  .description("Start the global DiffPrism server for multi-session reviews")
+  .option("-p, --port <port>", "HTTP API port (default: 24680)")
+  .option("--ws-port <port>", "WebSocket port (default: 24681)")
+  .option("--dev", "Use Vite dev server with HMR instead of static files")
+  .action(server);
+
+serverCmd
+  .command("status")
+  .description("Check if the global server is running and list active sessions")
+  .action(serverStatus);
+
+serverCmd
+  .command("stop")
+  .description("Stop the running global server")
+  .action(serverStop);
 
 program.parse();

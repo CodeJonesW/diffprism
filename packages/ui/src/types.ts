@@ -165,10 +165,25 @@ export interface ContextUpdatePayload {
   description?: string;
 }
 
+export type GlobalSessionStatus = "pending" | "in_review" | "submitted";
+
+export interface SessionSummary {
+  id: string;
+  projectPath: string;
+  branch?: string;
+  title?: string;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  status: GlobalSessionStatus;
+  createdAt: number;
+}
+
 export type ServerMessage =
   | { type: "review:init"; payload: ReviewInitPayload }
   | { type: "diff:update"; payload: DiffUpdatePayload }
-  | { type: "context:update"; payload: ContextUpdatePayload };
+  | { type: "context:update"; payload: ContextUpdatePayload }
+  | { type: "session:added"; payload: SessionSummary };
 
 export type ClientMessage = {
   type: "review:submit";
