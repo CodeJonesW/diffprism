@@ -153,7 +153,8 @@ export interface ReviewMetadata {
 export type ServerMessage =
   | { type: "review:init"; payload: ReviewInitPayload }
   | { type: "diff:update"; payload: DiffUpdatePayload }
-  | { type: "context:update"; payload: ContextUpdatePayload };
+  | { type: "context:update"; payload: ContextUpdatePayload }
+  | { type: "session:added"; payload: SessionSummary };
 
 export type ClientMessage = {
   type: "review:submit";

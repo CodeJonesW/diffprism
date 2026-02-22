@@ -192,9 +192,9 @@ async function handleApiRequest(
 
       // Notify connected UI clients about the new session
       broadcastToAll({
-        type: "session:added" as ServerMessage["type"],
+        type: "session:added",
         payload: toSummary(session),
-      } as unknown as ServerMessage);
+      });
 
       jsonResponse(res, 201, { sessionId });
     } catch {
