@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "mcp__diffprism__open_review"
+      "mcp__diffprism__open_review",
+      "mcp__diffprism__update_review_context",
+      "mcp__diffprism__get_review_result"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx diffprism@latest notify-stop"
+          }
+        ]
+      }
     ]
   }
 }
