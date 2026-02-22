@@ -21,6 +21,18 @@ vi.mock("node:os", () => ({
   },
 }));
 
+// Mock node:readline
+const mockQuestion = vi.fn();
+const mockClose = vi.fn();
+vi.mock("node:readline", () => ({
+  default: {
+    createInterface: vi.fn(() => ({
+      question: mockQuestion,
+      close: mockClose,
+    })),
+  },
+}));
+
 import { setup } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
@@ -35,6 +47,9 @@ describe("setup command", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(process, "cwd").mockReturnValue("/projects/myapp");
+
+    // Default: readline prompt auto-confirms
+    mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("Y"));
 
     // Default: .git exists at /projects/myapp
     mockExistsSync.mockImplementation((p: fs.PathLike) => {
@@ -74,6 +89,79 @@ describe("setup command", () => {
       expect(mockWriteFileSync).toHaveBeenCalledWith(
         path.join("/projects/myapp", ".mcp.json"),
         expect.any(String),
+      );
+    });
+  });
+
+  describe(".gitignore", () => {
+    it("creates .gitignore with .diffprism when user confirms", async () => {
+      mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("Y"));
+
+      await setup({});
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeDefined();
+      expect(gitignoreCall![1]).toBe(".diffprism\n");
+    });
+
+    it("appends .diffprism to existing .gitignore", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s === path.join("/projects/myapp", ".gitignore")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.endsWith(".gitignore")) return "node_modules\n";
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeDefined();
+      expect(gitignoreCall![1]).toBe("node_modules\n.diffprism\n");
+    });
+
+    it("skips when .diffprism already in .gitignore", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s === path.join("/projects/myapp", ".gitignore")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.endsWith(".gitignore")) return "node_modules\n.diffprism\n";
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeUndefined();
+    });
+
+    it("skips creation when user declines prompt", async () => {
+      mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("n"));
+
+      await setup({});
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeUndefined();
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("Warning"),
       );
     });
   });
