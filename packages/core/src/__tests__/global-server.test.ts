@@ -1,5 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
-import { startGlobalServer } from "../global-server.js";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -9,7 +8,34 @@ import type {
   ContextUpdatePayload,
 } from "../types.js";
 
-// Helper to build a minimal ReviewInitPayload
+// ─── Mocks ───
+
+// Mock UI server — tests don't need a real UI
+const mockServerListen = vi.fn((_port: number, cb: () => void) => cb());
+const mockServerClose = vi.fn();
+const mockServerOn = vi.fn();
+vi.mock("../ui-server.js", () => ({
+  resolveUiDist: () => "/fake/ui/dist",
+  resolveUiRoot: () => "/fake/ui/root",
+  startViteDevServer: vi.fn().mockResolvedValue({ close: vi.fn() }),
+  createStaticServer: vi.fn().mockResolvedValue({
+    listen: mockServerListen,
+    close: mockServerClose,
+    on: mockServerOn,
+  }),
+}));
+
+// Mock open — don't open a browser during tests
+vi.mock("open", () => ({
+  default: vi.fn().mockResolvedValue(undefined),
+}));
+
+// ─── Import after mocks ───
+
+const { startGlobalServer } = await import("../global-server.js");
+
+// ─── Helpers ───
+
 function makePayload(overrides?: Partial<ReviewInitPayload>): ReviewInitPayload {
   const diffSet: DiffSet = {
     baseRef: "HEAD",
