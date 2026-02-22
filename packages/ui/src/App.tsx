@@ -132,22 +132,11 @@ export default function App() {
   }
 
   return (
-    <div className="relative">
-      {isWatchMode && (
-        <div className="fixed top-2 right-3 z-50 flex items-center gap-1.5 bg-surface/80 backdrop-blur-sm border border-border rounded-full px-2.5 py-1">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-          </span>
-          <span className="text-xs text-text-secondary">Watching</span>
-        </div>
-      )}
-      <ReviewView
-        onSubmit={handleSubmit}
-        isWatchMode={isWatchMode}
-        watchSubmitted={watchSubmitted}
-        hasUnreviewedChanges={hasUnreviewedChanges}
-      />
-    </div>
+    <ReviewView
+      onSubmit={handleSubmit}
+      isWatchMode={isWatchMode}
+      watchSubmitted={watchSubmitted}
+      hasUnreviewedChanges={hasUnreviewedChanges}
+    />
   );
 }
