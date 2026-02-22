@@ -12,7 +12,7 @@ DiffPrism gives you a visual review step for AI-written code — stage your chan
 - **Review briefing bar** — summary stats, complexity scoring, test coverage gaps, pattern flags, and dependency tracking
 - **Agent reasoning panel** — see why the AI made each change
 - **Dark/light mode** — toggle with theme persistence
-- **Keyboard shortcuts** — `j`/`k` navigate files, `Space`/`Enter` cycle file status
+- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status
 - **Three-way decisions** — approve, request changes, or approve with comments
 - **Branch display** — current git branch shown in the review header
 
@@ -27,9 +27,11 @@ npx diffprism setup
 ```
 
 This single command configures everything:
-- Creates `.mcp.json` with the DiffPrism MCP server
-- Creates `.claude/settings.json` with auto-approve permissions
-- Installs a `/review` skill so you can type `/review` in Claude Code at any time
+- Adds `.diffprism` to `.gitignore`
+- Creates `.mcp.json` with the DiffPrism MCP server config
+- Creates `.claude/settings.json` with auto-approve permissions for all 3 MCP tools
+- Installs a Stop hook for watch mode cleanup
+- Installs the `/review` skill so you can type `/review` in Claude Code at any time
 
 After running, restart Claude Code. The first time you use `/review`, Claude will ask your preferences and save them to `diffprism.config.json`.
 
@@ -85,7 +87,7 @@ Stop the watcher with `Ctrl+C`.
 
 ## MCP Tool Reference
 
-The MCP server exposes two tools:
+The MCP server exposes three tools:
 
 ### `open_review`
 
@@ -108,7 +110,13 @@ Pushes reasoning/context to a running `diffprism watch` session. Non-blocking �
 | `title`       | No       | Updated title for the review                   |
 | `description` | No       | Updated description of the changes             |
 
-**Returns:** A `ReviewResult` JSON object:
+### `get_review_result`
+
+Fetches the most recent review result from a `diffprism watch` session. Non-blocking — returns immediately. The result is marked as consumed after retrieval so it won't be returned again.
+
+No parameters.
+
+**Returns (all tools):** A `ReviewResult` JSON object:
 
 ```json
 {
