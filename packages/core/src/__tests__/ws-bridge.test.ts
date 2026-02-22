@@ -73,7 +73,9 @@ describe("ws-bridge", () => {
     const msg = await firstMessage;
 
     expect(msg.type).toBe("review:init");
-    expect(msg.payload.reviewId).toBe("test-review-1");
+    if (msg.type === "review:init") {
+      expect(msg.payload.reviewId).toBe("test-review-1");
+    }
 
     client.close();
   });
@@ -97,7 +99,9 @@ describe("ws-bridge", () => {
     const msg = await msgPromise;
 
     expect(msg.type).toBe("review:init");
-    expect(msg.payload.reviewId).toBe("test-review-1");
+    if (msg.type === "review:init") {
+      expect(msg.payload.reviewId).toBe("test-review-1");
+    }
 
     client.close();
   });
@@ -175,7 +179,9 @@ describe("ws-bridge", () => {
     const client2 = await conn2.ws;
     const msg2 = await conn2.firstMessage;
     expect(msg2.type).toBe("review:init");
-    expect(msg2.payload.reviewId).toBe("test-review-1");
+    if (msg2.type === "review:init") {
+      expect(msg2.payload.reviewId).toBe("test-review-1");
+    }
 
     client2.close();
   });

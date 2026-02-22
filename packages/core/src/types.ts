@@ -139,6 +139,7 @@ export interface ReviewInitPayload {
   rawDiff: string;
   briefing: ReviewBriefing;
   metadata: ReviewMetadata;
+  watchMode?: boolean;
 }
 
 export interface ReviewMetadata {
@@ -148,10 +149,10 @@ export interface ReviewMetadata {
   currentBranch?: string;
 }
 
-export type ServerMessage = {
-  type: "review:init";
-  payload: ReviewInitPayload;
-};
+export type ServerMessage =
+  | { type: "review:init"; payload: ReviewInitPayload }
+  | { type: "diff:update"; payload: DiffUpdatePayload }
+  | { type: "context:update"; payload: ContextUpdatePayload };
 
 export type ClientMessage = {
   type: "review:submit";
@@ -168,4 +169,51 @@ export interface ReviewOptions {
   cwd?: string;
   silent?: boolean; // suppress stdout (for MCP mode)
   dev?: boolean; // use Vite dev server instead of static files
+}
+
+// ─── Watch Mode ───
+
+export interface WatchOptions {
+  diffRef: string;
+  title?: string;
+  description?: string;
+  reasoning?: string;
+  cwd?: string;
+  silent?: boolean;
+  dev?: boolean;
+  pollInterval?: number; // ms, default 1000
+}
+
+export interface DiffUpdatePayload {
+  diffSet: DiffSet;
+  rawDiff: string;
+  briefing: ReviewBriefing;
+  changedFiles: string[]; // files whose content changed since last update
+  timestamp: number;
+}
+
+export interface ContextUpdatePayload {
+  reasoning?: string;
+  title?: string;
+  description?: string;
+}
+
+export interface WatchHandle {
+  stop: () => Promise<void>;
+  updateContext: (payload: ContextUpdatePayload) => void;
+}
+
+export interface WatchFileInfo {
+  wsPort: number;
+  uiPort: number;
+  pid: number;
+  cwd: string;
+  diffRef: string;
+  startedAt: number;
+}
+
+export interface ReviewResultFile {
+  result: ReviewResult;
+  timestamp: number;
+  consumed: boolean;
 }

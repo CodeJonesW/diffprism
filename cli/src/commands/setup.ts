@@ -79,14 +79,21 @@ function setupClaudeSettings(
   const permissions = (existing.permissions ?? {}) as Record<string, unknown>;
   const allow = (permissions.allow ?? []) as string[];
 
-  const toolName = "mcp__diffprism__open_review";
+  const toolNames = [
+    "mcp__diffprism__open_review",
+    "mcp__diffprism__update_review_context",
+    "mcp__diffprism__get_review_result",
+  ];
 
-  if (allow.includes(toolName) && !force) {
+  const allPresent = toolNames.every((t) => allow.includes(t));
+  if (allPresent && !force) {
     return { action: "skipped", filePath };
   }
 
-  if (!allow.includes(toolName)) {
-    allow.push(toolName);
+  for (const toolName of toolNames) {
+    if (!allow.includes(toolName)) {
+      allow.push(toolName);
+    }
   }
 
   permissions.allow = allow;
@@ -127,6 +134,50 @@ function setupSkill(
   return { action, filePath };
 }
 
+function setupStopHook(
+  gitRoot: string,
+  force: boolean,
+): { action: "created" | "updated" | "skipped"; filePath: string } {
+  const filePath = path.join(gitRoot, ".claude", "settings.json");
+  const existing = readJsonFile(filePath);
+
+  const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
+  const stopHooks = hooks.Stop as Array<Record<string, unknown>> | undefined;
+
+  const hookCommand = "npx diffprism notify-stop";
+
+  // Check if hook already exists
+  if (stopHooks && !force) {
+    const hasHook = stopHooks.some((entry) => {
+      const innerHooks = entry.hooks as Array<Record<string, unknown>> | undefined;
+      return innerHooks?.some((h) => h.command === hookCommand);
+    });
+    if (hasHook) {
+      return { action: "skipped", filePath };
+    }
+  }
+
+  const hookEntry = {
+    matcher: "",
+    hooks: [
+      {
+        type: "command",
+        command: hookCommand,
+      },
+    ],
+  };
+
+  if (stopHooks && !force) {
+    stopHooks.push(hookEntry);
+  } else {
+    hooks.Stop = [hookEntry];
+  }
+
+  const action = fs.existsSync(filePath) ? "updated" : "created";
+  writeJsonFile(filePath, { ...existing, hooks });
+  return { action, filePath: filePath + " (Stop hook)" };
+}
+
 export async function setup(flags: SetupFlags): Promise<void> {
   const gitRoot = findGitRoot(process.cwd());
   if (!gitRoot) {
@@ -148,11 +199,15 @@ export async function setup(flags: SetupFlags): Promise<void> {
   const mcp = setupMcpJson(gitRoot, force);
   result[mcp.action === "skipped" ? "skipped" : mcp.action === "created" ? "created" : "updated"].push(mcp.filePath);
 
-  // Step 2: .claude/settings.json
+  // Step 2: .claude/settings.json (permissions)
   const settings = setupClaudeSettings(gitRoot, force);
   result[settings.action === "skipped" ? "skipped" : settings.action === "created" ? "created" : "updated"].push(settings.filePath);
 
-  // Step 3: Skill file
+  // Step 3: .claude/settings.json (Stop hook for watch mode)
+  const hook = setupStopHook(gitRoot, force);
+  result[hook.action === "skipped" ? "skipped" : hook.action === "created" ? "created" : "updated"].push(hook.filePath);
+
+  // Step 4: Skill file
   const skill = setupSkill(gitRoot, global, force);
   result[skill.action === "skipped" ? "skipped" : skill.action === "created" ? "created" : "updated"].push(skill.filePath);
 
@@ -180,6 +235,9 @@ export async function setup(flags: SetupFlags): Promise<void> {
 
   console.log(
     '\nYou can now use /review in Claude Code to open a DiffPrism review.',
+  );
+  console.log(
+    "Or run `diffprism watch --staged` for live-updating reviews.",
   );
   console.log(
     "If Claude Code is running, restart it to pick up the new configuration.",

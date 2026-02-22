@@ -3,7 +3,8 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { startReview } from "@diffprism/core";
+import { startReview, readWatchFile, readReviewResult, consumeReviewResult } from "@diffprism/core";
+import type { ContextUpdatePayload } from "@diffprism/core";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -64,6 +65,118 @@ export async function startMcpServer(): Promise<void> {
             {
               type: "text" as const,
               text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "update_review_context",
+    "Push reasoning/context to a running DiffPrism watch session. Non-blocking — returns immediately. Use this when `diffprism watch` is running to update the review UI with agent reasoning without opening a new review.",
+    {
+      reasoning: z
+        .string()
+        .optional()
+        .describe("Agent reasoning about the current changes"),
+      title: z.string().optional().describe("Updated title for the review"),
+      description: z
+        .string()
+        .optional()
+        .describe("Updated description of the changes"),
+    },
+    async ({ reasoning, title, description }) => {
+      try {
+        const watchInfo = readWatchFile();
+        if (!watchInfo) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No DiffPrism watch session is running. Start one with `diffprism watch`.",
+              },
+            ],
+          };
+        }
+
+        const payload: ContextUpdatePayload = {};
+        if (reasoning !== undefined) payload.reasoning = reasoning;
+        if (title !== undefined) payload.title = title;
+        if (description !== undefined) payload.description = description;
+
+        const response = await fetch(
+          `http://localhost:${watchInfo.wsPort}/api/context`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          },
+        );
+
+        if (!response.ok) {
+          throw new Error(`Watch server returned ${response.status}`);
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Context updated in DiffPrism watch session.",
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error updating watch context: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_review_result",
+    "Fetch the most recent review result from a DiffPrism watch session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again.",
+    {},
+    async () => {
+      try {
+        const data = readReviewResult();
+        if (!data) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No pending review result.",
+              },
+            ],
+          };
+        }
+
+        consumeReviewResult();
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(data.result, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error reading review result: ${message}`,
             },
           ],
           isError: true,

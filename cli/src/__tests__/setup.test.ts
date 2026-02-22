@@ -161,18 +161,32 @@ describe("setup command", () => {
   });
 
   describe(".claude/settings.json", () => {
-    it("creates .claude/settings.json with permission", async () => {
+    it("creates .claude/settings.json with permissions and hook", async () => {
       await setup({});
 
-      const settingsCall = mockWriteFileSync.mock.calls.find(
+      const settingsCalls = mockWriteFileSync.mock.calls.filter(
         (call) => call[0].toString().includes("settings.json"),
       );
-      expect(settingsCall).toBeDefined();
+      expect(settingsCalls.length).toBeGreaterThan(0);
 
-      const written = JSON.parse(settingsCall![1] as string);
-      expect(written.permissions.allow).toContain(
-        "mcp__diffprism__open_review",
-      );
+      // Check permissions write
+      const permissionsWrite = settingsCalls.find((call) => {
+        const written = JSON.parse(call[1] as string);
+        return written.permissions !== undefined;
+      });
+      expect(permissionsWrite).toBeDefined();
+      const permData = JSON.parse(permissionsWrite![1] as string);
+      expect(permData.permissions.allow).toContain("mcp__diffprism__open_review");
+      expect(permData.permissions.allow).toContain("mcp__diffprism__update_review_context");
+
+      // Check hook write
+      const hookWrite = settingsCalls.find((call) => {
+        const written = JSON.parse(call[1] as string);
+        return written.hooks !== undefined;
+      });
+      expect(hookWrite).toBeDefined();
+      const hookData = JSON.parse(hookWrite![1] as string);
+      expect(hookData.hooks.Stop[0].hooks[0].command).toBe("npx diffprism notify-stop");
     });
 
     it("preserves existing permissions", async () => {
@@ -221,7 +235,17 @@ describe("setup command", () => {
         if (s.includes("settings.json")) {
           return JSON.stringify({
             permissions: {
-              allow: ["mcp__diffprism__open_review"],
+              allow: [
+                "mcp__diffprism__open_review",
+                "mcp__diffprism__update_review_context",
+                "mcp__diffprism__get_review_result",
+              ],
+            },
+            hooks: {
+              Stop: [{
+                matcher: "",
+                hooks: [{ type: "command", command: "npx diffprism notify-stop" }],
+              }],
             },
           });
         }
@@ -230,10 +254,11 @@ describe("setup command", () => {
 
       await setup({});
 
-      // Should be skipped since it already exists
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining("Skipped"),
+      // Permissions and hook should both be skipped
+      const settingsWrites = mockWriteFileSync.mock.calls.filter(
+        (call) => call[0].toString().includes("settings.json"),
       );
+      expect(settingsWrites).toHaveLength(0);
     });
   });
 

@@ -60,9 +60,36 @@ diffprism review --staged --title "Add auth middleware"
 
 A browser window opens with the diff viewer. Review the changes and click **Approve**, **Request Changes**, or **Approve with Comments**.
 
+### Watch Mode (live-updating)
+
+Keep a persistent browser tab that auto-refreshes as files change — ideal for reviewing while an agent is working:
+
+```bash
+# Watch staged changes, auto-refresh on every change
+diffprism watch --staged
+
+# Watch all changes with custom poll interval
+diffprism watch --interval 2000
+
+# Watch unstaged changes
+diffprism watch --unstaged
+```
+
+When `diffprism watch` is running:
+- The browser tab stays open and updates diffs + analysis within 1-2s of file changes
+- Submit a review and it stays open, waiting for the next change
+- File review statuses are preserved for unchanged files
+- Claude Code's `/review` skill automatically detects the watch session and pushes reasoning without blocking
+
+Stop the watcher with `Ctrl+C`.
+
 ## MCP Tool Reference
 
-The MCP server exposes one tool: **`open_review`**
+The MCP server exposes two tools:
+
+### `open_review`
+
+Opens a browser-based code review. Blocks until the engineer submits their decision.
 
 | Parameter     | Required | Description                                                       |
 |---------------|----------|-------------------------------------------------------------------|
@@ -70,6 +97,16 @@ The MCP server exposes one tool: **`open_review`**
 | `title`       | No       | Title displayed in the review UI                                  |
 | `description` | No       | Description of the changes                                        |
 | `reasoning`   | No       | Agent reasoning about why the changes were made (shown in the reasoning panel) |
+
+### `update_review_context`
+
+Pushes reasoning/context to a running `diffprism watch` session. Non-blocking — returns immediately.
+
+| Parameter     | Required | Description                                    |
+|---------------|----------|------------------------------------------------|
+| `reasoning`   | No       | Agent reasoning about the current changes      |
+| `title`       | No       | Updated title for the review                   |
+| `description` | No       | Updated description of the changes             |
 
 **Returns:** A `ReviewResult` JSON object:
 

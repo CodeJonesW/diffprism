@@ -4,6 +4,8 @@ import { Command } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
+import { watch } from "./commands/watch.js";
+import { notifyStop } from "./commands/notify-stop.js";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -22,6 +24,21 @@ program
   .option("-t, --title <title>", "Review title")
   .option("--dev", "Use Vite dev server with HMR instead of static files")
   .action(review);
+
+program
+  .command("watch [ref]")
+  .description("Start a persistent diff watcher with live-updating browser UI")
+  .option("--staged", "Watch staged changes")
+  .option("--unstaged", "Watch unstaged changes")
+  .option("-t, --title <title>", "Review title")
+  .option("--interval <ms>", "Poll interval in milliseconds (default: 1000)")
+  .option("--dev", "Use Vite dev server with HMR instead of static files")
+  .action(watch);
+
+program
+  .command("notify-stop")
+  .description("Signal the watch server to refresh (used by Claude Code hooks)")
+  .action(notifyStop);
 
 program
   .command("serve")
