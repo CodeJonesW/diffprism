@@ -7,9 +7,12 @@ import type { ReviewResult } from "../types";
 
 interface ReviewViewProps {
   onSubmit: (result: ReviewResult) => void;
+  isWatchMode?: boolean;
+  watchSubmitted?: boolean;
+  hasUnreviewedChanges?: boolean;
 }
 
-export function ReviewView({ onSubmit }: ReviewViewProps) {
+export function ReviewView({ onSubmit, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
   return (
     <div className="h-screen flex flex-col bg-background">
       <BriefingBar />
@@ -25,7 +28,12 @@ export function ReviewView({ onSubmit }: ReviewViewProps) {
       </div>
 
       {/* Bottom — Action Bar */}
-      <ActionBar onSubmit={onSubmit} />
+      <ActionBar
+        onSubmit={onSubmit}
+        isWatchMode={isWatchMode}
+        watchSubmitted={watchSubmitted}
+        hasUnreviewedChanges={hasUnreviewedChanges}
+      />
     </div>
   );
 }
