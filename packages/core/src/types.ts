@@ -218,3 +218,39 @@ export interface ReviewResultFile {
   timestamp: number;
   consumed: boolean;
 }
+
+// ─── Global Server Types ───
+
+export interface GlobalServerInfo {
+  httpPort: number;
+  wsPort: number;
+  pid: number;
+  startedAt: number;
+}
+
+export type GlobalSessionStatus = "pending" | "in_review" | "submitted";
+
+export interface SessionSummary {
+  id: string;
+  projectPath: string;
+  branch?: string;
+  title?: string;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  status: GlobalSessionStatus;
+  createdAt: number;
+}
+
+export interface GlobalServerOptions {
+  httpPort?: number; // default 24680
+  wsPort?: number; // default 24681
+  silent?: boolean;
+  dev?: boolean;
+}
+
+export interface GlobalServerHandle {
+  httpPort: number;
+  wsPort: number;
+  stop: () => Promise<void>;
+}
