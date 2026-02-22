@@ -7,6 +7,13 @@ import { skillContent } from "../templates/skill.js";
 interface SetupFlags {
   global?: boolean;
   force?: boolean;
+  quiet?: boolean;
+}
+
+export interface SetupOutcome {
+  created: string[];
+  updated: string[];
+  skipped: string[];
 }
 
 function findGitRoot(from: string): string | null {
@@ -266,20 +273,23 @@ async function setupGitignore(
   return { action: "created", filePath };
 }
 
-export async function setup(flags: SetupFlags): Promise<void> {
+export async function setup(flags: SetupFlags): Promise<SetupOutcome> {
   const gitRoot = findGitRoot(process.cwd());
   if (!gitRoot) {
     console.error(
       "Error: Not in a git repository. Run this command from inside a git project.",
     );
     process.exit(1);
-    return;
+    return { created: [], updated: [], skipped: [] };
   }
 
   const force = flags.force ?? false;
   const global = flags.global ?? false;
+  const quiet = flags.quiet ?? false;
 
-  console.log("Setting up DiffPrism for Claude Code...\n");
+  if (!quiet) {
+    console.log("Setting up DiffPrism for Claude Code...\n");
+  }
 
   const result: SetupResult = { created: [], updated: [], skipped: [] };
 
@@ -297,7 +307,7 @@ export async function setup(flags: SetupFlags): Promise<void> {
 
   // Step 3.5: Clean stale diffprism hooks before adding current one
   const cleaned = cleanDiffprismHooks(gitRoot);
-  if (cleaned.removed > 0) {
+  if (cleaned.removed > 0 && !quiet) {
     console.log(`  Cleaned ${cleaned.removed} stale hook(s)`);
   }
 
@@ -309,35 +319,35 @@ export async function setup(flags: SetupFlags): Promise<void> {
   const skill = setupSkill(gitRoot, global, force);
   result[skill.action === "skipped" ? "skipped" : skill.action === "created" ? "created" : "updated"].push(skill.filePath);
 
-  // Print summary
-  if (result.created.length > 0) {
-    console.log("Created:");
-    for (const f of result.created) {
-      console.log(`  + ${path.relative(gitRoot, f)}`);
+  if (!quiet) {
+    // Print summary
+    if (result.created.length > 0) {
+      console.log("Created:");
+      for (const f of result.created) {
+        console.log(`  + ${path.relative(gitRoot, f)}`);
+      }
     }
+
+    if (result.updated.length > 0) {
+      console.log("Updated:");
+      for (const f of result.updated) {
+        console.log(`  ~ ${path.relative(gitRoot, f)}`);
+      }
+    }
+
+    if (result.skipped.length > 0) {
+      console.log("Skipped (already configured):");
+      for (const f of result.skipped) {
+        console.log(`  - ${path.relative(gitRoot, f)}`);
+      }
+    }
+
+    console.log("\n✓ DiffPrism configured for Claude Code.\n");
+    console.log("Next steps:");
+    console.log("  1. Restart Claude Code to pick up the MCP configuration");
+    console.log("  2. Use /review in Claude Code to review your changes\n");
+    console.log("Tip: Run `diffprism start` to combine setup + live watch mode.");
   }
 
-  if (result.updated.length > 0) {
-    console.log("Updated:");
-    for (const f of result.updated) {
-      console.log(`  ~ ${path.relative(gitRoot, f)}`);
-    }
-  }
-
-  if (result.skipped.length > 0) {
-    console.log("Skipped (already configured):");
-    for (const f of result.skipped) {
-      console.log(`  - ${path.relative(gitRoot, f)}`);
-    }
-  }
-
-  console.log(
-    '\nYou can now use /review in Claude Code to open a DiffPrism review.',
-  );
-  console.log(
-    "Or run `diffprism watch --staged` for live-updating reviews.",
-  );
-  console.log(
-    "If Claude Code is running, restart it to pick up the new configuration.",
-  );
+  return result;
 }

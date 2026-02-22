@@ -593,7 +593,7 @@ describe("setup command", () => {
       await setup({});
 
       expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining("restart"),
+        expect.stringContaining("Restart Claude Code"),
       );
     });
   });

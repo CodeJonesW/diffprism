@@ -9,6 +9,7 @@ import type {
   DiffUpdatePayload,
   ContextUpdatePayload,
 } from "../types";
+import { getFileKey } from "../lib/file-key";
 
 const FILE_STATUS_CYCLE: FileReviewStatus[] = [
   "unreviewed",
@@ -73,12 +74,12 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
       payload.diffSet.files.length > 0
-        ? payload.diffSet.files[0].path
+        ? getFileKey(payload.diffSet.files[0])
         : null;
 
     const fileStatuses: Record<string, FileReviewStatus> = {};
     for (const file of payload.diffSet.files) {
-      fileStatuses[file.path] = "unreviewed";
+      fileStatuses[getFileKey(file)] = "unreviewed";
     }
 
     set({
@@ -160,19 +161,20 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     // Preserve file statuses for unchanged files, reset changed files
     const fileStatuses: Record<string, FileReviewStatus> = {};
     for (const file of payload.diffSet.files) {
-      if (changedFiles.includes(file.path)) {
-        fileStatuses[file.path] = "unreviewed";
+      const key = getFileKey(file);
+      if (changedFiles.includes(key)) {
+        fileStatuses[key] = "unreviewed";
       } else {
-        fileStatuses[file.path] = state.fileStatuses[file.path] ?? "unreviewed";
+        fileStatuses[key] = state.fileStatuses[key] ?? "unreviewed";
       }
     }
 
     // Keep comments (they reference file+line, user can clean up)
     // Adjust selected file if it was removed
     let { selectedFile } = state;
-    if (selectedFile && !payload.diffSet.files.some((f) => f.path === selectedFile)) {
+    if (selectedFile && !payload.diffSet.files.some((f) => getFileKey(f) === selectedFile)) {
       selectedFile = payload.diffSet.files.length > 0
-        ? payload.diffSet.files[0].path
+        ? getFileKey(payload.diffSet.files[0])
         : null;
     }
 

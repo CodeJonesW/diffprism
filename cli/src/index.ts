@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
+import { start } from "./commands/start.js";
 import { watch } from "./commands/watch.js";
 import { notifyStop } from "./commands/notify-stop.js";
 
@@ -24,6 +25,18 @@ program
   .option("-t, --title <title>", "Review title")
   .option("--dev", "Use Vite dev server with HMR instead of static files")
   .action(review);
+
+program
+  .command("start [ref]")
+  .description("Set up DiffPrism and start watching for changes")
+  .option("--staged", "Watch staged changes")
+  .option("--unstaged", "Watch unstaged changes")
+  .option("-t, --title <title>", "Review title")
+  .option("--interval <ms>", "Poll interval in milliseconds (default: 1000)")
+  .option("--dev", "Use Vite dev server with HMR instead of static files")
+  .option("--global", "Install skill globally (~/.claude/skills/)")
+  .option("--force", "Overwrite existing configuration files")
+  .action(start);
 
 program
   .command("watch [ref]")
@@ -50,6 +63,6 @@ program
   .description("Configure DiffPrism for Claude Code integration")
   .option("--global", "Install skill globally (~/.claude/skills/)")
   .option("--force", "Overwrite existing configuration files")
-  .action(setup);
+  .action((flags) => { setup(flags); });
 
 program.parse();
