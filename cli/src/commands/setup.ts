@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import readline from "node:readline";
 import { skillContent } from "../templates/skill.js";
 
 interface SetupFlags {
@@ -178,6 +179,52 @@ function setupStopHook(
   return { action, filePath: filePath + " (Stop hook)" };
 }
 
+async function promptUser(question: string): Promise<boolean> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() !== "n");
+    });
+  });
+}
+
+async function setupGitignore(
+  gitRoot: string,
+): Promise<{ action: "created" | "updated" | "skipped"; filePath: string }> {
+  const filePath = path.join(gitRoot, ".gitignore");
+  const entry = ".diffprism";
+
+  if (fs.existsSync(filePath)) {
+    const content = fs.readFileSync(filePath, "utf-8");
+    const lines = content.split("\n").map((l) => l.trim());
+    if (lines.includes(entry)) {
+      return { action: "skipped", filePath };
+    }
+    const newContent = content.endsWith("\n")
+      ? content + entry + "\n"
+      : content + "\n" + entry + "\n";
+    fs.writeFileSync(filePath, newContent);
+    return { action: "updated", filePath };
+  }
+
+  const confirmed = await promptUser(
+    "No .gitignore found. Create one with .diffprism entry? (Y/n) ",
+  );
+  if (!confirmed) {
+    console.log(
+      "  Warning: .diffprism directory will appear in git status and may trigger watch-mode loops.",
+    );
+    return { action: "skipped", filePath };
+  }
+
+  fs.writeFileSync(filePath, entry + "\n");
+  return { action: "created", filePath };
+}
+
 export async function setup(flags: SetupFlags): Promise<void> {
   const gitRoot = findGitRoot(process.cwd());
   if (!gitRoot) {
@@ -195,19 +242,23 @@ export async function setup(flags: SetupFlags): Promise<void> {
 
   const result: SetupResult = { created: [], updated: [], skipped: [] };
 
-  // Step 1: .mcp.json
+  // Step 1: .gitignore
+  const gitignore = await setupGitignore(gitRoot);
+  result[gitignore.action].push(gitignore.filePath);
+
+  // Step 2: .mcp.json
   const mcp = setupMcpJson(gitRoot, force);
   result[mcp.action === "skipped" ? "skipped" : mcp.action === "created" ? "created" : "updated"].push(mcp.filePath);
 
-  // Step 2: .claude/settings.json (permissions)
+  // Step 3: .claude/settings.json (permissions)
   const settings = setupClaudeSettings(gitRoot, force);
   result[settings.action === "skipped" ? "skipped" : settings.action === "created" ? "created" : "updated"].push(settings.filePath);
 
-  // Step 3: .claude/settings.json (Stop hook for watch mode)
+  // Step 4: .claude/settings.json (Stop hook for watch mode)
   const hook = setupStopHook(gitRoot, force);
   result[hook.action === "skipped" ? "skipped" : hook.action === "created" ? "created" : "updated"].push(hook.filePath);
 
-  // Step 4: Skill file
+  // Step 5: Skill file
   const skill = setupSkill(gitRoot, global, force);
   result[skill.action === "skipped" ? "skipped" : skill.action === "created" ? "created" : "updated"].push(skill.filePath);
 
