@@ -87,6 +87,17 @@ The tool blocks until the user submits their review in the browser. When it retu
 If the \`mcp__diffprism__open_review\` tool is not available:
 - Tell the user: "The DiffPrism MCP server isn't configured. Run \`npx diffprism setup\` to set it up, then restart Claude Code."
 
+## Watch Mode: Polling for Review Feedback
+
+When \`diffprism watch\` is active (detected via \`.diffprism/watch.json\`), the developer can submit reviews at any time in the browser. Since there is no push notification, **you must poll for feedback** to close the loop.
+
+**After pushing context to a watch session**, call \`mcp__diffprism__get_review_result\` to check for pending feedback:
+- **Between tasks** — Before starting a new piece of work, check for feedback.
+- **After making changes** — After addressing requested changes, push updated reasoning via \`update_review_context\`, then check again shortly after.
+- **When the user mentions review feedback** — If the user says they submitted a review or left comments, check immediately.
+
+Do not poll in a tight loop. Check at natural breakpoints in your workflow (e.g., after finishing a subtask, before committing, before moving to the next file).
+
 ## Behavior Rules
 
 - When invoked via \`/review\`, always open a review regardless of the \`reviewTrigger\` setting.
