@@ -12,6 +12,7 @@ import type {
 export interface WatchBridge {
   port: number;
   sendInit: (payload: ReviewInitPayload) => void;
+  storeInitPayload: (payload: ReviewInitPayload) => void;
   sendDiffUpdate: (payload: DiffUpdatePayload) => void;
   sendContextUpdate: (payload: ContextUpdatePayload) => void;
   onSubmit: (callback: (result: ReviewResult) => void) => void;
@@ -145,6 +146,10 @@ export function createWatchBridge(
           } else {
             pendingInit = payload;
           }
+        },
+
+        storeInitPayload(payload: ReviewInitPayload) {
+          initPayload = payload;
         },
 
         sendDiffUpdate(payload: DiffUpdatePayload) {

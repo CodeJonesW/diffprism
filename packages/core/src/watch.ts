@@ -190,8 +190,8 @@ export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
         lastDiffHash = newHash;
         lastDiffSet = newDiffSet;
 
-        // Also update the stored init payload for reconnects
-        bridge.sendInit({
+        // Update stored init payload for reconnects (don't send to connected client)
+        bridge.storeInitPayload({
           reviewId,
           diffSet: newDiffSet,
           rawDiff: newRawDiff,
