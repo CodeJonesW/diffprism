@@ -64,6 +64,8 @@ describe("review store", () => {
       comments: [],
       activeCommentKey: null,
       theme: "dark",
+      isWatchMode: false,
+      watchSubmitted: false,
     });
   });
 

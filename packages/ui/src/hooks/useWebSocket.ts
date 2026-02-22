@@ -4,7 +4,7 @@ import type { ReviewResult, ServerMessage, ClientMessage } from "../types";
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const { connectionStatus, setConnectionStatus, initReview } =
+  const { connectionStatus, setConnectionStatus, initReview, updateDiff, updateContext } =
     useReviewStore();
 
   useEffect(() => {
@@ -30,6 +30,10 @@ export function useWebSocket() {
 
         if (message.type === "review:init") {
           initReview(message.payload);
+        } else if (message.type === "diff:update") {
+          updateDiff(message.payload);
+        } else if (message.type === "context:update") {
+          updateContext(message.payload);
         }
       } catch (err) {
         console.error("Failed to parse WebSocket message:", err);
@@ -48,7 +52,7 @@ export function useWebSocket() {
       ws.close();
       wsRef.current = null;
     };
-  }, [setConnectionStatus, initReview]);
+  }, [setConnectionStatus, initReview, updateDiff, updateContext]);
 
   const sendResult = useCallback((result: ReviewResult) => {
     const ws = wsRef.current;

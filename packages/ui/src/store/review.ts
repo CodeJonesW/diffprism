@@ -6,6 +6,8 @@ import type {
   ReviewComment,
   ReviewInitPayload,
   ReviewMetadata,
+  DiffUpdatePayload,
+  ContextUpdatePayload,
 } from "../types";
 
 const FILE_STATUS_CYCLE: FileReviewStatus[] = [
@@ -30,6 +32,8 @@ export interface ReviewState {
   comments: ReviewComment[];
   activeCommentKey: string | null;
   theme: Theme;
+  isWatchMode: boolean;
+  watchSubmitted: boolean;
 
   // Actions
   initReview: (payload: ReviewInitPayload) => void;
@@ -43,6 +47,9 @@ export interface ReviewState {
   deleteComment: (index: number) => void;
   setActiveCommentKey: (key: string | null) => void;
   toggleTheme: () => void;
+  updateDiff: (payload: DiffUpdatePayload) => void;
+  updateContext: (payload: ContextUpdatePayload) => void;
+  setWatchSubmitted: (submitted: boolean) => void;
 }
 
 export const useReviewStore = create<ReviewState>((set, get) => ({
@@ -58,6 +65,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   comments: [],
   activeCommentKey: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
+  isWatchMode: false,
+  watchSubmitted: false,
 
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
@@ -80,6 +89,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses,
       comments: [],
       activeCommentKey: null,
+      isWatchMode: payload.watchMode ?? false,
+      watchSubmitted: false,
     });
   },
 
@@ -137,5 +148,56 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     const next = get().theme === "dark" ? "light" : "dark";
     localStorage.setItem("diffprism-theme", next);
     set({ theme: next });
+  },
+
+  updateDiff: (payload: DiffUpdatePayload) => {
+    const state = get();
+    const { changedFiles } = payload;
+
+    // Preserve file statuses for unchanged files, reset changed files
+    const fileStatuses: Record<string, FileReviewStatus> = {};
+    for (const file of payload.diffSet.files) {
+      if (changedFiles.includes(file.path)) {
+        fileStatuses[file.path] = "unreviewed";
+      } else {
+        fileStatuses[file.path] = state.fileStatuses[file.path] ?? "unreviewed";
+      }
+    }
+
+    // Keep comments (they reference file+line, user can clean up)
+    // Adjust selected file if it was removed
+    let { selectedFile } = state;
+    if (selectedFile && !payload.diffSet.files.some((f) => f.path === selectedFile)) {
+      selectedFile = payload.diffSet.files.length > 0
+        ? payload.diffSet.files[0].path
+        : null;
+    }
+
+    set({
+      diffSet: payload.diffSet,
+      rawDiff: payload.rawDiff,
+      briefing: payload.briefing,
+      fileStatuses,
+      selectedFile,
+      watchSubmitted: false,
+    });
+  },
+
+  updateContext: (payload: ContextUpdatePayload) => {
+    const state = get();
+    if (!state.metadata) return;
+
+    set({
+      metadata: {
+        ...state.metadata,
+        ...(payload.reasoning !== undefined && { reasoning: payload.reasoning }),
+        ...(payload.title !== undefined && { title: payload.title }),
+        ...(payload.description !== undefined && { description: payload.description }),
+      },
+    });
+  },
+
+  setWatchSubmitted: (submitted: boolean) => {
+    set({ watchSubmitted: submitted });
   },
 }));

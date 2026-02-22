@@ -45,6 +45,33 @@ Living document capturing user experience observations, design decisions, and ex
 
 ---
 
+## Watch Mode (v0.13.x)
+
+### Decision
+Added `diffprism watch` command — a persistent watcher that keeps a browser tab open and auto-refreshes diffs + analysis as files change. Designed to eliminate the manual friction of asking Claude to open a review.
+
+### Architecture
+- **Two-port model:** WS+HTTP bridge on one port (API + WebSocket), Vite/static UI server on a second port
+- **Polling-based:** Polls `getDiff()` every 1s, SHA-256 hashes rawDiff to detect changes, only pushes updates when the hash changes
+- **Service discovery:** Writes `.diffprism/watch.json` at the git root with `{ wsPort, uiPort, pid, cwd, diffRef, startedAt }`. MCP tools and CLI commands read this to find the running watch server. Stale files are cleaned up via PID liveness check.
+- **Claude Code integration:**
+  - `update_review_context` MCP tool — pushes reasoning to the watch session without blocking
+  - `notify-stop` CLI command — fire-and-forget POST to `/api/refresh`, used as a Claude Code Stop hook
+  - `/review` skill detects running watch and calls `update_review_context` instead of blocking `open_review`
+
+### UX Behavior
+- **After submit:** Watch mode shows "Watching for changes..." instead of countdown + auto-close. When new diff arrives, transitions back to review view.
+- **State preservation:** File review statuses are preserved for unchanged files. Only changed files reset to "unreviewed". Comments are kept.
+- **Visual indicator:** Green pulsing dot in top-right corner shows "Watching" when in watch mode.
+- **Graceful shutdown:** SIGINT/SIGTERM stops the watcher, cleans up `.diffprism/watch.json`, closes servers.
+
+### Setup
+`diffprism setup` now also:
+- Auto-approves `mcp__diffprism__update_review_context` tool
+- Adds a Claude Code Stop hook (`npx diffprism notify-stop`) to trigger refresh after every Claude turn
+
+---
+
 ## Multi-Agent / Worktree Support (Future)
 
 Early thinking — not fully specced yet. The core idea: developers using git worktrees to run multiple agents in parallel need DiffPrism to clearly surface **which branch and worktree** each review belongs to, and support reviewing multiple agent outputs simultaneously.

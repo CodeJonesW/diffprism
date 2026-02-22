@@ -140,6 +140,7 @@ export interface ReviewInitPayload {
   rawDiff: string;
   briefing: ReviewBriefing;
   metadata: ReviewMetadata;
+  watchMode?: boolean;
 }
 
 export interface ReviewMetadata {
@@ -149,10 +150,24 @@ export interface ReviewMetadata {
   currentBranch?: string;
 }
 
-export type ServerMessage = {
-  type: "review:init";
-  payload: ReviewInitPayload;
-};
+export interface DiffUpdatePayload {
+  diffSet: DiffSet;
+  rawDiff: string;
+  briefing: ReviewBriefing;
+  changedFiles: string[];
+  timestamp: number;
+}
+
+export interface ContextUpdatePayload {
+  reasoning?: string;
+  title?: string;
+  description?: string;
+}
+
+export type ServerMessage =
+  | { type: "review:init"; payload: ReviewInitPayload }
+  | { type: "diff:update"; payload: DiffUpdatePayload }
+  | { type: "context:update"; payload: ContextUpdatePayload };
 
 export type ClientMessage = {
   type: "review:submit";

@@ -3,8 +3,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ─── Mocks ───
 
 const mockStartReview = vi.fn();
+const mockReadWatchFile = vi.fn();
+const mockReadReviewResult = vi.fn();
+const mockConsumeReviewResult = vi.fn();
 vi.mock("@diffprism/core", () => ({
   startReview: (...args: unknown[]) => mockStartReview(...args),
+  readWatchFile: (...args: unknown[]) => mockReadWatchFile(...args),
+  readReviewResult: (...args: unknown[]) => mockReadReviewResult(...args),
+  consumeReviewResult: (...args: unknown[]) => mockConsumeReviewResult(...args),
 }));
 
 const mockToolFn = vi.fn();
@@ -32,12 +38,14 @@ describe("mcp-server", () => {
     vi.clearAllMocks();
   });
 
-  it("registers the open_review tool", async () => {
+  it("registers tools", async () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(1);
+    expect(mockToolFn).toHaveBeenCalledTimes(3);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
+    expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
+    expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
   });
 
   it("connects the stdio transport", async () => {
