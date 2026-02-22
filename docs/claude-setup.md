@@ -17,9 +17,11 @@ npx diffprism setup
 ```
 
 This single command:
+- Adds `.diffprism` to `.gitignore`
 - Creates `.mcp.json` with the DiffPrism MCP server config
-- Creates `.claude/settings.json` with auto-approve permissions
-- Installs a `/review` skill so you can type `/review` in Claude Code at any time
+- Creates `.claude/settings.json` with auto-approve permissions for all 3 MCP tools
+- Installs a Stop hook for watch mode cleanup
+- Installs the `/review` skill so you can type `/review` in Claude Code at any time
 
 After running, restart Claude Code to pick up the new configuration. The first time you use `/review`, Claude will ask your preferences (when to review, default diff scope, etc.) and save them to `diffprism.config.json`.
 
@@ -113,7 +115,7 @@ Restart Claude Desktop after saving.
 
 ### Step 3: Auto-Approve the Tool (Optional)
 
-By default, Claude Code prompts for confirmation each time the `open_review` tool is called. To skip the prompt, add the tool to your permissions allowlist.
+By default, Claude Code prompts for confirmation each time an MCP tool is called. To skip the prompt, add all three tools to your permissions allowlist.
 
 **Project-level** (`.claude/settings.json` in your repo root):
 
@@ -121,7 +123,9 @@ By default, Claude Code prompts for confirmation each time the `open_review` too
 {
   "permissions": {
     "allow": [
-      "mcp__diffprism__open_review"
+      "mcp__diffprism__open_review",
+      "mcp__diffprism__update_review_context",
+      "mcp__diffprism__get_review_result"
     ]
   }
 }
@@ -151,7 +155,11 @@ Claude will call the `open_review` MCP tool. A browser window should open with t
 
 ## Tool Reference
 
-The MCP server exposes one tool: **`open_review`**
+The MCP server exposes three tools:
+
+### `open_review`
+
+Opens a browser-based code review. Blocks until the engineer submits their decision.
 
 | Parameter     | Required | Description                                                       |
 |---------------|----------|-------------------------------------------------------------------|
@@ -160,7 +168,23 @@ The MCP server exposes one tool: **`open_review`**
 | `description` | No       | Description of the changes                                        |
 | `reasoning`   | No       | Agent reasoning about why the changes were made                   |
 
-**Returns:** A `ReviewResult` JSON object:
+### `update_review_context`
+
+Pushes reasoning/context to a running `diffprism watch` session. Non-blocking — returns immediately.
+
+| Parameter     | Required | Description                                    |
+|---------------|----------|------------------------------------------------|
+| `reasoning`   | No       | Agent reasoning about the current changes      |
+| `title`       | No       | Updated title for the review                   |
+| `description` | No       | Updated description of the changes             |
+
+### `get_review_result`
+
+Fetches the most recent review result from a `diffprism watch` session. Non-blocking — returns immediately. The result is marked as consumed after retrieval so it won't be returned again.
+
+No parameters.
+
+**Returns (all tools):** A `ReviewResult` JSON object:
 
 ```json
 {
