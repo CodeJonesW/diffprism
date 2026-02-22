@@ -6,7 +6,7 @@ import type { ReviewResult } from "./types";
 
 export default function App() {
   const { sendResult, connectionStatus } = useWebSocket();
-  const { diffSet, metadata, theme, isWatchMode, watchSubmitted, setWatchSubmitted } =
+  const { diffSet, metadata, theme, isWatchMode, watchSubmitted, hasUnreviewedChanges, setWatchSubmitted } =
     useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
@@ -21,18 +21,9 @@ export default function App() {
     }
   }, [theme]);
 
-  // When watch mode receives a new diff after submit, transition back to review
-  useEffect(() => {
-    if (isWatchMode && submitted && !watchSubmitted) {
-      setSubmitted(false);
-      setCountdown(3);
-    }
-  }, [isWatchMode, submitted, watchSubmitted]);
-
   function handleSubmit(result: ReviewResult) {
     sendResult(result);
     if (isWatchMode) {
-      setSubmitted(true);
       setWatchSubmitted(true);
     } else {
       setSubmitted(true);
@@ -58,43 +49,6 @@ export default function App() {
 
     return () => clearTimeout(timer);
   }, [submitted, countdown, closeWindow, isWatchMode]);
-
-  // Watch mode: submitted state — waiting for changes
-  if (submitted && isWatchMode) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-600/20 border border-green-300 dark:border-green-500/30 flex items-center justify-center mx-auto mb-4">
-            <svg
-              className="w-8 h-8 text-green-700 dark:text-green-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 13l4 4L19 7"
-              />
-            </svg>
-          </div>
-          <h1 className="text-text-primary text-xl font-semibold mb-2">
-            Review Submitted
-          </h1>
-          <div className="flex items-center justify-center gap-2 mt-4">
-            <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500" />
-            </span>
-            <p className="text-text-secondary text-sm">
-              Watching for changes...
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Non-watch mode: submitted confirmation with countdown
   if (submitted) {
@@ -188,7 +142,12 @@ export default function App() {
           <span className="text-xs text-text-secondary">Watching</span>
         </div>
       )}
-      <ReviewView onSubmit={handleSubmit} />
+      <ReviewView
+        onSubmit={handleSubmit}
+        isWatchMode={isWatchMode}
+        watchSubmitted={watchSubmitted}
+        hasUnreviewedChanges={hasUnreviewedChanges}
+      />
     </div>
   );
 }

@@ -66,6 +66,7 @@ describe("review store", () => {
       theme: "dark",
       isWatchMode: false,
       watchSubmitted: false,
+      hasUnreviewedChanges: true,
     });
   });
 

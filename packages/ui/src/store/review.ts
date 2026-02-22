@@ -34,6 +34,7 @@ export interface ReviewState {
   theme: Theme;
   isWatchMode: boolean;
   watchSubmitted: boolean;
+  hasUnreviewedChanges: boolean;
 
   // Actions
   initReview: (payload: ReviewInitPayload) => void;
@@ -67,6 +68,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   isWatchMode: false,
   watchSubmitted: false,
+  hasUnreviewedChanges: true,
 
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
@@ -91,6 +93,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       activeCommentKey: null,
       isWatchMode: payload.watchMode ?? false,
       watchSubmitted: false,
+      hasUnreviewedChanges: true,
     });
   },
 
@@ -179,7 +182,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       briefing: payload.briefing,
       fileStatuses,
       selectedFile,
-      watchSubmitted: false,
+      hasUnreviewedChanges: true,
     });
   },
 
@@ -198,6 +201,9 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   setWatchSubmitted: (submitted: boolean) => {
-    set({ watchSubmitted: submitted });
+    set({
+      watchSubmitted: submitted,
+      ...(submitted && { hasUnreviewedChanges: false }),
+    });
   },
 }));

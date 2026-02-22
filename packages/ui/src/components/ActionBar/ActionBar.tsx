@@ -5,9 +5,12 @@ import { useReviewStore } from "../../store/review";
 
 interface ActionBarProps {
   onSubmit: (result: ReviewResult) => void;
+  isWatchMode?: boolean;
+  watchSubmitted?: boolean;
+  hasUnreviewedChanges?: boolean;
 }
 
-export function ActionBar({ onSubmit }: ActionBarProps) {
+export function ActionBar({ onSubmit, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
   const [summary, setSummary] = useState("");
   const { diffSet, fileStatuses, comments } = useReviewStore();
 
@@ -29,8 +32,38 @@ export function ActionBar({ onSubmit }: ActionBarProps) {
     });
   }
 
+  // Watch mode: submitted with no new changes — compact bar
+  if (isWatchMode && watchSubmitted && !hasUnreviewedChanges) {
+    return (
+      <div className="bg-surface border-t border-border px-4 py-3 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <Check className="w-4 h-4 text-green-700 dark:text-green-400" />
+          <span className="text-sm text-green-700 dark:text-green-400 font-medium">
+            Review submitted
+          </span>
+          <span className="relative flex h-2 w-2 ml-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+          </span>
+          <span className="text-xs text-text-secondary">Watching for changes...</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-surface border-t border-border px-4 py-3 flex-shrink-0">
+      {/* New changes banner in watch mode */}
+      {isWatchMode && watchSubmitted && hasUnreviewedChanges && (
+        <div className="flex items-center gap-2 mb-3 text-xs text-accent">
+          <span className="relative flex h-2 w-2">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
+          </span>
+          New changes detected
+        </div>
+      )}
+
       {/* Stats row */}
       <div className="flex items-center gap-4 mb-3">
         <span className="text-text-secondary text-xs">
