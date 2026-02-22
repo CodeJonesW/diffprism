@@ -15,6 +15,7 @@ import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2 } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread } from "../InlineComment";
 import { ThemeToggle } from "../ThemeToggle";
+import { getFileKey, getDisplayPath } from "../../lib/file-key";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -121,8 +122,11 @@ function buildLineToKeyMap(
 
 /**
  * Extract the raw diff text for a single file from the full rawDiff string.
+ *
+ * @param occurrence - 0-based index for when the same file path appears
+ *   multiple times in the rawDiff (e.g. staged + unstaged). Defaults to 0.
  */
-function extractFileDiff(rawDiff: string, filePath: string): string | null {
+function extractFileDiff(rawDiff: string, filePath: string, occurrence = 0): string | null {
   // Match diff sections starting with "diff --git"
   const diffPattern = /^diff --git /gm;
   const matches: number[] = [];
@@ -132,6 +136,7 @@ function extractFileDiff(rawDiff: string, filePath: string): string | null {
     matches.push(match.index);
   }
 
+  let found = 0;
   for (let i = 0; i < matches.length; i++) {
     const start = matches[i];
     const end = i + 1 < matches.length ? matches[i + 1] : rawDiff.length;
@@ -145,7 +150,10 @@ function extractFileDiff(rawDiff: string, filePath: string): string | null {
       section.includes(`a/${filePath}`) ||
       section.includes(`b/${filePath}`)
     ) {
-      return section;
+      if (found === occurrence) {
+        return section;
+      }
+      found++;
     }
   }
 
@@ -169,13 +177,21 @@ export function DiffViewer() {
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
-    return diffSet.files.find((f) => f.path === selectedFile) ?? null;
+    return diffSet.files.find((f) => getFileKey(f) === selectedFile) ?? null;
   }, [diffSet, selectedFile]);
 
   const fileDiffText = useMemo(() => {
-    if (!rawDiff || !selectedFile) return null;
-    return extractFileDiff(rawDiff, selectedFile);
-  }, [rawDiff, selectedFile]);
+    if (!rawDiff || !selectedFile || !diffSet) return null;
+    const displayPath = getDisplayPath(selectedFile);
+    // Count how many files with the same path appear before the selected file
+    // to determine which occurrence to extract from rawDiff
+    let occurrence = 0;
+    for (const f of diffSet.files) {
+      if (getFileKey(f) === selectedFile) break;
+      if (f.path === displayPath) occurrence++;
+    }
+    return extractFileDiff(rawDiff, displayPath, occurrence);
+  }, [rawDiff, selectedFile, diffSet]);
 
   const parsedFiles = useMemo(() => {
     if (!fileDiffText) return [];
@@ -212,7 +228,7 @@ export function DiffViewer() {
     }
   }, [parsedFiles, selectedDiffFile, viewMode]);
 
-  // Map of "file:line" → changeKey for the current file
+  // Map of "fileKey:line" → changeKey for the current file
   const lineToKeyMap = useMemo(() => {
     if (parsedFiles.length === 0 || !selectedFile) return {};
     return buildLineToKeyMap(parsedFiles[0].hunks, selectedFile);
@@ -364,11 +380,13 @@ export function DiffViewer() {
     );
   }
 
+  const displayPath = getDisplayPath(selectedFile);
+
   // Binary file state
   if (selectedDiffFile?.binary) {
     return (
       <div className="flex-1 flex flex-col bg-background">
-        <FileHeader path={selectedFile} />
+        <FileHeader path={displayPath} stage={selectedDiffFile?.stage} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-text-secondary text-sm">
@@ -384,7 +402,7 @@ export function DiffViewer() {
   if (parsedFiles.length === 0) {
     return (
       <div className="flex-1 flex flex-col bg-background">
-        <FileHeader path={selectedFile} />
+        <FileHeader path={displayPath} stage={selectedDiffFile?.stage} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <p className="text-text-secondary text-sm">
@@ -401,7 +419,8 @@ export function DiffViewer() {
   return (
     <div className="flex-1 flex flex-col bg-background min-h-0">
       <FileHeader
-        path={selectedFile}
+        path={displayPath}
+        stage={selectedDiffFile?.stage}
         additions={selectedDiffFile?.additions}
         deletions={selectedDiffFile?.deletions}
         viewMode={viewMode}
@@ -430,12 +449,14 @@ export function DiffViewer() {
 
 function FileHeader({
   path,
+  stage,
   additions,
   deletions,
   viewMode,
   onViewModeChange,
 }: {
   path: string;
+  stage?: "staged" | "unstaged";
   additions?: number;
   deletions?: number;
   viewMode?: "unified" | "split";
@@ -447,6 +468,15 @@ function FileHeader({
       <span className="text-text-primary text-sm font-mono truncate">
         {path}
       </span>
+      {stage && (
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+          stage === "staged"
+            ? "bg-green-600/20 text-green-400 border-green-500/30"
+            : "bg-yellow-600/20 text-yellow-400 border-yellow-500/30"
+        }`}>
+          {stage === "staged" ? "Staged" : "Unstaged"}
+        </span>
+      )}
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
         {additions !== undefined && additions > 0 && (
           <span className="text-green-700 dark:text-green-400 text-xs font-mono">

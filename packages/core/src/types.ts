@@ -23,6 +23,7 @@ export interface DiffFile {
   binary: boolean;
   additions: number;
   deletions: number;
+  stage?: "staged" | "unstaged";
 }
 
 export interface DiffSet {

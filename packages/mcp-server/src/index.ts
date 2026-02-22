@@ -21,7 +21,7 @@ export async function startMcpServer(): Promise<void> {
       diff_ref: z
         .string()
         .describe(
-          'Git diff reference: "staged", "unstaged", or a ref range like "HEAD~3..HEAD"',
+          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
         ),
       title: z.string().optional().describe("Title for the review"),
       description: z
@@ -144,10 +144,50 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_result",
-    "Fetch the most recent review result from a DiffPrism watch session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again.",
-    {},
-    async () => {
+    "Fetch the most recent review result from a DiffPrism watch session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again. Use wait=true to block until a result is available (recommended after pushing context to a watch session).",
+    {
+      wait: z
+        .boolean()
+        .optional()
+        .describe("If true, poll until a review result is available (blocks up to timeout)"),
+      timeout: z
+        .number()
+        .optional()
+        .describe("Max wait time in seconds when wait=true (default: 300, max: 600)"),
+    },
+    async ({ wait, timeout }) => {
       try {
+        if (wait) {
+          const maxWaitMs = Math.min((timeout ?? 300), 600) * 1000;
+          const pollIntervalMs = 2000;
+          const start = Date.now();
+
+          while (Date.now() - start < maxWaitMs) {
+            const data = readReviewResult();
+            if (data) {
+              consumeReviewResult();
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: JSON.stringify(data.result, null, 2),
+                  },
+                ],
+              };
+            }
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          }
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No review result received within timeout.",
+              },
+            ],
+          };
+        }
+
         const data = readReviewResult();
         if (!data) {
           return {

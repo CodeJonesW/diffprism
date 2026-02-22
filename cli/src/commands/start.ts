@@ -1,17 +1,34 @@
+import { setup } from "./setup.js";
 import { startWatch } from "@diffprism/core";
 
-interface WatchFlags {
+interface StartFlags {
   staged?: boolean;
   unstaged?: boolean;
   title?: string;
   dev?: boolean;
   interval?: string;
+  global?: boolean;
+  force?: boolean;
 }
 
-export async function watch(
+export async function start(
   ref: string | undefined,
-  flags: WatchFlags,
+  flags: StartFlags,
 ): Promise<void> {
+  // Step 1: Run setup quietly
+  const outcome = await setup({
+    global: flags.global,
+    force: flags.force,
+    quiet: true,
+  });
+
+  const hasChanges = outcome.created.length > 0 || outcome.updated.length > 0;
+
+  if (hasChanges) {
+    console.log("✓ DiffPrism configured for Claude Code.");
+  }
+
+  // Step 2: Determine diff ref
   let diffRef: string;
 
   if (flags.staged) {
@@ -26,6 +43,7 @@ export async function watch(
 
   const pollInterval = flags.interval ? parseInt(flags.interval, 10) : 1000;
 
+  // Step 3: Start watch (startWatch prints its own URL output)
   try {
     const handle = await startWatch({
       diffRef,
@@ -35,9 +53,16 @@ export async function watch(
       pollInterval,
     });
 
+    console.log("Use /review in Claude Code to send changes for review.");
+    if (hasChanges) {
+      console.log(
+        "If this is your first time, restart Claude Code first to load the MCP server.",
+      );
+    }
+
     // Graceful shutdown on SIGINT/SIGTERM
     const shutdown = async () => {
-      console.log("\nStopping watch...");
+      console.log("\nStopping DiffPrism...");
       await handle.stop();
       process.exit(0);
     };

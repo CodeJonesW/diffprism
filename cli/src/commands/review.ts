@@ -20,8 +20,8 @@ export async function review(
   } else if (ref) {
     diffRef = ref;
   } else {
-    // Default to all changes (staged + unstaged) if no ref specified
-    diffRef = "all";
+    // Default to working-copy mode: staged/unstaged shown as separate groups
+    diffRef = "working-copy";
   }
 
   try {

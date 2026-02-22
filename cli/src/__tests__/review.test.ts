@@ -59,7 +59,7 @@ describe("review command", () => {
       );
     });
 
-    it('defaults to "all" when no ref or flags are provided', async () => {
+    it('defaults to "working-copy" when no ref or flags are provided', async () => {
       mockStartReview.mockResolvedValue({
         decision: "approved",
         comments: [],
@@ -68,7 +68,7 @@ describe("review command", () => {
       await review(undefined, {});
 
       expect(mockStartReview).toHaveBeenCalledWith(
-        expect.objectContaining({ diffRef: "all" }),
+        expect.objectContaining({ diffRef: "working-copy" }),
       );
     });
 

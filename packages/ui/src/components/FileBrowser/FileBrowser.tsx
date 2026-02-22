@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useReviewStore } from "../../store/review";
 import {
   FileCode,
@@ -8,8 +8,11 @@ import {
   Eye,
   CheckCircle,
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import type { DiffFile, FileReviewStatus } from "../../types";
+import { getFileKey } from "../../lib/file-key";
 
 function getStatusBadge(status: DiffFile["status"]) {
   switch (status) {
@@ -79,12 +82,39 @@ export function FileBrowser() {
   const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus } =
     useReviewStore();
 
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  // Determine if we're in grouped mode (files have stage set)
+  const hasGroups = useMemo(() => {
+    if (!diffSet) return false;
+    return diffSet.files.some((f) => f.stage !== undefined);
+  }, [diffSet]);
+
+  const { stagedFiles, unstagedFiles } = useMemo(() => {
+    if (!diffSet) return { stagedFiles: [], unstagedFiles: [] };
+    if (!hasGroups) return { stagedFiles: [], unstagedFiles: [] };
+    return {
+      stagedFiles: diffSet.files.filter((f) => f.stage === "staged"),
+      unstagedFiles: diffSet.files.filter((f) => f.stage === "unstaged"),
+    };
+  }, [diffSet, hasGroups]);
+
+  // Flat ordered list for keyboard navigation (respects groups)
+  const flatFiles = useMemo(() => {
+    if (!diffSet) return [];
+    if (!hasGroups) return diffSet.files;
+    const result: DiffFile[] = [];
+    if (!collapsedSections["staged"]) result.push(...stagedFiles);
+    if (!collapsedSections["unstaged"]) result.push(...unstagedFiles);
+    return result;
+  }, [diffSet, hasGroups, stagedFiles, unstagedFiles, collapsedSections]);
+
   const navigateFiles = useCallback(
     (direction: "up" | "down") => {
-      if (!diffSet || diffSet.files.length === 0) return;
+      if (flatFiles.length === 0) return;
 
-      const currentIndex = diffSet.files.findIndex(
-        (f) => f.path === selectedFile,
+      const currentIndex = flatFiles.findIndex(
+        (f) => getFileKey(f) === selectedFile,
       );
       let nextIndex: number;
 
@@ -94,14 +124,14 @@ export function FileBrowser() {
         nextIndex = currentIndex > 0 ? currentIndex - 1 : currentIndex;
       } else {
         nextIndex =
-          currentIndex < diffSet.files.length - 1
+          currentIndex < flatFiles.length - 1
             ? currentIndex + 1
             : currentIndex;
       }
 
-      selectFile(diffSet.files[nextIndex].path);
+      selectFile(getFileKey(flatFiles[nextIndex]));
     },
-    [diffSet, selectedFile, selectFile],
+    [flatFiles, selectedFile, selectFile],
   );
 
   useEffect(() => {
@@ -139,6 +169,136 @@ export function FileBrowser() {
     0,
   );
 
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const renderFileRow = (file: DiffFile) => {
+    const key = getFileKey(file);
+    const isSelected = key === selectedFile;
+    const badge = getStatusBadge(file.status);
+    const dir = dirname(file.path);
+
+    return (
+      <button
+        key={key}
+        onClick={() => selectFile(key)}
+        className={`
+          w-full text-left px-3 py-2 flex items-center gap-2
+          transition-colors duration-100 cursor-pointer group
+          ${
+            isSelected
+              ? "bg-accent/10 border-l-2 border-accent"
+              : "border-l-2 border-transparent hover:bg-text-primary/5"
+          }
+        `}
+      >
+        {getStatusIcon(file.status)}
+
+        <div className="flex-1 min-w-0">
+          <div
+            className={`text-sm truncate ${
+              isSelected ? "text-text-primary" : "text-text-secondary"
+            } group-hover:text-text-primary`}
+          >
+            {basename(file.path)}
+          </div>
+          {dir && (
+            <div className="text-xs text-text-secondary/50 dark:text-text-secondary/50 truncate">
+              {dir}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {(() => {
+            const reviewStatus = fileStatuses[key] ?? "unreviewed";
+            const icon = getReviewStatusIcon(reviewStatus);
+            return (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cycleFileStatus(key);
+                }}
+                className={`p-0.5 rounded hover:bg-text-primary/10 transition-colors cursor-pointer ${
+                  icon
+                    ? ""
+                    : "opacity-0 group-hover:opacity-40"
+                }`}
+                title={
+                  icon
+                    ? `Status: ${reviewStatus} (click to cycle)`
+                    : "Mark as reviewed (click to cycle)"
+                }
+              >
+                {icon ?? (
+                  <Eye className="w-3.5 h-3.5 text-text-secondary" />
+                )}
+              </button>
+            );
+          })()}
+          {file.additions > 0 && (
+            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+              +{file.additions}
+            </span>
+          )}
+          {file.deletions > 0 && (
+            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+              -{file.deletions}
+            </span>
+          )}
+          <span
+            className={`
+              text-[10px] font-bold px-1.5 py-0.5 rounded border
+              ${badge.className}
+            `}
+          >
+            {badge.label}
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderSectionHeader = (
+    label: string,
+    sectionKey: string,
+    files: DiffFile[],
+  ) => {
+    const isCollapsed = collapsedSections[sectionKey] ?? false;
+    const additions = files.reduce((sum, f) => sum + f.additions, 0);
+    const deletions = files.reduce((sum, f) => sum + f.deletions, 0);
+
+    return (
+      <button
+        key={`section-${sectionKey}`}
+        onClick={() => toggleSection(sectionKey)}
+        className="w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-text-primary/5 cursor-pointer"
+      >
+        {isCollapsed ? (
+          <ChevronRight className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
+        )}
+        <span className="text-text-secondary text-xs font-semibold uppercase tracking-wide">
+          {label} ({files.length})
+        </span>
+        <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+          {additions > 0 && (
+            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+              +{additions}
+            </span>
+          )}
+          {deletions > 0 && (
+            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+              -{deletions}
+            </span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full bg-surface border-r border-border">
       {/* Header */}
@@ -163,91 +323,24 @@ export function FileBrowser() {
 
       {/* File list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {diffSet.files.map((file) => {
-          const isSelected = file.path === selectedFile;
-          const badge = getStatusBadge(file.status);
-          const dir = dirname(file.path);
-
-          return (
-            <button
-              key={file.path}
-              onClick={() => selectFile(file.path)}
-              className={`
-                w-full text-left px-3 py-2 flex items-center gap-2
-                transition-colors duration-100 cursor-pointer group
-                ${
-                  isSelected
-                    ? "bg-accent/10 border-l-2 border-accent"
-                    : "border-l-2 border-transparent hover:bg-text-primary/5"
-                }
-              `}
-            >
-              {getStatusIcon(file.status)}
-
-              <div className="flex-1 min-w-0">
-                <div
-                  className={`text-sm truncate ${
-                    isSelected ? "text-text-primary" : "text-text-secondary"
-                  } group-hover:text-text-primary`}
-                >
-                  {basename(file.path)}
-                </div>
-                {dir && (
-                  <div className="text-xs text-text-secondary/80 dark:text-text-secondary/60 truncate">
-                    {dir}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {(() => {
-                  const reviewStatus = fileStatuses[file.path] ?? "unreviewed";
-                  const icon = getReviewStatusIcon(reviewStatus);
-                  return (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        cycleFileStatus(file.path);
-                      }}
-                      className={`p-0.5 rounded hover:bg-text-primary/10 transition-colors cursor-pointer ${
-                        icon
-                          ? ""
-                          : "opacity-0 group-hover:opacity-40"
-                      }`}
-                      title={
-                        icon
-                          ? `Status: ${reviewStatus} (click to cycle)`
-                          : "Mark as reviewed (click to cycle)"
-                      }
-                    >
-                      {icon ?? (
-                        <Eye className="w-3.5 h-3.5 text-text-secondary" />
-                      )}
-                    </button>
-                  );
-                })()}
-                {file.additions > 0 && (
-                  <span className="text-green-700 dark:text-green-400 text-xs font-mono">
-                    +{file.additions}
-                  </span>
-                )}
-                {file.deletions > 0 && (
-                  <span className="text-red-700 dark:text-red-400 text-xs font-mono">
-                    -{file.deletions}
-                  </span>
-                )}
-                <span
-                  className={`
-                    text-[10px] font-bold px-1.5 py-0.5 rounded border
-                    ${badge.className}
-                  `}
-                >
-                  {badge.label}
-                </span>
-              </div>
-            </button>
-          );
-        })}
+        {hasGroups ? (
+          <>
+            {stagedFiles.length > 0 && (
+              <>
+                {renderSectionHeader("Staged Changes", "staged", stagedFiles)}
+                {!collapsedSections["staged"] && stagedFiles.map(renderFileRow)}
+              </>
+            )}
+            {unstagedFiles.length > 0 && (
+              <>
+                {renderSectionHeader("Changes", "unstaged", unstagedFiles)}
+                {!collapsedSections["unstaged"] && unstagedFiles.map(renderFileRow)}
+              </>
+            )}
+          </>
+        ) : (
+          diffSet.files.map(renderFileRow)
+        )}
       </div>
     </div>
   );
