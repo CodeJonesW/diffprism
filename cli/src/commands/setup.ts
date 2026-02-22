@@ -144,7 +144,7 @@ function setupStopHook(
   const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
   const stopHooks = hooks.Stop as Array<Record<string, unknown>> | undefined;
 
-  const hookCommand = "npx diffprism notify-stop";
+  const hookCommand = "npx diffprism@latest notify-stop";
 
   // Check if hook already exists
   if (stopHooks && !force) {

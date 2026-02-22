@@ -186,7 +186,7 @@ describe("setup command", () => {
       });
       expect(hookWrite).toBeDefined();
       const hookData = JSON.parse(hookWrite![1] as string);
-      expect(hookData.hooks.Stop[0].hooks[0].command).toBe("npx diffprism notify-stop");
+      expect(hookData.hooks.Stop[0].hooks[0].command).toBe("npx diffprism@latest notify-stop");
     });
 
     it("preserves existing permissions", async () => {
@@ -244,7 +244,7 @@ describe("setup command", () => {
             hooks: {
               Stop: [{
                 matcher: "",
-                hooks: [{ type: "command", command: "npx diffprism notify-stop" }],
+                hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }],
               }],
             },
           });
