@@ -135,6 +135,47 @@ function setupSkill(
   return { action, filePath };
 }
 
+export function cleanDiffprismHooks(
+  gitRoot: string,
+): { removed: number } {
+  const filePath = path.join(gitRoot, ".claude", "settings.json");
+  const existing = readJsonFile(filePath);
+
+  const hooks = existing.hooks as Record<string, unknown> | undefined;
+  if (!hooks) return { removed: 0 };
+
+  const stopHooks = hooks.Stop;
+  if (!Array.isArray(stopHooks) || stopHooks.length === 0) {
+    return { removed: 0 };
+  }
+
+  const filtered = stopHooks.filter((entry: Record<string, unknown>) => {
+    const innerHooks = entry.hooks;
+    if (!Array.isArray(innerHooks)) return true;
+    return !innerHooks.some((h: Record<string, unknown>) => {
+      const cmd = h.command;
+      return (
+        typeof cmd === "string" &&
+        cmd.includes("diffprism") &&
+        cmd.includes("notify-stop")
+      );
+    });
+  });
+
+  const removed = stopHooks.length - filtered.length;
+
+  if (removed > 0) {
+    if (filtered.length > 0) {
+      hooks.Stop = filtered;
+    } else {
+      delete hooks.Stop;
+    }
+    writeJsonFile(filePath, { ...existing, hooks });
+  }
+
+  return { removed };
+}
+
 function setupStopHook(
   gitRoot: string,
   force: boolean,
@@ -253,6 +294,12 @@ export async function setup(flags: SetupFlags): Promise<void> {
   // Step 3: .claude/settings.json (permissions)
   const settings = setupClaudeSettings(gitRoot, force);
   result[settings.action === "skipped" ? "skipped" : settings.action === "created" ? "created" : "updated"].push(settings.filePath);
+
+  // Step 3.5: Clean stale diffprism hooks before adding current one
+  const cleaned = cleanDiffprismHooks(gitRoot);
+  if (cleaned.removed > 0) {
+    console.log(`  Cleaned ${cleaned.removed} stale hook(s)`);
+  }
 
   // Step 4: .claude/settings.json (Stop hook for watch mode)
   const hook = setupStopHook(gitRoot, force);

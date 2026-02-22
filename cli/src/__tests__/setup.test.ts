@@ -33,7 +33,7 @@ vi.mock("node:readline", () => ({
   },
 }));
 
-import { setup } from "../commands/setup.js";
+import { setup, cleanDiffprismHooks } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
@@ -342,11 +342,20 @@ describe("setup command", () => {
 
       await setup({});
 
-      // Permissions and hook should both be skipped
+      // Permissions should be skipped; cleanup removes the hook for re-adding
       const settingsWrites = mockWriteFileSync.mock.calls.filter(
         (call) => call[0].toString().includes("settings.json"),
       );
-      expect(settingsWrites).toHaveLength(0);
+      // Only the cleanup write (removing stale hook) should occur
+      expect(settingsWrites).toHaveLength(1);
+      const written = JSON.parse(settingsWrites[0][1] as string);
+      expect(written.hooks.Stop).toBeUndefined();
+      // Permissions preserved unchanged (not duplicated)
+      expect(written.permissions.allow).toEqual([
+        "mcp__diffprism__open_review",
+        "mcp__diffprism__update_review_context",
+        "mcp__diffprism__get_review_result",
+      ]);
     });
   });
 
@@ -440,6 +449,134 @@ describe("setup command", () => {
       );
       expect(skillCall).toBeDefined();
       expect(skillCall![1]).toBe(skillContent);
+    });
+  });
+
+  describe("cleanDiffprismHooks", () => {
+    it("removes old-format hook without @latest", () => {
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: { allow: ["some_tool"] },
+            hooks: {
+              Stop: [{
+                matcher: "",
+                hooks: [{ type: "command", command: "npx diffprism notify-stop" }],
+              }],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      const result = cleanDiffprismHooks("/projects/myapp");
+
+      expect(result.removed).toBe(1);
+      const settingsWrite = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().includes("settings.json"),
+      );
+      expect(settingsWrite).toBeDefined();
+      const written = JSON.parse(settingsWrite![1] as string);
+      expect(written.hooks.Stop).toBeUndefined();
+      expect(written.permissions.allow).toContain("some_tool");
+    });
+
+    it("removes duplicate current-format hooks", () => {
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            hooks: {
+              Stop: [
+                {
+                  matcher: "",
+                  hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }],
+                },
+                {
+                  matcher: "",
+                  hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }],
+                },
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      const result = cleanDiffprismHooks("/projects/myapp");
+
+      expect(result.removed).toBe(2);
+      const settingsWrite = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().includes("settings.json"),
+      );
+      const written = JSON.parse(settingsWrite![1] as string);
+      expect(written.hooks.Stop).toBeUndefined();
+    });
+
+    it("preserves non-diffprism Stop hooks", () => {
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            hooks: {
+              Stop: [
+                {
+                  matcher: "",
+                  hooks: [{ type: "command", command: "npx diffprism notify-stop" }],
+                },
+                {
+                  matcher: "",
+                  hooks: [{ type: "command", command: "echo cleanup done" }],
+                },
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      const result = cleanDiffprismHooks("/projects/myapp");
+
+      expect(result.removed).toBe(1);
+      const settingsWrite = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().includes("settings.json"),
+      );
+      const written = JSON.parse(settingsWrite![1] as string);
+      expect(written.hooks.Stop).toHaveLength(1);
+      expect(written.hooks.Stop[0].hooks[0].command).toBe("echo cleanup done");
+    });
+
+    it("no-op when no hooks exist", () => {
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({ permissions: { allow: [] } });
+        }
+        throw new Error("File not found");
+      });
+
+      const result = cleanDiffprismHooks("/projects/myapp");
+
+      expect(result.removed).toBe(0);
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("no-op when no Stop hooks exist", () => {
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            hooks: { PreToolUse: [{ matcher: "", hooks: [] }] },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      const result = cleanDiffprismHooks("/projects/myapp");
+
+      expect(result.removed).toBe(0);
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
   });
 
