@@ -3,6 +3,7 @@ import { ReasoningPanel } from "./ReasoningPanel";
 import { FileBrowser } from "./FileBrowser";
 import { DiffViewer } from "./DiffViewer";
 import { ActionBar } from "./ActionBar";
+import { HotkeyGuide } from "./HotkeyGuide";
 import type { ReviewResult } from "../types";
 
 interface ReviewViewProps {
@@ -34,6 +35,7 @@ export function ReviewView({ onSubmit, isWatchMode, watchSubmitted, hasUnreviewe
         watchSubmitted={watchSubmitted}
         hasUnreviewedChanges={hasUnreviewedChanges}
       />
+      <HotkeyGuide />
     </div>
   );
 }
