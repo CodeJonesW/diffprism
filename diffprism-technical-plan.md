@@ -615,17 +615,18 @@ diffprism/
   - [ ] Estimated review time (#59)
   - [ ] Logic vs boilerplate ratio (#60)
 
-### M3: Multi-Agent & Worktree Support — NOT STARTED
+### M3: Multi-Agent & Worktree Support — ~80% COMPLETE
 
 **Goal:** Support developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer.
 
-- [ ] Review session persistence — save to disk, survive restarts (#47)
-- [ ] Async review mode — fire-and-forget + polling (#42)
+- [x] Global server with HTTP review API — `diffprism server` on ports 24680/24681 (#88, v0.15.0)
+- [x] MCP server as HTTP client — auto-detects global server, computes diff locally, POSTs payload (#89, v0.16.0)
+- [x] Multi-session UI — session list with status badges, branch info, switching (#90, v0.16.0)
+- [x] Global setup — `diffprism setup --global`, auto-setup in `diffprism server` (#91)
 - [ ] Worktree detection & metadata — identify branch, worktree path, agent context (#45)
-- [ ] Multi-review dashboard — single view of all active reviews across worktrees (#46)
-- [ ] Review queuing — don't flood the developer with N browser tabs
+- [ ] Per-session live watching — diff updates without new `open_review` calls (optional)
 
-**Build order:** #47 (persistence) → #42 (async) → #45 (worktree detection) → #46 (dashboard)
+**Architecture:** Global server is a lightweight session manager + relay. MCP server computes diffs locally (has git access), POSTs full `ReviewInitPayload` to global server. Discovery via `~/.diffprism/server.json` with PID liveness + HTTP ping checks.
 
 ### M4: GitHub Integration — Read — NOT STARTED
 
