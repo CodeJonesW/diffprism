@@ -18,6 +18,8 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 
 **Dependency flow:** `git` + `analysis` → `core` (pipeline + global server) → `cli` + `mcp-server`. UI is standalone Vite app connected via WebSocket. MCP server auto-detects a running global server and routes reviews there instead of opening ephemeral browser tabs.
 
+**Review workflows:** See **`docs/workflows.md`** for the three modes of operation (ephemeral, watch, global server) — when to use each, setup steps, and how the mode priority works.
+
 ## Key Files
 
 | File | Purpose |
