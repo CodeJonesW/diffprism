@@ -118,9 +118,15 @@ importers:
 
   packages/mcp-server:
     dependencies:
+      '@diffprism/analysis':
+        specifier: workspace:*
+        version: link:../analysis
       '@diffprism/core':
         specifier: workspace:*
         version: link:../core
+      '@diffprism/git':
+        specifier: workspace:*
+        version: link:../git
       '@modelcontextprotocol/sdk':
         specifier: ^1.4.0
         version: 1.26.0(zod@3.25.76)

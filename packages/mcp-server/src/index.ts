@@ -3,10 +3,119 @@ import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { startReview, readWatchFile, readReviewResult, consumeReviewResult } from "@diffprism/core";
-import type { ContextUpdatePayload } from "@diffprism/core";
+import {
+  startReview,
+  readWatchFile,
+  readReviewResult,
+  consumeReviewResult,
+  isServerAlive,
+} from "@diffprism/core";
+import type {
+  ContextUpdatePayload,
+  GlobalServerInfo,
+  ReviewInitPayload,
+  ReviewResult,
+} from "@diffprism/core";
+import { getDiff, getCurrentBranch } from "@diffprism/git";
+import { analyze } from "@diffprism/analysis";
 
 declare const DIFFPRISM_VERSION: string;
+
+// Track the last session created on the global server so
+// update_review_context and get_review_result can reference it.
+let lastGlobalSessionId: string | null = null;
+let lastGlobalServerInfo: GlobalServerInfo | null = null;
+
+/**
+ * Compute diff locally, POST to global server, poll for result.
+ * Returns the ReviewResult once the user submits in the UI.
+ */
+async function reviewViaGlobalServer(
+  serverInfo: GlobalServerInfo,
+  diffRef: string,
+  options: {
+    title?: string;
+    description?: string;
+    reasoning?: string;
+    cwd?: string;
+  },
+): Promise<ReviewResult> {
+  const cwd = options.cwd ?? process.cwd();
+
+  // 1. Compute diff and analysis locally (MCP has git access)
+  const { diffSet, rawDiff } = getDiff(diffRef, { cwd });
+  const currentBranch = getCurrentBranch({ cwd });
+
+  if (diffSet.files.length === 0) {
+    return {
+      decision: "approved",
+      comments: [],
+      summary: "No changes to review.",
+    };
+  }
+
+  const briefing = analyze(diffSet);
+
+  // 2. Build the payload
+  const payload: ReviewInitPayload = {
+    reviewId: "", // Server assigns the real ID
+    diffSet,
+    rawDiff,
+    briefing,
+    metadata: {
+      title: options.title,
+      description: options.description,
+      reasoning: options.reasoning,
+      currentBranch,
+    },
+  };
+
+  // 3. POST to global server
+  const createResponse = await fetch(
+    `http://localhost:${serverInfo.httpPort}/api/reviews`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload, projectPath: cwd }),
+    },
+  );
+
+  if (!createResponse.ok) {
+    throw new Error(`Global server returned ${createResponse.status} on create`);
+  }
+
+  const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+  // Store for update_review_context / get_review_result
+  lastGlobalSessionId = sessionId;
+  lastGlobalServerInfo = serverInfo;
+
+  // 4. Poll for result
+  const pollIntervalMs = 2000;
+  const maxWaitMs = 600 * 1000; // 10 minutes
+  const start = Date.now();
+
+  while (Date.now() - start < maxWaitMs) {
+    const resultResponse = await fetch(
+      `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
+    );
+
+    if (resultResponse.ok) {
+      const data = (await resultResponse.json()) as {
+        result: ReviewResult | null;
+        status: string;
+      };
+
+      if (data.result) {
+        return data.result;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new Error("Review timed out waiting for submission.");
+}
 
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
@@ -35,7 +144,29 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ diff_ref, title, description, reasoning }) => {
       try {
-        // Auto-detect dev mode when running inside the diffprism workspace
+        // Check for a running global server
+        const serverInfo = await isServerAlive();
+
+        if (serverInfo) {
+          // Route through global server
+          const result = await reviewViaGlobalServer(serverInfo, diff_ref, {
+            title,
+            description,
+            reasoning,
+            cwd: process.cwd(),
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        }
+
+        // Fallback: in-process review (no global server running)
         const isDev = fs.existsSync(
           path.join(process.cwd(), "packages", "ui", "src", "App.tsx"),
         );
@@ -46,7 +177,7 @@ export async function startMcpServer(): Promise<void> {
           description,
           reasoning,
           cwd: process.cwd(),
-          silent: true, // Suppress stdout — MCP uses stdio
+          silent: true,
           dev: isDev,
         });
 
@@ -75,7 +206,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "update_review_context",
-    "Push reasoning/context to a running DiffPrism watch session. Non-blocking — returns immediately. Use this when `diffprism watch` is running to update the review UI with agent reasoning without opening a new review.",
+    "Push reasoning/context to a running DiffPrism review session. Non-blocking — returns immediately. Use this when `diffprism watch` or `diffprism server` is running to update the review UI with agent reasoning without opening a new review.",
     {
       reasoning: z
         .string()
@@ -89,22 +220,49 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ reasoning, title, description }) => {
       try {
+        const payload: ContextUpdatePayload = {};
+        if (reasoning !== undefined) payload.reasoning = reasoning;
+        if (title !== undefined) payload.title = title;
+        if (description !== undefined) payload.description = description;
+
+        // Try global server first
+        if (lastGlobalSessionId && lastGlobalServerInfo) {
+          const serverInfo = await isServerAlive();
+          if (serverInfo) {
+            const response = await fetch(
+              `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/context`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              },
+            );
+
+            if (response.ok) {
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "Context updated in DiffPrism global server session.",
+                  },
+                ],
+              };
+            }
+          }
+        }
+
+        // Fallback: try watch session
         const watchInfo = readWatchFile();
         if (!watchInfo) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "No DiffPrism watch session is running. Start one with `diffprism watch`.",
+                text: "No DiffPrism session is running. Start one with `diffprism watch` or `diffprism server`.",
               },
             ],
           };
         }
-
-        const payload: ContextUpdatePayload = {};
-        if (reasoning !== undefined) payload.reasoning = reasoning;
-        if (title !== undefined) payload.title = title;
-        if (description !== undefined) payload.description = description;
 
         const response = await fetch(
           `http://localhost:${watchInfo.wsPort}/api/context`,
@@ -133,7 +291,7 @@ export async function startMcpServer(): Promise<void> {
           content: [
             {
               type: "text" as const,
-              text: `Error updating watch context: ${message}`,
+              text: `Error updating review context: ${message}`,
             },
           ],
           isError: true,
@@ -144,7 +302,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_result",
-    "Fetch the most recent review result from a DiffPrism watch session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again. Use wait=true to block until a result is available (recommended after pushing context to a watch session).",
+    "Fetch the most recent review result from a DiffPrism session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again. Use wait=true to block until a result is available (recommended after pushing context to a watch session).",
     {
       wait: z
         .boolean()
@@ -157,11 +315,81 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ wait, timeout }) => {
       try {
-        if (wait) {
-          const maxWaitMs = Math.min((timeout ?? 300), 600) * 1000;
-          const pollIntervalMs = 2000;
-          const start = Date.now();
+        const maxWaitMs = Math.min((timeout ?? 300), 600) * 1000;
+        const pollIntervalMs = 2000;
 
+        // Try global server first
+        if (lastGlobalSessionId && lastGlobalServerInfo) {
+          const serverInfo = await isServerAlive();
+          if (serverInfo) {
+            if (wait) {
+              const start = Date.now();
+              while (Date.now() - start < maxWaitMs) {
+                const response = await fetch(
+                  `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/result`,
+                );
+                if (response.ok) {
+                  const data = (await response.json()) as {
+                    result: ReviewResult | null;
+                    status: string;
+                  };
+                  if (data.result) {
+                    return {
+                      content: [
+                        {
+                          type: "text" as const,
+                          text: JSON.stringify(data.result, null, 2),
+                        },
+                      ],
+                    };
+                  }
+                }
+                await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+              }
+              return {
+                content: [
+                  {
+                    type: "text" as const,
+                    text: "No review result received within timeout.",
+                  },
+                ],
+              };
+            }
+
+            // Non-blocking check
+            const response = await fetch(
+              `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/result`,
+            );
+            if (response.ok) {
+              const data = (await response.json()) as {
+                result: ReviewResult | null;
+                status: string;
+              };
+              if (data.result) {
+                return {
+                  content: [
+                    {
+                      type: "text" as const,
+                      text: JSON.stringify(data.result, null, 2),
+                    },
+                  ],
+                };
+              }
+            }
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "No pending review result.",
+                },
+              ],
+            };
+          }
+        }
+
+        // Fallback: file-based watch session result
+        if (wait) {
+          const start = Date.now();
           while (Date.now() - start < maxWaitMs) {
             const data = readReviewResult();
             if (data) {
