@@ -79,7 +79,7 @@ function dirname(path: string): string {
 }
 
 export function FileBrowser() {
-  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus } =
+  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide } =
     useReviewStore();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -151,12 +151,15 @@ export function FileBrowser() {
         if (selectedFile) {
           cycleFileStatus(selectedFile);
         }
+      } else if (e.key === "?") {
+        e.preventDefault();
+        toggleHotkeyGuide();
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [navigateFiles, selectedFile, cycleFileStatus]);
+  }, [navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide]);
 
   if (!diffSet) return null;
 

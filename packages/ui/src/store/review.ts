@@ -39,11 +39,13 @@ export interface ReviewState {
   hasUnreviewedChanges: boolean;
 
   // Server mode (multi-session)
+  showHotkeyGuide: boolean;
   isServerMode: boolean;
   sessions: SessionSummary[];
   activeSessionId: string | null;
 
   // Actions
+  toggleHotkeyGuide: () => void;
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
   setConnectionStatus: (status: ReviewState["connectionStatus"]) => void;
@@ -80,6 +82,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
+  showHotkeyGuide: false,
   isServerMode: false,
   sessions: [],
   activeSessionId: null,
@@ -160,6 +163,10 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setActiveCommentKey: (key: string | null) => {
     set({ activeCommentKey: key });
+  },
+
+  toggleHotkeyGuide: () => {
+    set((state) => ({ showHotkeyGuide: !state.showHotkeyGuide }));
   },
 
   toggleTheme: () => {
