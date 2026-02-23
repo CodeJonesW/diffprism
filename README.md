@@ -15,6 +15,8 @@ DiffPrism gives you a visual review step for AI-written code — stage your chan
 - **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status
 - **Three-way decisions** — approve, request changes, or approve with comments
 - **Branch display** — current git branch shown in the review header
+- **Global server mode** — `diffprism server` runs a persistent multi-session review server, multiple agents post reviews to one browser tab
+- **Multi-session UI** — session list with status badges, branch info, file counts, and change stats when running in server mode
 
 ## Quick Start
 
@@ -84,6 +86,32 @@ When `diffprism watch` is running:
 - Claude Code's `/review` skill automatically detects the watch session and pushes reasoning without blocking
 
 Stop the watcher with `Ctrl+C`.
+
+### Global Server Mode (multi-session)
+
+Run a persistent server that accepts reviews from multiple Claude Code sessions and displays them in one browser tab:
+
+```bash
+# Start the global server (auto-runs global setup if needed)
+diffprism server
+
+# Check status and list active sessions
+diffprism server status
+
+# Stop the server
+diffprism server stop
+```
+
+When the global server is running, MCP tools automatically detect it and route reviews there instead of opening ephemeral browser tabs. Each review appears as a session in the multi-session UI — click to switch between them.
+
+**Global setup** (optional, `diffprism server` runs this automatically):
+
+```bash
+# Configure skill + permissions globally (no git repo required)
+diffprism setup --global
+```
+
+Per-project MCP registration (`.mcp.json`) is still needed via `diffprism setup` in each project.
 
 ## MCP Tool Reference
 
@@ -162,12 +190,12 @@ npx tsc --noEmit -p packages/core/tsconfig.json # Type-check a package
 ### Project Structure
 
 ```
-packages/core       — Shared types, pipeline orchestrator, WebSocket bridge
+packages/core       — Shared types, pipeline orchestrator, WebSocket bridge, global server
 packages/git        — Git diff extraction + unified diff parser
 packages/analysis   — Deterministic review briefing (complexity, test gaps, patterns)
-packages/ui         — React 19 + Vite 6 + Tailwind + Zustand diff viewer
-packages/mcp-server — MCP tool server (open_review)
-cli/                — Commander CLI entry point
+packages/ui         — React 19 + Vite 6 + Tailwind + Zustand diff viewer + session list
+packages/mcp-server — MCP tool server, auto-routes to global server when available
+cli/                — Commander CLI (review, serve, setup, server commands)
 ```
 
 ### Requirements

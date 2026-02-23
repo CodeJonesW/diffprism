@@ -72,28 +72,40 @@ Added `diffprism watch` command — a persistent watcher that keeps a browser ta
 
 ---
 
-## Multi-Agent / Worktree Support (Future)
+## Global Server & Multi-Session UI (v0.15.0–v0.16.0)
 
-Early thinking — not fully specced yet. The core idea: developers using git worktrees to run multiple agents in parallel need DiffPrism to clearly surface **which branch and worktree** each review belongs to, and support reviewing multiple agent outputs simultaneously.
+### Decision
+Added `diffprism server` — a persistent global server that accepts reviews from multiple Claude Code sessions and displays them in a single browser tab. Replaces the pattern of opening a new browser tab per `open_review` call.
 
-### Problem
-- A developer may have 3-4 agents working on separate branches in separate worktrees at the same time
-- When multiple review windows open, it's easy to lose track of which review is for which agent/branch/worktree
-- The current UI doesn't prominently display branch or worktree context
+### Architecture
+- **Global server** (`startGlobalServer()`): HTTP API on port 24680, WebSocket on port 24681. Manages sessions in memory. Writes `~/.diffprism/server.json` for discovery.
+- **MCP auto-detection**: MCP server reads `~/.diffprism/server.json`, checks PID liveness + HTTP ping. If alive, computes diff locally and POSTs payload to `/api/reviews` instead of running the pipeline in-process. Polls `/api/reviews/:id/result` for the review decision.
+- **Multi-session UI**: `SessionList` component shows all active reviews with title, branch, file count, +/- stats, status badges (pending/in_review/submitted). Click to switch. Auto-selects when only one session exists.
+- **Global setup** (`diffprism setup --global`): Installs skill and permissions at `~/.claude/` paths without requiring a git repo. `diffprism server` auto-runs this if not done.
 
-### Ideas to Explore
-- **Branch + worktree identification in the review UI** — show the branch name, worktree path, and possibly the agent identity prominently in the header
-- **Multi-review dashboard** — a single view that lists all active/pending reviews across worktrees, so the dev can triage and switch between them
-- **Review queuing** — if multiple agents finish at similar times, queue reviews rather than opening N browser tabs
-- **Worktree-aware MCP** — the MCP server could detect it's running inside a worktree and include that context in the review metadata
+### UX Behavior
+- **Session list**: In server mode (`serverMode=true` URL param), the UI shows a session list instead of a loading spinner when no review is active.
+- **Auto-select**: When the global server has exactly one session, it auto-sends `review:init` without requiring a click.
+- **Submission**: After submitting a review in server mode, the UI returns to the session list (watch-mode pattern) instead of countdown + close.
+- **Backwards compatible**: Without a global server, all tools work exactly as before (ephemeral browser tab per review).
+
+### WS Protocol Additions
+- Server → Client: `session:list` (all sessions), `session:added` (new session notification)
+- Client → Server: `session:select` (user clicks a session)
+
+## Multi-Agent / Worktree Support (Remaining)
+
+The global server handles the core multi-agent use case. Remaining work:
+
+### Still to Explore
+- **Worktree detection** — detect when MCP is running inside a git worktree and include worktree path, branch, and agent context in session metadata (#45)
+- **Per-session live watching** — each session in the global server polls for diff changes, updating live without a new `open_review` call
 - **Color coding or visual differentiation** — give each branch/worktree a distinct visual indicator so reviews are instantly distinguishable
-- **Review session grouping** — group reviews by project or sprint so the developer sees the full picture of what agents have produced
 
-### Open Questions
-- What metadata does the developer actually need to confidently review agent output? Branch name alone, or also commit range, agent identity, task description?
-- Should reviews be serialized (one at a time) or is true parallel review valuable?
-- How should completed reviews flow back to agents waiting in different worktrees?
-- What does the ideal "morning standup" view look like — reviewing everything agents did overnight across worktrees?
+### Resolved Questions
+- **Metadata needed**: Branch name, project path, file count, +/- stats, and review status are sufficient for triage. Agent identity can be added later.
+- **Serialized vs parallel**: Sessions are listed, user picks which to review. True parallel review (split-screen) is future work.
+- **Review flow back to agents**: MCP polls `/api/reviews/:id/result` — the global server relays the decision back to the specific agent that posted the review.
 
 ---
 

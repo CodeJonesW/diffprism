@@ -26,8 +26,10 @@ This single command:
 After running, restart Claude Code to pick up the new configuration. The first time you use `/review`, Claude will ask your preferences (when to review, default diff scope, etc.) and save them to `diffprism.config.json`.
 
 **Options:**
-- `--global` — Install the `/review` skill globally (`~/.claude/skills/`) instead of project-level
+- `--global` — Configure globally (skill + permissions at `~/.claude/`, no git repo required). Skips per-project configs (.mcp.json, .gitignore, hooks).
 - `--force` — Overwrite existing configuration files
+
+**Global setup** is useful when running `diffprism server` for multi-session reviews. It installs the skill and permissions once, then you only need `diffprism setup` (without `--global`) per project for the `.mcp.json` entry.
 
 ## Manual Setup
 

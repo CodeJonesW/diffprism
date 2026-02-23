@@ -40,7 +40,9 @@ The tool dogfoods itself. Every change to this repo goes through DiffPrism revie
 
 ### Multi-Agent Review
 
-The immediate unlock. As agent-driven development scales, engineers will have 2-5 agents working concurrently across git worktrees, each producing changes that need review. DiffPrism becomes the unified review layer: persistent sessions that survive restarts, async review mode so agents don't block waiting for approval, worktree-aware metadata, and a multi-review dashboard that gives you a single view of all active reviews. No more N browser tabs. One surface, all your agent output.
+**Shipped.** The global server architecture is live. `diffprism server` starts a persistent HTTP+WS server that accepts reviews from multiple Claude Code sessions simultaneously. The MCP server auto-detects the global server and routes reviews there — no browser tab per review. The multi-session UI shows all active reviews with status badges, branch info, and change stats in one tab. Global setup (`diffprism setup --global`) configures skill and permissions without requiring a git repo.
+
+**Remaining:** Worktree detection (identify branch/worktree/agent context in review metadata) and per-session live watching (diff updates without new `open_review` calls).
 
 ### AI-Powered Analysis
 
@@ -64,8 +66,8 @@ GitHub bots post comments into GitHub's mediocre diff viewer. CLI tools dump tex
 
 The progression:
 
-1. **Local diff viewer** — npm package, opens in browser, zero-config. Developer tool, bottom-up adoption. Engineers adopt it because it's the fastest way to review agent output.
-2. **Multi-agent review hub** — worktree support, async mode, dashboard. Power-user tool for agent-heavy workflows. Becomes essential infrastructure as teams scale agent usage.
+1. **Local diff viewer** — npm package, opens in browser, zero-config. Developer tool, bottom-up adoption. Engineers adopt it because it's the fastest way to review agent output. *(shipped)*
+2. **Multi-agent review hub** — global server, async mode, multi-session dashboard. Power-user tool for agent-heavy workflows. Becomes essential infrastructure as teams scale agent usage. *(shipped — global server, MCP routing, session UI, global setup)*
 3. **PR review workbench + AI analysis** — GitHub integration, conversational review with Claude, deep analysis layer. Team product with SaaS potential.
 4. **Review OS** — org-level policies, convention learning, approval workflows, trust calibration. Enterprise product.
 
