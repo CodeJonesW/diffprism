@@ -2,12 +2,24 @@ import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
+import { SessionList } from "./components/SessionList";
 import type { ReviewResult } from "./types";
 
 export default function App() {
-  const { sendResult, connectionStatus } = useWebSocket();
-  const { diffSet, metadata, theme, isWatchMode, watchSubmitted, hasUnreviewedChanges, setWatchSubmitted } =
-    useReviewStore();
+  const { sendResult, selectSession: wsSelectSession, connectionStatus } = useWebSocket();
+  const {
+    diffSet,
+    metadata,
+    theme,
+    isWatchMode,
+    watchSubmitted,
+    hasUnreviewedChanges,
+    setWatchSubmitted,
+    isServerMode,
+    sessions,
+    activeSessionId,
+    selectSession,
+  } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
 
@@ -23,11 +35,16 @@ export default function App() {
 
   function handleSubmit(result: ReviewResult) {
     sendResult(result);
-    if (isWatchMode) {
+    if (isWatchMode || isServerMode) {
       setWatchSubmitted(true);
     } else {
       setSubmitted(true);
     }
+  }
+
+  function handleSelectSession(sessionId: string) {
+    selectSession(sessionId);
+    wsSelectSession(sessionId);
   }
 
   const closeWindow = useCallback(() => {
@@ -36,7 +53,7 @@ export default function App() {
 
   // Countdown timer for non-watch mode
   useEffect(() => {
-    if (!submitted || isWatchMode) return;
+    if (!submitted || isWatchMode || isServerMode) return;
 
     if (countdown <= 0) {
       closeWindow();
@@ -48,7 +65,7 @@ export default function App() {
     }, 1000);
 
     return () => clearTimeout(timer);
-  }, [submitted, countdown, closeWindow, isWatchMode]);
+  }, [submitted, countdown, closeWindow, isWatchMode, isServerMode]);
 
   // Non-watch mode: submitted confirmation with countdown
   if (submitted) {
@@ -78,6 +95,47 @@ export default function App() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  // Server mode: show session list when no active review
+  if (isServerMode && !diffSet) {
+    if (connectionStatus === "disconnected") {
+      return (
+        <div className="h-screen flex items-center justify-center bg-background">
+          <div className="text-center">
+            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-600/20 border border-red-300 dark:border-red-500/30 flex items-center justify-center mx-auto mb-4">
+              <svg
+                className="w-6 h-6 text-red-700 dark:text-red-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </div>
+            <h1 className="text-text-primary text-lg font-semibold mb-2">
+              Connection Lost
+            </h1>
+            <p className="text-text-secondary text-sm">
+              Unable to connect to the DiffPrism server.
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <SessionList
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelect={handleSelectSession}
+      />
     );
   }
 
@@ -134,7 +192,7 @@ export default function App() {
   return (
     <ReviewView
       onSubmit={handleSubmit}
-      isWatchMode={isWatchMode}
+      isWatchMode={isWatchMode || isServerMode}
       watchSubmitted={watchSubmitted}
       hasUnreviewedChanges={hasUnreviewedChanges}
     />

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from "vitest";
 import { useReviewStore } from "../store/review.js";
-import type { ReviewInitPayload, ReviewComment } from "../types.js";
+import type { ReviewInitPayload, ReviewComment, SessionSummary } from "../types.js";
 
 function makeInitPayload(fileCount = 2): ReviewInitPayload {
   return {
@@ -67,6 +67,9 @@ describe("review store", () => {
       isWatchMode: false,
       watchSubmitted: false,
       hasUnreviewedChanges: true,
+      isServerMode: false,
+      sessions: [],
+      activeSessionId: null,
     });
   });
 
@@ -243,6 +246,52 @@ describe("review store", () => {
       useReviewStore.getState().toggleTheme(); // light → dark
       expect(useReviewStore.getState().theme).toBe("dark");
       expect(localStorage.getItem("diffprism-theme")).toBe("dark");
+    });
+  });
+
+  describe("session management", () => {
+    function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
+      return {
+        id: "session-abc",
+        projectPath: "/test/project",
+        branch: "main",
+        title: "Test review",
+        fileCount: 3,
+        additions: 10,
+        deletions: 5,
+        status: "pending",
+        createdAt: Date.now(),
+        ...overrides,
+      };
+    }
+
+    it("setServerMode enables server mode", () => {
+      useReviewStore.getState().setServerMode(true);
+      expect(useReviewStore.getState().isServerMode).toBe(true);
+    });
+
+    it("setSessions replaces the session list", () => {
+      const sessions = [makeSession({ id: "s1" }), makeSession({ id: "s2" })];
+      useReviewStore.getState().setSessions(sessions);
+      expect(useReviewStore.getState().sessions).toHaveLength(2);
+      expect(useReviewStore.getState().sessions[0].id).toBe("s1");
+    });
+
+    it("addSession appends to the session list", () => {
+      useReviewStore.getState().setSessions([makeSession({ id: "s1" })]);
+      useReviewStore.getState().addSession(makeSession({ id: "s2" }));
+      expect(useReviewStore.getState().sessions).toHaveLength(2);
+      expect(useReviewStore.getState().sessions[1].id).toBe("s2");
+    });
+
+    it("selectSession sets the active session ID", () => {
+      useReviewStore.getState().selectSession("session-xyz");
+      expect(useReviewStore.getState().activeSessionId).toBe("session-xyz");
+    });
+
+    it("initReview sets activeSessionId to the review ID", () => {
+      useReviewStore.getState().initReview(makeInitPayload());
+      expect(useReviewStore.getState().activeSessionId).toBe("review-123");
     });
   });
 });

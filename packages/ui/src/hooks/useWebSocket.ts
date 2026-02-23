@@ -4,12 +4,22 @@ import type { ReviewResult, ServerMessage, ClientMessage } from "../types";
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
-  const { connectionStatus, setConnectionStatus, initReview, updateDiff, updateContext } =
-    useReviewStore();
+  const {
+    connectionStatus,
+    setConnectionStatus,
+    initReview,
+    updateDiff,
+    updateContext,
+    setServerMode,
+    setSessions,
+    addSession,
+  } = useReviewStore();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const wsPort = params.get("wsPort");
+    const serverMode = params.get("serverMode") === "true";
+    const sessionId = params.get("sessionId");
 
     if (!wsPort) {
       console.warn("No wsPort query parameter found");
@@ -17,7 +27,17 @@ export function useWebSocket() {
       return;
     }
 
-    const ws = new WebSocket(`ws://localhost:${wsPort}`);
+    if (serverMode) {
+      setServerMode(true);
+    }
+
+    // In server mode without a specific session, connect without sessionId
+    // so the server sends the session list
+    const wsUrl = sessionId
+      ? `ws://localhost:${wsPort}?sessionId=${sessionId}`
+      : `ws://localhost:${wsPort}`;
+
+    const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.addEventListener("open", () => {
@@ -34,6 +54,10 @@ export function useWebSocket() {
           updateDiff(message.payload);
         } else if (message.type === "context:update") {
           updateContext(message.payload);
+        } else if (message.type === "session:list") {
+          setSessions(message.payload);
+        } else if (message.type === "session:added") {
+          addSession(message.payload);
         }
       } catch (err) {
         console.error("Failed to parse WebSocket message:", err);
@@ -52,7 +76,7 @@ export function useWebSocket() {
       ws.close();
       wsRef.current = null;
     };
-  }, [setConnectionStatus, initReview, updateDiff, updateContext]);
+  }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession]);
 
   const sendResult = useCallback((result: ReviewResult) => {
     const ws = wsRef.current;
@@ -69,5 +93,20 @@ export function useWebSocket() {
     ws.send(JSON.stringify(message));
   }, []);
 
-  return { sendResult, connectionStatus };
+  const selectSession = useCallback((sessionId: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error("WebSocket is not connected");
+      return;
+    }
+
+    const message: ClientMessage = {
+      type: "session:select",
+      payload: { sessionId },
+    };
+
+    ws.send(JSON.stringify(message));
+  }, []);
+
+  return { sendResult, selectSession, connectionStatus };
 }

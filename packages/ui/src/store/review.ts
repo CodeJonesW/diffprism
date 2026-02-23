@@ -8,6 +8,7 @@ import type {
   ReviewMetadata,
   DiffUpdatePayload,
   ContextUpdatePayload,
+  SessionSummary,
 } from "../types";
 import { getFileKey } from "../lib/file-key";
 
@@ -37,6 +38,11 @@ export interface ReviewState {
   watchSubmitted: boolean;
   hasUnreviewedChanges: boolean;
 
+  // Server mode (multi-session)
+  isServerMode: boolean;
+  sessions: SessionSummary[];
+  activeSessionId: string | null;
+
   // Actions
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
@@ -52,6 +58,10 @@ export interface ReviewState {
   updateDiff: (payload: DiffUpdatePayload) => void;
   updateContext: (payload: ContextUpdatePayload) => void;
   setWatchSubmitted: (submitted: boolean) => void;
+  setServerMode: (isServerMode: boolean) => void;
+  setSessions: (sessions: SessionSummary[]) => void;
+  addSession: (session: SessionSummary) => void;
+  selectSession: (sessionId: string) => void;
 }
 
 export const useReviewStore = create<ReviewState>((set, get) => ({
@@ -70,6 +80,9 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
+  isServerMode: false,
+  sessions: [],
+  activeSessionId: null,
 
   initReview: (payload: ReviewInitPayload) => {
     const firstFile =
@@ -95,6 +108,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       isWatchMode: payload.watchMode ?? false,
       watchSubmitted: false,
       hasUnreviewedChanges: true,
+      activeSessionId: payload.reviewId,
     });
   },
 
@@ -207,5 +221,23 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       watchSubmitted: submitted,
       ...(submitted && { hasUnreviewedChanges: false }),
     });
+  },
+
+  setServerMode: (isServerMode: boolean) => {
+    set({ isServerMode });
+  },
+
+  setSessions: (sessions: SessionSummary[]) => {
+    set({ sessions });
+  },
+
+  addSession: (session: SessionSummary) => {
+    set((state) => ({
+      sessions: [...state.sessions, session],
+    }));
+  },
+
+  selectSession: (sessionId: string) => {
+    set({ activeSessionId: sessionId });
   },
 }));
