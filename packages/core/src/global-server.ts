@@ -40,6 +40,9 @@ const sessions = new Map<string, Session>();
 // Track which WS clients are viewing which session
 const clientSessions = new Map<WebSocket, string>();
 
+// Module-level callback set by startGlobalServer to reopen browser when needed
+let reopenBrowserIfNeeded: (() => void) | null = null;
+
 function toSummary(session: Session): SessionSummary {
   const { payload } = session;
   const fileCount = payload.diffSet.files.length;
@@ -195,6 +198,9 @@ async function handleApiRequest(
         type: "session:added",
         payload: toSummary(session),
       });
+
+      // Re-open browser if no UI clients are connected
+      reopenBrowserIfNeeded?.();
 
       jsonResponse(res, 201, { sessionId });
     } catch {
@@ -460,6 +466,21 @@ export async function startGlobalServer(
   const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&serverMode=true`;
   await open(uiUrl);
 
+  // Re-open browser when a review arrives and no UI clients are connected
+  function hasConnectedClients(): boolean {
+    if (!wss) return false;
+    for (const client of wss.clients) {
+      if (client.readyState === WebSocket.OPEN) return true;
+    }
+    return false;
+  }
+
+  reopenBrowserIfNeeded = (): void => {
+    if (!hasConnectedClients()) {
+      open(uiUrl);
+    }
+  };
+
   async function stop(): Promise<void> {
     // Close all WebSocket connections
     if (wss) {
@@ -471,6 +492,7 @@ export async function startGlobalServer(
     }
     clientSessions.clear();
     sessions.clear();
+    reopenBrowserIfNeeded = null;
 
     // Close HTTP server
     await new Promise<void>((resolve) => {
