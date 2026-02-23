@@ -1,4 +1,5 @@
 import { startGlobalServer, readServerFile, isServerAlive } from "@diffprism/core";
+import { setup, isGlobalSetupDone } from "./setup.js";
 
 interface ServerFlags {
   port?: string;
@@ -14,6 +15,13 @@ export async function server(flags: ServerFlags): Promise<void> {
     console.log(`Use 'diffprism server stop' to stop it first.`);
     process.exit(1);
     return;
+  }
+
+  // Auto-run global setup if needed
+  if (!isGlobalSetupDone()) {
+    console.log("Running global setup...\n");
+    await setup({ global: true, quiet: false });
+    console.log("");
   }
 
   const httpPort = flags.port ? parseInt(flags.port, 10) : undefined;

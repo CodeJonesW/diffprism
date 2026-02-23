@@ -33,7 +33,7 @@ vi.mock("node:readline", () => ({
   },
 }));
 
-import { setup, cleanDiffprismHooks } from "../commands/setup.js";
+import { setup, cleanDiffprismHooks, isGlobalSetupDone } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
@@ -64,7 +64,7 @@ describe("setup command", () => {
   });
 
   describe("git root detection", () => {
-    it("errors when not in a git repo", async () => {
+    it("errors when not in a git repo (non-global)", async () => {
       mockExistsSync.mockReturnValue(false);
 
       await setup({});
@@ -73,6 +73,16 @@ describe("setup command", () => {
         expect.stringContaining("Not in a git repository"),
       );
       expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("suggests --global when not in a git repo", async () => {
+      mockExistsSync.mockReturnValue(false);
+
+      await setup({});
+
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("--global"),
+      );
     });
 
     it("finds git root in parent directory", async () => {
@@ -595,6 +605,144 @@ describe("setup command", () => {
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining("Restart Claude Code"),
       );
+    });
+  });
+
+  describe("global setup (--global)", () => {
+    it("does not require a git root", async () => {
+      mockExistsSync.mockReturnValue(false);
+
+      await setup({ global: true });
+
+      // Should NOT error about git repo
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+
+    it("installs skill globally and sets global permissions", async () => {
+      await setup({ global: true });
+
+      // Check skill file at global location
+      const skillCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().includes("SKILL.md"),
+      );
+      expect(skillCall).toBeDefined();
+      expect(skillCall![0].toString()).toBe(
+        path.join("/home/testuser", ".claude", "skills", "review", "SKILL.md"),
+      );
+
+      // Check global permissions at ~/.claude/settings.json
+      const settingsCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString() === path.join("/home/testuser", ".claude", "settings.json"),
+      );
+      expect(settingsCall).toBeDefined();
+      const written = JSON.parse(settingsCall![1] as string);
+      expect(written.permissions.allow).toContain("mcp__diffprism__open_review");
+      expect(written.permissions.allow).toContain("mcp__diffprism__update_review_context");
+      expect(written.permissions.allow).toContain("mcp__diffprism__get_review_result");
+    });
+
+    it("does not create .mcp.json, .gitignore, or hooks", async () => {
+      await setup({ global: true });
+
+      const mcpCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".mcp.json"),
+      );
+      expect(mcpCall).toBeUndefined();
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeUndefined();
+
+      // No hooks should be written
+      const hookCall = mockWriteFileSync.mock.calls.find((call) => {
+        try {
+          const written = JSON.parse(call[1] as string);
+          return written.hooks !== undefined;
+        } catch { return false; }
+      });
+      expect(hookCall).toBeUndefined();
+    });
+
+    it("prints global-specific instructions", async () => {
+      await setup({ global: true });
+
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("globally"),
+      );
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringContaining("diffprism server"),
+      );
+    });
+  });
+
+  describe("isGlobalSetupDone", () => {
+    it("returns false when skill file is missing", () => {
+      mockExistsSync.mockReturnValue(false);
+
+      expect(isGlobalSetupDone()).toBe(false);
+    });
+
+    it("returns false when permissions are missing", () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s.includes("SKILL.md")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation(() => {
+        throw new Error("File not found");
+      });
+
+      expect(isGlobalSetupDone()).toBe(false);
+    });
+
+    it("returns true when skill and all permissions exist", () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s.includes("SKILL.md")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: {
+              allow: [
+                "mcp__diffprism__open_review",
+                "mcp__diffprism__update_review_context",
+                "mcp__diffprism__get_review_result",
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      expect(isGlobalSetupDone()).toBe(true);
+    });
+
+    it("returns false when only some permissions exist", () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s.includes("SKILL.md")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: {
+              allow: ["mcp__diffprism__open_review"],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      expect(isGlobalSetupDone()).toBe(false);
     });
   });
 });

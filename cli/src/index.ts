@@ -62,7 +62,7 @@ program
 program
   .command("setup")
   .description("Configure DiffPrism for Claude Code integration")
-  .option("--global", "Install skill globally (~/.claude/skills/)")
+  .option("--global", "Configure globally (skill + permissions, no git repo required)")
   .option("--force", "Overwrite existing configuration files")
   .action((flags) => { setup(flags); });
 

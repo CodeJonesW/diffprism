@@ -57,7 +57,13 @@ The tool blocks until the user submits their review in the browser. When it retu
 ### 5. Error Handling
 
 If the \`mcp__diffprism__open_review\` tool is not available:
-- Tell the user: "The DiffPrism MCP server isn't configured. Run \`npx diffprism start\` to set it up, then restart Claude Code."
+- Tell the user: "The DiffPrism MCP server isn't configured. Run \`npx diffprism setup\` to set it up, then restart Claude Code."
+
+## Global Server Mode
+
+When a global DiffPrism server is running (\`diffprism server\`), the MCP tools automatically detect it and route reviews there instead of opening a new browser tab each time. The review appears in the server's multi-session UI at the existing browser tab.
+
+This is transparent — the same \`open_review\`, \`update_review_context\`, and \`get_review_result\` tools work the same way. No changes to the workflow are needed.
 
 ## Watch Mode: Waiting for Review Feedback
 
