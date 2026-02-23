@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -86,12 +89,20 @@ function makePayload(overrides?: Partial<ReviewInitPayload>): ReviewInitPayload 
 }
 
 let handle: GlobalServerHandle | null = null;
+let tmpDir: string;
+
+beforeEach(() => {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diffprism-test-"));
+  vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
+});
 
 afterEach(async () => {
   if (handle) {
     await handle.stop();
     handle = null;
   }
+  vi.restoreAllMocks();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe("global-server", () => {

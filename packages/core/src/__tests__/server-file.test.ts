@@ -9,33 +9,19 @@ import {
 } from "../server-file.js";
 import type { GlobalServerInfo } from "../types.js";
 
-const serverDir = path.join(os.homedir(), ".diffprism");
-const serverFilePath = path.join(serverDir, "server.json");
-
-// Store original file content to restore after tests
-let originalContent: string | null = null;
+let tmpDir: string;
 
 beforeEach(() => {
-  // Preserve existing server.json if it exists
-  try {
-    originalContent = fs.readFileSync(serverFilePath, "utf-8");
-  } catch {
-    originalContent = null;
-  }
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diffprism-test-"));
+  vi.spyOn(os, "homedir").mockReturnValue(tmpDir);
 });
 
 afterEach(() => {
-  // Restore original state
-  if (originalContent !== null) {
-    fs.writeFileSync(serverFilePath, originalContent);
-  } else {
-    try {
-      fs.unlinkSync(serverFilePath);
-    } catch {
-      // File may not exist
-    }
-  }
+  vi.restoreAllMocks();
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
+
+const serverFilePath = () => path.join(tmpDir, ".diffprism", "server.json");
 
 describe("server-file", () => {
   describe("writeServerFile", () => {
@@ -49,7 +35,7 @@ describe("server-file", () => {
 
       writeServerFile(info);
 
-      const raw = fs.readFileSync(serverFilePath, "utf-8");
+      const raw = fs.readFileSync(serverFilePath(), "utf-8");
       const parsed = JSON.parse(raw);
       expect(parsed.httpPort).toBe(24680);
       expect(parsed.wsPort).toBe(24681);
@@ -57,8 +43,6 @@ describe("server-file", () => {
     });
 
     it("creates the directory if it does not exist", () => {
-      // writeServerFile should not throw even if ~/.diffprism doesn't exist
-      // (it will exist in practice since we have other files there)
       const info: GlobalServerInfo = {
         httpPort: 24680,
         wsPort: 24681,
@@ -67,19 +51,12 @@ describe("server-file", () => {
       };
 
       writeServerFile(info);
-      expect(fs.existsSync(serverFilePath)).toBe(true);
+      expect(fs.existsSync(serverFilePath())).toBe(true);
     });
   });
 
   describe("readServerFile", () => {
     it("returns null when file does not exist", () => {
-      // Clean up any existing file
-      try {
-        fs.unlinkSync(serverFilePath);
-      } catch {
-        // File may not exist
-      }
-
       const result = readServerFile();
       expect(result).toBeNull();
     });
@@ -114,7 +91,7 @@ describe("server-file", () => {
       const result = readServerFile();
       expect(result).toBeNull();
       // File should have been cleaned up
-      expect(fs.existsSync(serverFilePath)).toBe(false);
+      expect(fs.existsSync(serverFilePath())).toBe(false);
     });
   });
 
@@ -128,19 +105,13 @@ describe("server-file", () => {
       };
 
       writeServerFile(info);
-      expect(fs.existsSync(serverFilePath)).toBe(true);
+      expect(fs.existsSync(serverFilePath())).toBe(true);
 
       removeServerFile();
-      expect(fs.existsSync(serverFilePath)).toBe(false);
+      expect(fs.existsSync(serverFilePath())).toBe(false);
     });
 
     it("does not throw when file does not exist", () => {
-      try {
-        fs.unlinkSync(serverFilePath);
-      } catch {
-        // File may not exist
-      }
-
       expect(() => removeServerFile()).not.toThrow();
     });
   });
