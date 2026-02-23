@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  ArrowLeft,
   ChevronDown,
   ChevronUp,
   AlertTriangle,
@@ -15,7 +16,7 @@ import { useReviewStore } from "../../store/review";
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
-  const { briefing, metadata } = useReviewStore();
+  const { briefing, metadata, isServerMode, clearReview } = useReviewStore();
 
   if (!briefing) return null;
   
@@ -32,13 +33,23 @@ export function BriefingBar() {
   return (
     <div className="bg-surface border-b border-border flex-shrink-0">
       {/* Collapsed row */}
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-text-primary/5 transition-colors"
-      >
-        <span className="text-text-primary text-sm flex-1 text-left truncate">
-          {briefing.summary}
-        </span>
+      <div className="flex items-center">
+        {isServerMode && (
+          <button
+            onClick={clearReview}
+            className="px-3 py-2.5 text-text-secondary hover:text-text-primary transition-colors cursor-pointer border-r border-border"
+            title="Back to sessions"
+          >
+            <ArrowLeft className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex-1 px-4 py-2.5 flex items-center gap-3 cursor-pointer hover:bg-text-primary/5 transition-colors"
+        >
+          <span className="text-text-primary text-sm flex-1 text-left truncate">
+            {briefing.summary}
+          </span>
 
         <div className="flex items-center gap-2 flex-shrink-0">
           {securityFlags.length > 0 && (
@@ -105,6 +116,7 @@ export function BriefingBar() {
           )}
         </div>
       </button>
+      </div>
 
       {/* Expanded details */}
       {expanded && (
