@@ -183,9 +183,9 @@ export type ServerMessage =
   | { type: "review:init"; payload: ReviewInitPayload }
   | { type: "diff:update"; payload: DiffUpdatePayload }
   | { type: "context:update"; payload: ContextUpdatePayload }
+  | { type: "session:list"; payload: SessionSummary[] }
   | { type: "session:added"; payload: SessionSummary };
 
-export type ClientMessage = {
-  type: "review:submit";
-  payload: ReviewResult;
-};
+export type ClientMessage =
+  | { type: "review:submit"; payload: ReviewResult }
+  | { type: "session:select"; payload: { sessionId: string } };

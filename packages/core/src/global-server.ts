@@ -376,6 +376,27 @@ export async function startGlobalServer(
         };
         ws.send(JSON.stringify(msg));
       }
+    } else {
+      // No specific session requested — send full session list (server mode UI)
+      const summaries = Array.from(sessions.values()).map(toSummary);
+      const msg: ServerMessage = {
+        type: "session:list",
+        payload: summaries,
+      };
+      ws.send(JSON.stringify(msg));
+
+      // Auto-select if there's exactly one session
+      if (summaries.length === 1) {
+        const session = sessions.get(summaries[0].id);
+        if (session) {
+          clientSessions.set(ws, session.id);
+          session.status = "in_review";
+          ws.send(JSON.stringify({
+            type: "review:init",
+            payload: session.payload,
+          } satisfies ServerMessage));
+        }
+      }
     }
 
     ws.on("message", (data) => {
@@ -389,6 +410,16 @@ export async function startGlobalServer(
               session.result = msg.payload;
               session.status = "submitted";
             }
+          }
+        } else if (msg.type === "session:select") {
+          const session = sessions.get(msg.payload.sessionId);
+          if (session) {
+            clientSessions.set(ws, session.id);
+            session.status = "in_review";
+            ws.send(JSON.stringify({
+              type: "review:init",
+              payload: session.payload,
+            } satisfies ServerMessage));
           }
         }
       } catch {
