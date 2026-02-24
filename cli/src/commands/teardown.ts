@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { findGitRoot, readJsonFile, writeJsonFile, cleanDiffprismHooks } from "./setup.js";
+import { findGitRoot, readJsonFile, writeJsonFile, cleanDiffprismHooks, GITIGNORE_ENTRIES } from "./setup.js";
 
 interface TeardownFlags {
   global?: boolean;
@@ -157,7 +157,8 @@ function teardownGitignore(gitRoot: string): { action: "removed" | "skipped"; fi
 
   const content = fs.readFileSync(filePath, "utf-8");
   const lines = content.split("\n");
-  const filtered = lines.filter((l) => l.trim() !== ".diffprism");
+  const entrySet = new Set(GITIGNORE_ENTRIES);
+  const filtered = lines.filter((l) => !entrySet.has(l.trim()));
 
   if (filtered.length === lines.length) {
     return { action: "skipped", filePath };
