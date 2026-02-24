@@ -187,7 +187,8 @@ export type ServerMessage =
   | { type: "context:update"; payload: ContextUpdatePayload }
   | { type: "session:list"; payload: SessionSummary[] }
   | { type: "session:added"; payload: SessionSummary }
-  | { type: "session:updated"; payload: SessionSummary };
+  | { type: "session:updated"; payload: SessionSummary }
+  | { type: "session:removed"; payload: { sessionId: string } };
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }

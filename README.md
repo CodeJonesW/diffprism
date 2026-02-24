@@ -12,11 +12,12 @@ DiffPrism gives you a visual review step for AI-written code — stage your chan
 - **Review briefing bar** — summary stats, complexity scoring, test coverage gaps, pattern flags, and dependency tracking
 - **Agent reasoning panel** — see why the AI made each change
 - **Dark/light mode** — toggle with theme persistence
-- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status
+- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status, `Cmd/Ctrl+Enter` saves comments, `?` toggles hotkey guide
 - **Three-way decisions** — approve, request changes, or approve with comments
 - **Branch display** — current git branch shown in the review header
 - **Global server mode** — `diffprism server` runs a persistent multi-session review server, multiple agents post reviews to one browser tab
-- **Multi-session UI** — session list with status badges, branch info, file counts, and change stats when running in server mode
+- **Multi-session UI** — session list with live status badges, branch info, file counts, and change stats; stale sessions auto-expire
+- **One-command setup & teardown** — `diffprism setup` configures Claude Code integration, `diffprism teardown` cleanly reverses it
 
 ## Quick Start
 
@@ -36,6 +37,14 @@ This single command configures everything:
 - Installs the `/review` skill so you can type `/review` in Claude Code at any time
 
 After running, restart Claude Code. The first time you use `/review`, Claude will ask your preferences and save them to `diffprism.config.json`.
+
+To remove DiffPrism from a project:
+
+```bash
+npx diffprism teardown
+```
+
+This reverses all changes made by `setup`: removes DiffPrism entries from `.mcp.json`, permissions, hooks, the skill file, `.gitignore`, and the `.diffprism/` directory. Non-DiffPrism entries are preserved.
 
 See the [full setup guide](docs/claude-setup.md) for manual configuration, Claude Desktop config, troubleshooting, and advanced options.
 
@@ -63,6 +72,18 @@ diffprism review --staged --title "Add auth middleware"
 ```
 
 A browser window opens with the diff viewer. Review the changes and click **Approve**, **Request Changes**, or **Approve with Comments**.
+
+### Quick Start (setup + watch in one command)
+
+```bash
+# Configure Claude Code integration and start watching in one step
+diffprism start
+
+# With flags
+diffprism start --staged --title "Working on auth"
+```
+
+This runs `diffprism setup` (silently, if already configured) then starts watch mode. Ideal for first-time use or when switching projects.
 
 ### Watch Mode (live-updating)
 
@@ -102,13 +123,16 @@ diffprism server status
 diffprism server stop
 ```
 
-When the global server is running, MCP tools automatically detect it and route reviews there instead of opening ephemeral browser tabs. Each review appears as a session in the multi-session UI — click to switch between them.
+When the global server is running, MCP tools automatically detect it and route reviews there instead of opening ephemeral browser tabs. Each review appears as a session in the multi-session UI — click to switch between them. Session status badges update live, and submitted sessions auto-expire after 5 minutes.
 
 **Global setup** (optional, `diffprism server` runs this automatically):
 
 ```bash
 # Configure skill + permissions globally (no git repo required)
 diffprism setup --global
+
+# Remove global configuration
+diffprism teardown --global
 ```
 
 Per-project MCP registration (`.mcp.json`) is still needed via `diffprism setup` in each project.
@@ -123,14 +147,14 @@ Opens a browser-based code review. Blocks until the engineer submits their decis
 
 | Parameter     | Required | Description                                                       |
 |---------------|----------|-------------------------------------------------------------------|
-| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
+| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, `"working-copy"` (staged+unstaged grouped), or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
 | `title`       | No       | Title displayed in the review UI                                  |
 | `description` | No       | Description of the changes                                        |
 | `reasoning`   | No       | Agent reasoning about why the changes were made (shown in the reasoning panel) |
 
 ### `update_review_context`
 
-Pushes reasoning/context to a running `diffprism watch` session. Non-blocking — returns immediately.
+Pushes reasoning/context to a running DiffPrism session (watch mode or global server). Non-blocking — returns immediately.
 
 | Parameter     | Required | Description                                    |
 |---------------|----------|------------------------------------------------|
@@ -140,9 +164,12 @@ Pushes reasoning/context to a running `diffprism watch` session. Non-blocking �
 
 ### `get_review_result`
 
-Fetches the most recent review result from a `diffprism watch` session. Non-blocking — returns immediately. The result is marked as consumed after retrieval so it won't be returned again.
+Fetches the most recent review result from a DiffPrism session (watch mode or global server). The result is marked as consumed after retrieval so it won't be returned again.
 
-No parameters.
+| Parameter | Required | Description                                                       |
+|-----------|----------|-------------------------------------------------------------------|
+| `wait`    | No       | If `true`, poll until a result is available (blocks up to timeout) |
+| `timeout` | No       | Max wait time in seconds when `wait=true` (default: 300, max: 600) |
 
 **Returns (all tools):** A `ReviewResult` JSON object:
 
@@ -195,7 +222,7 @@ packages/git        — Git diff extraction + unified diff parser
 packages/analysis   — Deterministic review briefing (complexity, test gaps, patterns)
 packages/ui         — React 19 + Vite 6 + Tailwind + Zustand diff viewer + session list
 packages/mcp-server — MCP tool server, auto-routes to global server when available
-cli/                — Commander CLI (review, serve, setup, server commands)
+cli/                — Commander CLI (review, start, watch, setup, teardown, server commands)
 ```
 
 ### Requirements
@@ -207,4 +234,5 @@ cli/                — Commander CLI (review, serve, setup, server commands)
 ## Documentation
 
 - [Claude Code / Claude Desktop Setup Guide](docs/claude-setup.md) — detailed MCP configuration, auto-approval, and troubleshooting
+- [Workflows Guide](docs/workflows.md) — ephemeral, watch, and global server modes explained
 - [UX Design Notes](docs/ux-design-notes.md) — design decisions, CLI defaults rationale, and multi-agent workflow thinking

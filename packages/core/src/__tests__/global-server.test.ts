@@ -268,6 +268,42 @@ describe("global-server", () => {
   });
 
   describe("review results", () => {
+    it("session status changes to submitted after result submission", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Verify initial status is pending
+      const beforeResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const beforeData = (await beforeResponse.json()) as { status: string };
+      expect(beforeData.status).toBe("pending");
+
+      // Submit result
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision: "approved",
+          comments: [],
+        } satisfies ReviewResult),
+      });
+
+      // Verify status changed to submitted
+      const afterResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const afterData = (await afterResponse.json()) as { status: string };
+      expect(afterData.status).toBe("submitted");
+    });
+
     it("submits and retrieves a review result", async () => {
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
