@@ -4,6 +4,13 @@ import os from "node:os";
 import readline from "node:readline";
 import { skillContent } from "../templates/skill.js";
 
+export const GITIGNORE_ENTRIES = [
+  ".diffprism",
+  ".mcp.json",
+  ".claude/settings.json",
+  ".claude/skills/review/",
+];
+
 interface SetupFlags {
   global?: boolean;
   force?: boolean;
@@ -244,32 +251,33 @@ async function setupGitignore(
   gitRoot: string,
 ): Promise<{ action: "created" | "updated" | "skipped"; filePath: string }> {
   const filePath = path.join(gitRoot, ".gitignore");
-  const entry = ".diffprism";
 
   if (fs.existsSync(filePath)) {
     const content = fs.readFileSync(filePath, "utf-8");
     const lines = content.split("\n").map((l) => l.trim());
-    if (lines.includes(entry)) {
+    const missing = GITIGNORE_ENTRIES.filter((e) => !lines.includes(e));
+    if (missing.length === 0) {
       return { action: "skipped", filePath };
     }
+    const suffix = missing.map((e) => e + "\n").join("");
     const newContent = content.endsWith("\n")
-      ? content + entry + "\n"
-      : content + "\n" + entry + "\n";
+      ? content + suffix
+      : content + "\n" + suffix;
     fs.writeFileSync(filePath, newContent);
     return { action: "updated", filePath };
   }
 
   const confirmed = await promptUser(
-    "No .gitignore found. Create one with .diffprism entry? (Y/n) ",
+    "No .gitignore found. Create one with DiffPrism entries? (Y/n) ",
   );
   if (!confirmed) {
     console.log(
-      "  Warning: .diffprism directory will appear in git status and may trigger watch-mode loops.",
+      "  Warning: DiffPrism files will appear in git status and may be accidentally committed.",
     );
     return { action: "skipped", filePath };
   }
 
-  fs.writeFileSync(filePath, entry + "\n");
+  fs.writeFileSync(filePath, GITIGNORE_ENTRIES.map((e) => e + "\n").join(""));
   return { action: "created", filePath };
 }
 

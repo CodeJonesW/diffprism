@@ -33,7 +33,7 @@ vi.mock("node:readline", () => ({
   },
 }));
 
-import { setup, cleanDiffprismHooks, isGlobalSetupDone } from "../commands/setup.js";
+import { setup, cleanDiffprismHooks, isGlobalSetupDone, GITIGNORE_ENTRIES } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
@@ -104,7 +104,7 @@ describe("setup command", () => {
   });
 
   describe(".gitignore", () => {
-    it("creates .gitignore with .diffprism when user confirms", async () => {
+    it("creates .gitignore with all DiffPrism entries when user confirms", async () => {
       mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("Y"));
 
       await setup({});
@@ -113,10 +113,13 @@ describe("setup command", () => {
         (call) => call[0].toString().endsWith(".gitignore"),
       );
       expect(gitignoreCall).toBeDefined();
-      expect(gitignoreCall![1]).toBe(".diffprism\n");
+      const content = gitignoreCall![1] as string;
+      for (const entry of GITIGNORE_ENTRIES) {
+        expect(content).toContain(entry + "\n");
+      }
     });
 
-    it("appends .diffprism to existing .gitignore", async () => {
+    it("appends missing entries to existing .gitignore", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;
@@ -136,10 +139,14 @@ describe("setup command", () => {
         (call) => call[0].toString().endsWith(".gitignore"),
       );
       expect(gitignoreCall).toBeDefined();
-      expect(gitignoreCall![1]).toBe("node_modules\n.diffprism\n");
+      const content = gitignoreCall![1] as string;
+      expect(content.startsWith("node_modules\n")).toBe(true);
+      for (const entry of GITIGNORE_ENTRIES) {
+        expect(content).toContain(entry + "\n");
+      }
     });
 
-    it("skips when .diffprism already in .gitignore", async () => {
+    it("appends only missing entries when some already present", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;
@@ -149,7 +156,38 @@ describe("setup command", () => {
 
       mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
         const s = p.toString();
-        if (s.endsWith(".gitignore")) return "node_modules\n.diffprism\n";
+        if (s.endsWith(".gitignore")) return "node_modules\n.diffprism\n.mcp.json\n";
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeDefined();
+      const content = gitignoreCall![1] as string;
+      // Should NOT duplicate existing entries
+      expect(content.match(/\.diffprism/g)!.length).toBe(1);
+      expect(content.match(/\.mcp\.json/g)!.length).toBe(1);
+      // Should add missing entries
+      expect(content).toContain(".claude/settings.json\n");
+      expect(content).toContain(".claude/skills/review/\n");
+    });
+
+    it("skips when all DiffPrism entries already in .gitignore", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s === path.join("/projects/myapp", ".gitignore")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.endsWith(".gitignore")) {
+          return "node_modules\n" + GITIGNORE_ENTRIES.join("\n") + "\n";
+        }
         throw new Error("File not found");
       });
 
