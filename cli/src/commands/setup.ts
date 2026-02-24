@@ -16,7 +16,7 @@ export interface SetupOutcome {
   skipped: string[];
 }
 
-function findGitRoot(from: string): string | null {
+export function findGitRoot(from: string): string | null {
   let dir = path.resolve(from);
   while (true) {
     if (fs.existsSync(path.join(dir, ".git"))) {
@@ -28,7 +28,7 @@ function findGitRoot(from: string): string | null {
   }
 }
 
-function readJsonFile(filePath: string): Record<string, unknown> {
+export function readJsonFile(filePath: string): Record<string, unknown> {
   try {
     const raw = fs.readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as Record<string, unknown>;
@@ -37,7 +37,7 @@ function readJsonFile(filePath: string): Record<string, unknown> {
   }
 }
 
-function writeJsonFile(
+export function writeJsonFile(
   filePath: string,
   data: Record<string, unknown>,
 ): void {
