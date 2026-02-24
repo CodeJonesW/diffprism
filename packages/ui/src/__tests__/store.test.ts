@@ -284,6 +284,66 @@ describe("review store", () => {
       expect(useReviewStore.getState().sessions[1].id).toBe("s2");
     });
 
+    it("addSession deduplicates by session ID", () => {
+      useReviewStore.getState().setSessions([makeSession({ id: "s1" })]);
+      useReviewStore.getState().addSession(makeSession({ id: "s1", title: "Duplicate" }));
+      expect(useReviewStore.getState().sessions).toHaveLength(1);
+    });
+
+    it("updateSession updates an existing session's status", () => {
+      useReviewStore.getState().setSessions([
+        makeSession({ id: "s1", status: "pending" }),
+        makeSession({ id: "s2", status: "pending" }),
+      ]);
+      useReviewStore.getState().updateSession(makeSession({ id: "s1", status: "in_review" }));
+      expect(useReviewStore.getState().sessions[0].status).toBe("in_review");
+      expect(useReviewStore.getState().sessions[1].status).toBe("pending");
+    });
+
+    it("updateSession is a no-op for unknown ID", () => {
+      useReviewStore.getState().setSessions([makeSession({ id: "s1" })]);
+      useReviewStore.getState().updateSession(makeSession({ id: "unknown" }));
+      expect(useReviewStore.getState().sessions).toHaveLength(1);
+      expect(useReviewStore.getState().sessions[0].id).toBe("s1");
+    });
+
+    it("removeSession removes from list", () => {
+      useReviewStore.getState().setSessions([
+        makeSession({ id: "s1" }),
+        makeSession({ id: "s2" }),
+      ]);
+      useReviewStore.getState().removeSession("s1");
+      expect(useReviewStore.getState().sessions).toHaveLength(1);
+      expect(useReviewStore.getState().sessions[0].id).toBe("s2");
+    });
+
+    it("removeSession clears active review when active session is removed", () => {
+      useReviewStore.getState().initReview(makeInitPayload());
+      useReviewStore.getState().setSessions([makeSession({ id: "review-123" })]);
+      // activeSessionId is set by initReview to "review-123"
+      expect(useReviewStore.getState().activeSessionId).toBe("review-123");
+
+      useReviewStore.getState().removeSession("review-123");
+      expect(useReviewStore.getState().activeSessionId).toBeNull();
+      expect(useReviewStore.getState().diffSet).toBeNull();
+      expect(useReviewStore.getState().briefing).toBeNull();
+      expect(useReviewStore.getState().metadata).toBeNull();
+    });
+
+    it("removeSession does not clear review for non-active session", () => {
+      useReviewStore.getState().initReview(makeInitPayload());
+      useReviewStore.getState().setSessions([
+        makeSession({ id: "review-123" }),
+        makeSession({ id: "other-session" }),
+      ]);
+
+      useReviewStore.getState().removeSession("other-session");
+      // Review state should be preserved
+      expect(useReviewStore.getState().activeSessionId).toBe("review-123");
+      expect(useReviewStore.getState().diffSet).not.toBeNull();
+      expect(useReviewStore.getState().sessions).toHaveLength(1);
+    });
+
     it("selectSession sets the active session ID", () => {
       useReviewStore.getState().selectSession("session-xyz");
       expect(useReviewStore.getState().activeSessionId).toBe("session-xyz");

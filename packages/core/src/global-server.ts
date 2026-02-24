@@ -24,6 +24,12 @@ import {
   createStaticServer,
 } from "./ui-server.js";
 
+// ─── TTL constants ───
+
+const SUBMITTED_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const ABANDONED_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
+
 // ─── In-memory session store ───
 
 interface Session {
@@ -134,6 +140,26 @@ function sendToSessionClients(sessionId: string, msg: ServerMessage): void {
   }
 }
 
+function broadcastSessionUpdate(session: Session): void {
+  broadcastToAll({
+    type: "session:updated",
+    payload: toSummary(session),
+  });
+}
+
+function broadcastSessionRemoved(sessionId: string): void {
+  // Clean up clientSessions entries for the removed session
+  for (const [client, sid] of clientSessions.entries()) {
+    if (sid === sessionId) {
+      clientSessions.delete(client);
+    }
+  }
+  broadcastToAll({
+    type: "session:removed",
+    payload: { sessionId },
+  });
+}
+
 // ─── API route handler ───
 
 async function handleApiRequest(
@@ -145,7 +171,7 @@ async function handleApiRequest(
 
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
   if (method === "OPTIONS") {
@@ -242,6 +268,7 @@ async function handleApiRequest(
       const result = JSON.parse(body) as ReviewResult;
       session.result = result;
       session.status = "submitted";
+      broadcastSessionUpdate(session);
 
       jsonResponse(res, 200, { ok: true });
     } catch {
@@ -308,6 +335,7 @@ async function handleApiRequest(
   const deleteParams = matchRoute(method, url, "DELETE", "/api/reviews/:id");
   if (deleteParams) {
     if (sessions.delete(deleteParams.id)) {
+      broadcastSessionRemoved(deleteParams.id);
       jsonResponse(res, 200, { ok: true });
     } else {
       jsonResponse(res, 404, { error: "Session not found" });
@@ -376,6 +404,7 @@ export async function startGlobalServer(
       const session = sessions.get(sessionId);
       if (session) {
         session.status = "in_review";
+        broadcastSessionUpdate(session);
         const msg: ServerMessage = {
           type: "review:init",
           payload: session.payload,
@@ -397,6 +426,7 @@ export async function startGlobalServer(
         if (session) {
           clientSessions.set(ws, session.id);
           session.status = "in_review";
+          broadcastSessionUpdate(session);
           ws.send(JSON.stringify({
             type: "review:init",
             payload: session.payload,
@@ -415,6 +445,7 @@ export async function startGlobalServer(
             if (session) {
               session.result = msg.payload;
               session.status = "submitted";
+              broadcastSessionUpdate(session);
             }
           }
         } else if (msg.type === "session:select") {
@@ -422,6 +453,7 @@ export async function startGlobalServer(
           if (session) {
             clientSessions.set(ws, session.id);
             session.status = "in_review";
+            broadcastSessionUpdate(session);
             ws.send(JSON.stringify({
               type: "review:init",
               payload: session.payload,
@@ -443,6 +475,22 @@ export async function startGlobalServer(
     httpServer.on("error", reject);
     httpServer.listen(httpPort, () => resolve());
   });
+
+  // TTL cleanup interval
+  function cleanupExpiredSessions(): void {
+    const now = Date.now();
+    for (const [id, session] of sessions.entries()) {
+      const age = now - session.createdAt;
+      const expired =
+        (session.status === "submitted" && age > SUBMITTED_TTL_MS) ||
+        (session.status === "pending" && age > ABANDONED_TTL_MS);
+      if (expired) {
+        sessions.delete(id);
+        broadcastSessionRemoved(id);
+      }
+    }
+  }
+  const cleanupTimer = setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL_MS);
 
   // Write server discovery file
   const serverInfo: GlobalServerInfo = {
@@ -482,6 +530,8 @@ export async function startGlobalServer(
   };
 
   async function stop(): Promise<void> {
+    clearInterval(cleanupTimer);
+
     // Close all WebSocket connections
     if (wss) {
       for (const client of wss.clients) {

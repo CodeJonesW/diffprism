@@ -63,6 +63,8 @@ export interface ReviewState {
   setServerMode: (isServerMode: boolean) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   addSession: (session: SessionSummary) => void;
+  updateSession: (session: SessionSummary) => void;
+  removeSession: (sessionId: string) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -240,9 +242,46 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   addSession: (session: SessionSummary) => {
-    set((state) => ({
-      sessions: [...state.sessions, session],
-    }));
+    set((state) => {
+      if (state.sessions.some((s) => s.id === session.id)) {
+        return state;
+      }
+      return { sessions: [...state.sessions, session] };
+    });
+  },
+
+  updateSession: (session: SessionSummary) => {
+    set((state) => {
+      const idx = state.sessions.findIndex((s) => s.id === session.id);
+      if (idx === -1) return state;
+      const sessions = [...state.sessions];
+      sessions[idx] = session;
+      return { sessions };
+    });
+  },
+
+  removeSession: (sessionId: string) => {
+    set((state) => {
+      const sessions = state.sessions.filter((s) => s.id !== sessionId);
+      if (state.activeSessionId === sessionId) {
+        return {
+          sessions,
+          reviewId: null,
+          diffSet: null,
+          rawDiff: null,
+          briefing: null,
+          metadata: null,
+          selectedFile: null,
+          fileStatuses: {},
+          comments: [],
+          activeCommentKey: null,
+          activeSessionId: null,
+          watchSubmitted: false,
+          hasUnreviewedChanges: true,
+        };
+      }
+      return { sessions };
+    });
   },
 
   selectSession: (sessionId: string) => {
