@@ -75,6 +75,7 @@ function toSummary(session: Session): SessionSummary {
     additions,
     deletions,
     status: session.status,
+    decision: session.result?.decision,
     createdAt: session.createdAt,
     hasNewChanges: session.hasNewChanges,
   };
@@ -379,6 +380,8 @@ async function handleApiRequest(
       session.result = result;
       session.status = "submitted";
 
+      broadcastToAll({ type: "session:updated", payload: toSummary(session) });
+
       jsonResponse(res, 200, { ok: true });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
@@ -520,6 +523,7 @@ export async function startGlobalServer(
       if (session) {
         session.status = "in_review";
         session.hasNewChanges = false;
+        broadcastToAll({ type: "session:updated", payload: toSummary(session) });
         const msg: ServerMessage = {
           type: "review:init",
           payload: session.payload,
@@ -542,6 +546,7 @@ export async function startGlobalServer(
           clientSessions.set(ws, session.id);
           session.status = "in_review";
           session.hasNewChanges = false;
+          broadcastToAll({ type: "session:updated", payload: toSummary(session) });
           ws.send(JSON.stringify({
             type: "review:init",
             payload: session.payload,
@@ -560,6 +565,7 @@ export async function startGlobalServer(
             if (session) {
               session.result = msg.payload;
               session.status = "submitted";
+              broadcastToAll({ type: "session:updated", payload: toSummary(session) });
             }
           }
         } else if (msg.type === "session:select") {
@@ -569,6 +575,7 @@ export async function startGlobalServer(
             session.status = "in_review";
             session.hasNewChanges = false;
             startSessionWatcher(session.id);
+            broadcastToAll({ type: "session:updated", payload: toSummary(session) });
             ws.send(JSON.stringify({
               type: "review:init",
               payload: session.payload,

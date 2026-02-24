@@ -18,27 +18,48 @@ function getProjectName(projectPath: string): string {
   return parts[parts.length - 1] || projectPath;
 }
 
-function statusBadge(status: SessionSummary["status"]) {
-  switch (status) {
-    case "pending":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
-          Pending
-        </span>
-      );
-    case "in_review":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent/20 text-accent border border-accent/30">
-          In Review
-        </span>
-      );
-    case "submitted":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
-          Submitted
-        </span>
-      );
+function statusBadge(session: SessionSummary) {
+  const { status, decision } = session;
+
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
+        Pending
+      </span>
+    );
   }
+
+  if (status === "in_review") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent/20 text-accent border border-accent/30">
+        In Review
+      </span>
+    );
+  }
+
+  // status === "submitted" — show decision-specific badge
+  if (decision === "changes_requested") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-600/20 text-red-400 border border-red-500/30">
+        Changes Requested
+      </span>
+    );
+  }
+
+  if (decision === "approved" || decision === "approved_with_comments") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
+        Approved
+      </span>
+    );
+  }
+
+  // Fallback for submitted without a decision
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
+      Submitted
+    </span>
+  );
 }
 
 export function SessionList({ sessions, activeSessionId, onSelect, onClose }: SessionListProps) {
@@ -115,7 +136,7 @@ export function SessionList({ sessions, activeSessionId, onSelect, onClose }: Se
                     {session.title || getProjectName(session.projectPath)}
                   </span>
                 </div>
-                {statusBadge(session.status)}
+                {statusBadge(session)}
               </div>
 
               {/* Branch + project */}
