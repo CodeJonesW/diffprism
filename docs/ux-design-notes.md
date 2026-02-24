@@ -6,20 +6,25 @@ Living document capturing user experience observations, design decisions, and ex
 
 ## CLI Defaults
 
-### Default diff scope (v0.2.6)
-- **Decision:** `diffprism review` with no flags defaults to `"all"` (staged + unstaged via `git diff HEAD`)
-- **Rationale:** Most users edit files and run the review without staging first. Defaulting to `"staged"` caused "No changes to review" confusion. Explicit `--staged` and `--unstaged` flags still available for narrower scope.
-- **Issue:** [#6](https://github.com/CodeJonesW/diffprism/issues/6)
+### Default diff scope
+- **v0.2.6:** Changed default from `"staged"` to `"all"` (staged + unstaged via `git diff HEAD`) because defaulting to staged caused "No changes to review" confusion. [#6](https://github.com/CodeJonesW/diffprism/issues/6)
+- **v0.13.x:** Changed default from `"all"` to `"working-copy"` — staged and unstaged changes are shown as separate groups in the UI, giving reviewers better context about what's been deliberately staged vs. still in progress. Explicit `--staged` and `--unstaged` flags still available for narrower scope.
 
 ---
 
 ## Review UI
 
-### Current state (M0)
-- Dark mode only, GitHub dark theme colors
-- Unified diff view with syntax highlighting (refractor)
-- Two actions: Approve / Request Changes
-- No inline commenting yet
+### Current state (v0.21.0)
+- Dark/light mode toggle with theme persistence (v0.9.0)
+- Unified + split (side-by-side) diff view toggle (v0.6.0)
+- Syntax highlighting via refractor v4
+- Three review decisions: Approve / Request Changes / Approve with Comments
+- Inline line-level commenting — click any line to add a comment (v0.8.0)
+- Comment types: must_fix, suggestion, question, nitpick (v0.8.0)
+- File-level status tracking: unreviewed, reviewed, approved, needs_changes (v0.7.0)
+- Keyboard shortcuts: j/k navigate files, s cycles file status, ? opens hotkey guide (v0.2.12)
+- Agent reasoning display in collapsible context panel (v0.5.0)
+- Review briefing bar: complexity scoring, test coverage gaps, pattern flags (v0.3.0+)
 
 ### Observations
 - (Add observations here as they arise from real usage)

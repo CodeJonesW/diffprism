@@ -153,7 +153,7 @@ Or be explicit:
 Use the open_review tool with diff_ref "HEAD~1..HEAD" and title "Test review"
 ```
 
-Claude will call the `open_review` MCP tool. A browser window should open with the DiffPrism diff viewer. Submit a review decision (Approve / Request Changes), and the result is returned to Claude as structured JSON.
+Claude will call the `open_review` MCP tool. A browser window should open with the DiffPrism diff viewer. Submit a review decision (Approve / Request Changes / Approve with Comments), and the result is returned to Claude as structured JSON.
 
 ## Tool Reference
 
@@ -165,7 +165,7 @@ Opens a browser-based code review. Blocks until the engineer submits their decis
 
 | Parameter     | Required | Description                                                       |
 |---------------|----------|-------------------------------------------------------------------|
-| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
+| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, `"working-copy"` (staged+unstaged grouped), or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
 | `title`       | No       | Title displayed in the review UI                                  |
 | `description` | No       | Description of the changes                                        |
 | `reasoning`   | No       | Agent reasoning about why the changes were made                   |
@@ -182,9 +182,12 @@ Pushes reasoning/context to a running `diffprism watch` session. Non-blocking �
 
 ### `get_review_result`
 
-Fetches the most recent review result from a `diffprism watch` session. Non-blocking — returns immediately. The result is marked as consumed after retrieval so it won't be returned again.
+Fetches the most recent review result from a `diffprism watch` session. The result is marked as consumed after retrieval so it won't be returned again.
 
-No parameters.
+| Parameter | Required | Description                                                      |
+|-----------|----------|------------------------------------------------------------------|
+| `wait`    | No       | If `true`, poll until a review result is available (blocks up to timeout) |
+| `timeout` | No       | Max wait time in seconds when `wait=true` (default: 300, max: 600) |
 
 **Returns (all tools):** A `ReviewResult` JSON object:
 
@@ -192,11 +195,15 @@ No parameters.
 {
   "decision": "approved",
   "comments": [],
+  "fileStatuses": {},
   "summary": ""
 }
 ```
 
-`decision` is one of: `approved`, `changes_requested`, or `approved_with_comments`.
+- `decision` — one of: `approved`, `changes_requested`, or `approved_with_comments`
+- `comments` — array of `{ file, line, body, type }` where type is `must_fix`, `suggestion`, `question`, or `nitpick`
+- `fileStatuses` — (optional) map of file path to review status (`unreviewed`, `reviewed`, `approved`, `needs_changes`)
+- `summary` — (optional) free-text summary from the reviewer
 
 ## The `/review` Skill
 
@@ -207,13 +214,13 @@ On first use, Claude will ask your preferences and save them to `diffprism.confi
 ```json
 {
   "reviewTrigger": "ask",
-  "defaultDiffScope": "all",
+  "defaultDiffScope": "working-copy",
   "includeReasoning": true
 }
 ```
 
 - `reviewTrigger` — When Claude should open reviews automatically: `"ask"` (only when asked), `"before_commit"` (before every commit), `"always"` (after every code change)
-- `defaultDiffScope` — What to diff by default: `"all"`, `"staged"`, or `"unstaged"`
+- `defaultDiffScope` — What to diff by default: `"working-copy"` (staged+unstaged grouped), `"staged"`, or `"unstaged"`
 - `includeReasoning` — Whether Claude includes its reasoning in the review
 
 To re-run onboarding, delete `diffprism.config.json` and use `/review` again.

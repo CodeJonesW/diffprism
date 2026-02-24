@@ -8,11 +8,15 @@ All CLI commands can be run directly from source using `tsx`, bypassing the inst
 # Review (one-shot, blocks until submitted)
 npx tsx cli/src/index.ts review --dev
 
-# Watch (persistent, live-updating)
+# Start (setup + watch in one command)
+npx tsx cli/src/index.ts start --dev
+
+# Watch (persistent, live-updating — no setup step)
 npx tsx cli/src/index.ts watch --dev
 
 # Or use the pnpm alias
 pnpm cli review --dev
+pnpm cli start --dev
 pnpm cli watch --dev
 ```
 
@@ -37,7 +41,7 @@ pnpm cli review --dev all
 pnpm cli review --dev HEAD~3..HEAD
 ```
 
-Same flags work with `watch`.
+Same flags work with `watch` and `start`.
 
 ## Testing the MCP server
 
@@ -74,7 +78,7 @@ pnpm run build
 
 ### UI development
 
-1. Start watch in dev mode: `pnpm cli watch --dev`
+1. Start watch in dev mode: `pnpm cli start --dev` (or `pnpm cli watch --dev` if already set up)
 2. Edit files in `packages/ui/src/` — changes hot-reload in the browser
 3. Submit a review to test the submit flow, watch keeps running
 

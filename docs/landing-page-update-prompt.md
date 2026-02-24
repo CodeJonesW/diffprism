@@ -17,7 +17,7 @@ Three operational modes:
 
 ## What's New Since the Last Landing Page Update
 
-### Major: Global Server / Multi-Session Mode (v0.15.0–v0.20.2)
+### Major: Global Server / Multi-Session Mode (v0.15.0–v0.21.0)
 This is the headline new capability. `diffprism server` starts a persistent process (HTTP port 24680 + WS port 24681) that:
 - Accepts reviews from **multiple Claude Code sessions** simultaneously
 - Presents a **session dashboard** in a single browser tab — showing all pending/in-review/submitted reviews with status badges, branch names, file counts, and change stats
@@ -36,7 +36,7 @@ This enables the core vision: developers using git worktrees to run multiple age
 - **Agent reasoning panel** — Collapsible panel showing why the agent made changes
 - **Global setup** — `diffprism setup --global` configures at `~/.claude/` paths, no git repo required. Auto-runs on `diffprism server` start.
 - **Teardown command** — `diffprism teardown` cleanly reverses all setup changes (MCP config, hooks, skill, gitignore)
-- **v0.20.2 is current version**
+- **v0.21.0 is current version**
 
 ## Current Landing Page Structure
 
