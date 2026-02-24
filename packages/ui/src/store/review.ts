@@ -64,6 +64,7 @@ export interface ReviewState {
   setSessions: (sessions: SessionSummary[]) => void;
   addSession: (session: SessionSummary) => void;
   removeSession: (sessionId: string) => void;
+  updateSession: (session: SessionSummary) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -266,6 +267,14 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         hasUnreviewedChanges: true,
       }),
     });
+  },
+
+  updateSession: (session: SessionSummary) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === session.id ? session : s,
+      ),
+    }));
   },
 
   selectSession: (sessionId: string) => {

@@ -9,6 +9,7 @@ import type {
   DiffSet,
   ReviewResult,
   ContextUpdatePayload,
+  ServerMessage,
   SessionSummary,
 } from "../types.js";
 
@@ -355,6 +356,153 @@ describe("global-server", () => {
         },
       );
       expect(updateResponse.ok).toBe(true);
+    });
+  });
+
+  describe("session:updated broadcasts", () => {
+    it("includes decision in session summary after result submission", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Submit result with decision
+      const result: ReviewResult = {
+        decision: "changes_requested",
+        comments: [{ file: "src/index.ts", line: 5, body: "Fix this", type: "must_fix" }],
+      };
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+
+      // Verify decision appears in GET /api/reviews/:id
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await response.json()) as SessionSummary;
+      expect(data.decision).toBe("changes_requested");
+      expect(data.status).toBe("submitted");
+    });
+
+    it("broadcasts session:updated to WS clients when result is submitted via HTTP", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client (without sessionId — server mode)
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial session:list message
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Submit result via HTTP
+      const result: ReviewResult = {
+        decision: "approved",
+        comments: [],
+        summary: "LGTM",
+      };
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const updateMsg = messages.find((m) => m.type === "session:updated");
+      expect(updateMsg).toBeDefined();
+      expect(updateMsg!.type).toBe("session:updated");
+      const payload = updateMsg!.payload as SessionSummary;
+      expect(payload.id).toBe(sessionId);
+      expect(payload.status).toBe("submitted");
+      expect(payload.decision).toBe("approved");
+    });
+
+    it("broadcasts session:updated when session transitions to in_review", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create two sessions so auto-select doesn't trigger
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "First" } }),
+          projectPath: "/test-a",
+        }),
+      });
+
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Second" } }),
+          projectPath: "/test-b",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client without sessionId (server mode)
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial session:list
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Select a session — triggers in_review transition
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const updateMsg = messages.find((m) => m.type === "session:updated");
+      expect(updateMsg).toBeDefined();
+      const payload = updateMsg!.payload as SessionSummary;
+      expect(payload.id).toBe(sessionId);
+      expect(payload.status).toBe("in_review");
     });
   });
 
