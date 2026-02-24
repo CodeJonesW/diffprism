@@ -9,6 +9,7 @@ import type {
   DiffSet,
   ReviewResult,
   ContextUpdatePayload,
+  SessionSummary,
 } from "../types.js";
 
 // ─── Mocks ───
@@ -31,6 +32,36 @@ vi.mock("../ui-server.js", () => ({
 // Mock open — don't open a browser during tests
 vi.mock("open", () => ({
   default: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock @diffprism/git — watcher uses getDiff
+vi.mock("@diffprism/git", () => ({
+  getDiff: vi.fn().mockReturnValue({
+    diffSet: {
+      baseRef: "HEAD",
+      headRef: "working-copy",
+      files: [],
+    },
+    rawDiff: "",
+  }),
+  getCurrentBranch: vi.fn().mockReturnValue("main"),
+}));
+
+// Mock @diffprism/analysis — watcher uses analyze
+vi.mock("@diffprism/analysis", () => ({
+  analyze: vi.fn().mockReturnValue({
+    summary: "Mock analysis",
+    triage: { critical: [], notable: [], mechanical: [] },
+    impact: {
+      affectedModules: [],
+      affectedTests: [],
+      publicApiChanges: false,
+      breakingChanges: [],
+      newDependencies: [],
+    },
+    verification: { testsPass: null, typeCheck: null, lintClean: null },
+    fileStats: [],
+  }),
 }));
 
 // ─── Import after mocks ───
@@ -353,6 +384,102 @@ describe("global-server", () => {
       // Verify it's gone
       const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
       expect(getResponse.status).toBe(404);
+    });
+  });
+
+  describe("live diff watching", () => {
+    it("stores diffRef when provided in POST /api/reviews", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+          diffRef: "working-copy",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const { sessionId } = (await response.json()) as { sessionId: string };
+
+      // Verify session has hasNewChanges: false initially
+      const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await getResponse.json()) as SessionSummary;
+      expect(data.hasNewChanges).toBe(false);
+    });
+
+    it("sets watchMode on payload when diffRef is provided", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session with diffRef
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+          diffRef: "staged",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+    });
+
+    it("session without diffRef has hasNewChanges false", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+
+      const { sessionId } = (await response.json()) as { sessionId: string };
+
+      const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await getResponse.json()) as SessionSummary;
+      expect(data.hasNewChanges).toBe(false);
+    });
+
+    it("includes hasNewChanges in session list", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create two sessions
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "With diff" } }),
+          projectPath: "/project-a",
+          diffRef: "working-copy",
+        }),
+      });
+
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Without diff" } }),
+          projectPath: "/project-b",
+        }),
+      });
+
+      const response = await fetch(`${baseUrl}/api/reviews`);
+      const data = (await response.json()) as { sessions: SessionSummary[] };
+
+      expect(data.sessions).toHaveLength(2);
+      for (const session of data.sessions) {
+        expect(session.hasNewChanges).toBe(false);
+      }
     });
   });
 });
