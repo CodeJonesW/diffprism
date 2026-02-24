@@ -353,5 +353,38 @@ describe("review store", () => {
       useReviewStore.getState().initReview(makeInitPayload());
       expect(useReviewStore.getState().activeSessionId).toBe("review-123");
     });
+
+    it("updateSession replaces the matching session in the array", () => {
+      const sessions = [
+        makeSession({ id: "s1", status: "pending" }),
+        makeSession({ id: "s2", status: "pending" }),
+        makeSession({ id: "s3", status: "pending" }),
+      ];
+      useReviewStore.getState().setSessions(sessions);
+
+      useReviewStore.getState().updateSession(
+        makeSession({ id: "s2", status: "submitted", decision: "approved" }),
+      );
+
+      const updated = useReviewStore.getState().sessions;
+      expect(updated).toHaveLength(3);
+      expect(updated[0].id).toBe("s1");
+      expect(updated[0].status).toBe("pending");
+      expect(updated[1].id).toBe("s2");
+      expect(updated[1].status).toBe("submitted");
+      expect(updated[1].decision).toBe("approved");
+      expect(updated[2].id).toBe("s3");
+      expect(updated[2].status).toBe("pending");
+    });
+
+    it("updateSession is a no-op when session ID does not exist", () => {
+      const sessions = [makeSession({ id: "s1" })];
+      useReviewStore.getState().setSessions(sessions);
+
+      useReviewStore.getState().updateSession(makeSession({ id: "nonexistent" }));
+
+      expect(useReviewStore.getState().sessions).toHaveLength(1);
+      expect(useReviewStore.getState().sessions[0].id).toBe("s1");
+    });
   });
 });

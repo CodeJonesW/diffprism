@@ -33,6 +33,7 @@ export type {
 
 export { startReview } from "./pipeline.js";
 export { startWatch } from "./watch.js";
+export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
 export { readWatchFile, readReviewResult, consumeReviewResult } from "./watch-file.js";
 export { startGlobalServer } from "./global-server.js";
 export {

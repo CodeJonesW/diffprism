@@ -9,6 +9,8 @@ import type {
   DiffSet,
   ReviewResult,
   ContextUpdatePayload,
+  ServerMessage,
+  SessionSummary,
 } from "../types.js";
 
 // ─── Mocks ───
@@ -31,6 +33,36 @@ vi.mock("../ui-server.js", () => ({
 // Mock open — don't open a browser during tests
 vi.mock("open", () => ({
   default: vi.fn().mockResolvedValue(undefined),
+}));
+
+// Mock @diffprism/git — watcher uses getDiff
+vi.mock("@diffprism/git", () => ({
+  getDiff: vi.fn().mockReturnValue({
+    diffSet: {
+      baseRef: "HEAD",
+      headRef: "working-copy",
+      files: [],
+    },
+    rawDiff: "",
+  }),
+  getCurrentBranch: vi.fn().mockReturnValue("main"),
+}));
+
+// Mock @diffprism/analysis — watcher uses analyze
+vi.mock("@diffprism/analysis", () => ({
+  analyze: vi.fn().mockReturnValue({
+    summary: "Mock analysis",
+    triage: { critical: [], notable: [], mechanical: [] },
+    impact: {
+      affectedModules: [],
+      affectedTests: [],
+      publicApiChanges: false,
+      breakingChanges: [],
+      newDependencies: [],
+    },
+    verification: { testsPass: null, typeCheck: null, lintClean: null },
+    fileStats: [],
+  }),
 }));
 
 // ─── Import after mocks ───
@@ -363,6 +395,153 @@ describe("global-server", () => {
     });
   });
 
+  describe("session:updated broadcasts", () => {
+    it("includes decision in session summary after result submission", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Submit result with decision
+      const result: ReviewResult = {
+        decision: "changes_requested",
+        comments: [{ file: "src/index.ts", line: 5, body: "Fix this", type: "must_fix" }],
+      };
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+
+      // Verify decision appears in GET /api/reviews/:id
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await response.json()) as SessionSummary;
+      expect(data.decision).toBe("changes_requested");
+      expect(data.status).toBe("submitted");
+    });
+
+    it("broadcasts session:updated to WS clients when result is submitted via HTTP", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client (without sessionId — server mode)
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial session:list message
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Submit result via HTTP
+      const result: ReviewResult = {
+        decision: "approved",
+        comments: [],
+        summary: "LGTM",
+      };
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(result),
+      });
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const updateMsg = messages.find((m) => m.type === "session:updated");
+      expect(updateMsg).toBeDefined();
+      expect(updateMsg!.type).toBe("session:updated");
+      const payload = updateMsg!.payload as SessionSummary;
+      expect(payload.id).toBe(sessionId);
+      expect(payload.status).toBe("submitted");
+      expect(payload.decision).toBe("approved");
+    });
+
+    it("broadcasts session:updated when session transitions to in_review", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create two sessions so auto-select doesn't trigger
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "First" } }),
+          projectPath: "/test-a",
+        }),
+      });
+
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Second" } }),
+          projectPath: "/test-b",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client without sessionId (server mode)
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial session:list
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Select a session — triggers in_review transition
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const updateMsg = messages.find((m) => m.type === "session:updated");
+      expect(updateMsg).toBeDefined();
+      const payload = updateMsg!.payload as SessionSummary;
+      expect(payload.id).toBe(sessionId);
+      expect(payload.status).toBe("in_review");
+    });
+  });
+
   describe("session deletion", () => {
     it("deletes a session via DELETE /api/reviews/:id", async () => {
       handle = await startGlobalServer({ silent: true });
@@ -389,6 +568,102 @@ describe("global-server", () => {
       // Verify it's gone
       const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
       expect(getResponse.status).toBe(404);
+    });
+  });
+
+  describe("live diff watching", () => {
+    it("stores diffRef when provided in POST /api/reviews", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+          diffRef: "working-copy",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const { sessionId } = (await response.json()) as { sessionId: string };
+
+      // Verify session has hasNewChanges: false initially
+      const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await getResponse.json()) as SessionSummary;
+      expect(data.hasNewChanges).toBe(false);
+    });
+
+    it("sets watchMode on payload when diffRef is provided", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session with diffRef
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+          diffRef: "staged",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+    });
+
+    it("session without diffRef has hasNewChanges false", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const response = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+
+      const { sessionId } = (await response.json()) as { sessionId: string };
+
+      const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const data = (await getResponse.json()) as SessionSummary;
+      expect(data.hasNewChanges).toBe(false);
+    });
+
+    it("includes hasNewChanges in session list", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create two sessions
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "With diff" } }),
+          projectPath: "/project-a",
+          diffRef: "working-copy",
+        }),
+      });
+
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Without diff" } }),
+          projectPath: "/project-b",
+        }),
+      });
+
+      const response = await fetch(`${baseUrl}/api/reviews`);
+      const data = (await response.json()) as { sessions: SessionSummary[] };
+
+      expect(data.sessions).toHaveLength(2);
+      for (const session of data.sessions) {
+        expect(session.hasNewChanges).toBe(false);
+      }
     });
   });
 });

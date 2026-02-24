@@ -6,7 +6,7 @@ import { SessionList } from "./components/SessionList";
 import type { ReviewResult } from "./types";
 
 export default function App() {
-  const { sendResult, selectSession: wsSelectSession, connectionStatus } = useWebSocket();
+  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket();
   const {
     diffSet,
     metadata,
@@ -19,6 +19,7 @@ export default function App() {
     sessions,
     activeSessionId,
     selectSession,
+    removeSession,
   } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
@@ -45,6 +46,11 @@ export default function App() {
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     wsSelectSession(sessionId);
+  }
+
+  function handleCloseSession(sessionId: string) {
+    removeSession(sessionId);
+    wsCloseSession(sessionId);
   }
 
   const closeWindow = useCallback(() => {
@@ -135,6 +141,7 @@ export default function App() {
         sessions={sessions}
         activeSessionId={activeSessionId}
         onSelect={handleSelectSession}
+        onClose={handleCloseSession}
       />
     );
   }

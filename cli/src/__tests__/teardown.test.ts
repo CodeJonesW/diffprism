@@ -35,6 +35,7 @@ vi.mock("node:readline", () => ({
 }));
 
 import { teardown } from "../commands/teardown.js";
+import { GITIGNORE_ENTRIES } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
@@ -417,7 +418,7 @@ describe("teardown command", () => {
   });
 
   describe(".gitignore cleanup", () => {
-    it("removes .diffprism line from .gitignore", async () => {
+    it("removes all DiffPrism entries from .gitignore", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;
@@ -425,9 +426,10 @@ describe("teardown command", () => {
         return false;
       });
 
+      const gitignoreContent = "node_modules\n" + GITIGNORE_ENTRIES.join("\n") + "\ndist\n";
       mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
         const s = p.toString();
-        if (s.endsWith(".gitignore")) return "node_modules\n.diffprism\ndist\n";
+        if (s.endsWith(".gitignore")) return gitignoreContent;
         throw new Error("File not found");
       });
 
@@ -437,10 +439,14 @@ describe("teardown command", () => {
         (call) => call[0].toString().endsWith(".gitignore"),
       );
       expect(gitignoreWrite).toBeDefined();
-      expect(gitignoreWrite![1]).toBe("node_modules\ndist\n");
+      const written = gitignoreWrite![1] as string;
+      expect(written).toBe("node_modules\ndist\n");
+      for (const entry of GITIGNORE_ENTRIES) {
+        expect(written).not.toContain(entry);
+      }
     });
 
-    it("deletes .gitignore when .diffprism was the only entry", async () => {
+    it("deletes .gitignore when only DiffPrism entries existed", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;
@@ -450,7 +456,7 @@ describe("teardown command", () => {
 
       mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
         const s = p.toString();
-        if (s.endsWith(".gitignore")) return ".diffprism\n";
+        if (s.endsWith(".gitignore")) return GITIGNORE_ENTRIES.join("\n") + "\n";
         throw new Error("File not found");
       });
 
@@ -461,6 +467,32 @@ describe("teardown command", () => {
       );
     });
 
+    it("preserves non-DiffPrism entries", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s === path.join("/projects/myapp", ".gitignore")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.endsWith(".gitignore")) return "node_modules\n.diffprism\n.env\n";
+        throw new Error("File not found");
+      });
+
+      await teardown({ quiet: true });
+
+      const gitignoreWrite = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreWrite).toBeDefined();
+      const written = gitignoreWrite![1] as string;
+      expect(written).toContain("node_modules");
+      expect(written).toContain(".env");
+      expect(written).not.toContain(".diffprism");
+    });
+
     it("skips when .gitignore does not exist", async () => {
       const result = await teardown({ quiet: true });
 
@@ -469,7 +501,7 @@ describe("teardown command", () => {
       );
     });
 
-    it("skips when .diffprism not in .gitignore", async () => {
+    it("skips when no DiffPrism entries in .gitignore", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;

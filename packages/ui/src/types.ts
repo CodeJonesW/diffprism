@@ -176,7 +176,9 @@ export interface SessionSummary {
   additions: number;
   deletions: number;
   status: GlobalSessionStatus;
+  decision?: ReviewDecision;
   createdAt: number;
+  hasNewChanges?: boolean;
 }
 
 export type ServerMessage =
@@ -190,4 +192,5 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }
-  | { type: "session:select"; payload: { sessionId: string } };
+  | { type: "session:select"; payload: { sessionId: string } }
+  | { type: "session:close"; payload: { sessionId: string } };

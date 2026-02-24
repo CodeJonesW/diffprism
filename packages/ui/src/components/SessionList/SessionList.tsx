@@ -1,10 +1,11 @@
-import { GitBranch, FileCode, Clock } from "lucide-react";
+import { GitBranch, FileCode, Clock, Radio, X } from "lucide-react";
 import type { SessionSummary } from "../../types";
 
 interface SessionListProps {
   sessions: SessionSummary[];
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
+  onClose?: (sessionId: string) => void;
 }
 
 function formatTime(timestamp: number): string {
@@ -17,30 +18,51 @@ function getProjectName(projectPath: string): string {
   return parts[parts.length - 1] || projectPath;
 }
 
-function statusBadge(status: SessionSummary["status"]) {
-  switch (status) {
-    case "pending":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
-          Pending
-        </span>
-      );
-    case "in_review":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent/20 text-accent border border-accent/30">
-          In Review
-        </span>
-      );
-    case "submitted":
-      return (
-        <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
-          Submitted
-        </span>
-      );
+function statusBadge(session: SessionSummary) {
+  const { status, decision } = session;
+
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
+        Pending
+      </span>
+    );
   }
+
+  if (status === "in_review") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent/20 text-accent border border-accent/30">
+        In Review
+      </span>
+    );
+  }
+
+  // status === "submitted" — show decision-specific badge
+  if (decision === "changes_requested") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-600/20 text-red-400 border border-red-500/30">
+        Changes Requested
+      </span>
+    );
+  }
+
+  if (decision === "approved" || decision === "approved_with_comments") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
+        Approved
+      </span>
+    );
+  }
+
+  // Fallback for submitted without a decision
+  return (
+    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
+      Submitted
+    </span>
+  );
 }
 
-export function SessionList({ sessions, activeSessionId, onSelect }: SessionListProps) {
+export function SessionList({ sessions, activeSessionId, onSelect, onClose }: SessionListProps) {
   if (sessions.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-background text-center px-8">
@@ -76,21 +98,45 @@ export function SessionList({ sessions, activeSessionId, onSelect }: SessionList
           const isActive = session.id === activeSessionId;
 
           return (
-            <button
+            <div
               key={session.id}
-              onClick={() => onSelect(session.id)}
-              className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
+              className={`relative w-full text-left px-4 py-3 rounded-lg border transition-colors cursor-pointer ${
                 isActive
                   ? "bg-accent/10 border-accent/40"
                   : "bg-surface border-border hover:border-text-secondary/30"
               }`}
+              onClick={() => onSelect(session.id)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onSelect(session.id);
+              }}
             >
+              {/* Close button */}
+              {onClose && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(session.id);
+                  }}
+                  className="absolute top-2 right-2 p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+                  title="Dismiss session"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+
               {/* Title + status */}
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-text-primary text-sm font-medium truncate mr-2">
-                  {session.title || getProjectName(session.projectPath)}
-                </span>
-                {statusBadge(session.status)}
+              <div className="flex items-center justify-between mb-1.5 pr-6">
+                <div className="flex items-center gap-2 min-w-0 mr-2">
+                  {session.hasNewChanges && (
+                    <Radio className="w-3 h-3 text-accent flex-shrink-0 animate-pulse" />
+                  )}
+                  <span className="text-text-primary text-sm font-medium truncate">
+                    {session.title || getProjectName(session.projectPath)}
+                  </span>
+                </div>
+                {statusBadge(session)}
               </div>
 
               {/* Branch + project */}
@@ -126,7 +172,7 @@ export function SessionList({ sessions, activeSessionId, onSelect }: SessionList
                   {formatTime(session.createdAt)}
                 </span>
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

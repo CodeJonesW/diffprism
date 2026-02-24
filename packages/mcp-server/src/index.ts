@@ -76,7 +76,7 @@ async function reviewViaGlobalServer(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload, projectPath: cwd }),
+      body: JSON.stringify({ payload, projectPath: cwd, diffRef }),
     },
   );
 

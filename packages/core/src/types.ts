@@ -161,7 +161,8 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }
-  | { type: "session:select"; payload: { sessionId: string } };
+  | { type: "session:select"; payload: { sessionId: string } }
+  | { type: "session:close"; payload: { sessionId: string } };
 
 // ─── Pipeline Options ───
 
@@ -242,7 +243,9 @@ export interface SessionSummary {
   additions: number;
   deletions: number;
   status: GlobalSessionStatus;
+  decision?: ReviewDecision;
   createdAt: number;
+  hasNewChanges?: boolean;
 }
 
 export interface GlobalServerOptions {
@@ -250,6 +253,7 @@ export interface GlobalServerOptions {
   wsPort?: number; // default 24681
   silent?: boolean;
   dev?: boolean;
+  pollInterval?: number; // ms, default 2000
 }
 
 export interface GlobalServerHandle {
