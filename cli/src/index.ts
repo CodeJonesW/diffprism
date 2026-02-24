@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
+import { teardown } from "./commands/teardown.js";
 import { start } from "./commands/start.js";
 import { watch } from "./commands/watch.js";
 import { notifyStop } from "./commands/notify-stop.js";
@@ -65,6 +66,13 @@ program
   .option("--global", "Configure globally (skill + permissions, no git repo required)")
   .option("--force", "Overwrite existing configuration files")
   .action((flags) => { setup(flags); });
+
+program
+  .command("teardown")
+  .description("Remove DiffPrism configuration from the current project")
+  .option("--global", "Remove global configuration (skill + permissions at ~/.claude/)")
+  .option("-q, --quiet", "Suppress output")
+  .action((flags) => { teardown(flags); });
 
 const serverCmd = program
   .command("server")

@@ -24,6 +24,13 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `--force` — Overwrite existing configuration files
 - Idempotent: skips files that are already correctly configured
 
+### `diffprism teardown`
+- Removes DiffPrism configuration from the current project in one command
+- Reverses all changes made by `diffprism setup`: `.mcp.json`, permissions, hooks, skill, `.gitignore`, `.diffprism/`
+- `--global` — Remove global configuration (skill + permissions at `~/.claude/`)
+- `-q, --quiet` — Suppress output
+- Safely handles partial configs: skips items that don't exist, preserves non-DiffPrism entries
+
 ### `diffprism server`
 - Starts the global DiffPrism server for multi-session reviews
 - HTTP API on port 24680 (default), WebSocket on port 24681
@@ -38,6 +45,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `src/commands/review.ts` — Review command handler
 - `src/commands/serve.ts` — MCP serve command (dynamic import)
 - `src/commands/setup.ts` — Setup command: git root detection, file merging, skill installation, global setup, `isGlobalSetupDone()`
+- `src/commands/teardown.ts` — Teardown command: reverses setup by removing DiffPrism config from all locations
 - `src/commands/server.ts` — Global server start/status/stop
 - `src/templates/skill.ts` — Embedded SKILL.md content for the `/review` Claude Code skill
 
