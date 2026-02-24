@@ -108,5 +108,20 @@ export function useWebSocket() {
     ws.send(JSON.stringify(message));
   }, []);
 
-  return { sendResult, selectSession, connectionStatus };
+  const closeSession = useCallback((sessionId: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      console.error("WebSocket is not connected");
+      return;
+    }
+
+    const message: ClientMessage = {
+      type: "session:close",
+      payload: { sessionId },
+    };
+
+    ws.send(JSON.stringify(message));
+  }, []);
+
+  return { sendResult, selectSession, closeSession, connectionStatus };
 }

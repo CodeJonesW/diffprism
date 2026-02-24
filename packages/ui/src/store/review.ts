@@ -63,6 +63,7 @@ export interface ReviewState {
   setServerMode: (isServerMode: boolean) => void;
   setSessions: (sessions: SessionSummary[]) => void;
   addSession: (session: SessionSummary) => void;
+  removeSession: (sessionId: string) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -243,6 +244,28 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     set((state) => ({
       sessions: [...state.sessions, session],
     }));
+  },
+
+  removeSession: (sessionId: string) => {
+    const state = get();
+    const isActive = state.activeSessionId === sessionId;
+    set({
+      sessions: state.sessions.filter((s) => s.id !== sessionId),
+      ...(isActive && {
+        reviewId: null,
+        diffSet: null,
+        rawDiff: null,
+        briefing: null,
+        metadata: null,
+        selectedFile: null,
+        fileStatuses: {},
+        comments: [],
+        activeCommentKey: null,
+        activeSessionId: null,
+        watchSubmitted: false,
+        hasUnreviewedChanges: true,
+      }),
+    });
   },
 
   selectSession: (sessionId: string) => {

@@ -4,6 +4,9 @@ import getPort from "get-port";
 import open from "open";
 import { WebSocketServer, WebSocket } from "ws";
 
+import { getDiff } from "@diffprism/git";
+import { analyze } from "@diffprism/analysis";
+
 import type {
   GlobalServerOptions,
   GlobalServerHandle,
@@ -15,6 +18,7 @@ import type {
   ContextUpdatePayload,
   ServerMessage,
   ClientMessage,
+  DiffSet,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import {
@@ -23,6 +27,7 @@ import {
   startViteDevServer,
   createStaticServer,
 } from "./ui-server.js";
+import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 
 // ─── In-memory session store ───
 
@@ -33,12 +38,20 @@ interface Session {
   status: GlobalSessionStatus;
   result: ReviewResult | null;
   createdAt: number;
+  diffRef?: string;
+  lastDiffHash?: string;
+  lastDiffSet?: DiffSet;
+  hasNewChanges: boolean;
 }
 
 const sessions = new Map<string, Session>();
 
 // Track which WS clients are viewing which session
 const clientSessions = new Map<WebSocket, string>();
+
+// Session watcher intervals for live diff polling
+const sessionWatchers = new Map<string, NodeJS.Timeout>();
+let serverPollInterval = 2000;
 
 // Module-level callback set by startGlobalServer to reopen browser when needed
 let reopenBrowserIfNeeded: (() => void) | null = null;
@@ -63,6 +76,7 @@ function toSummary(session: Session): SessionSummary {
     deletions,
     status: session.status,
     createdAt: session.createdAt,
+    hasNewChanges: session.hasNewChanges,
   };
 }
 
@@ -134,6 +148,113 @@ function sendToSessionClients(sessionId: string, msg: ServerMessage): void {
   }
 }
 
+// ─── Session watcher management ───
+
+function hasViewersForSession(sessionId: string): boolean {
+  for (const [client, sid] of clientSessions.entries()) {
+    if (sid === sessionId && client.readyState === WebSocket.OPEN) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function startSessionWatcher(sessionId: string): void {
+  if (sessionWatchers.has(sessionId)) return;
+
+  const session = sessions.get(sessionId);
+  if (!session?.diffRef) return;
+
+  const interval = setInterval(() => {
+    const s = sessions.get(sessionId);
+    if (!s?.diffRef) {
+      stopSessionWatcher(sessionId);
+      return;
+    }
+
+    try {
+      const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(s.diffRef, {
+        cwd: s.projectPath,
+      });
+      const newHash = hashDiff(newRawDiff);
+
+      if (newHash !== s.lastDiffHash) {
+        const newBriefing = analyze(newDiffSet);
+        const changedFiles = detectChangedFiles(s.lastDiffSet ?? null, newDiffSet);
+
+        // Update session payload
+        s.payload = {
+          ...s.payload,
+          diffSet: newDiffSet,
+          rawDiff: newRawDiff,
+          briefing: newBriefing,
+        };
+        s.lastDiffHash = newHash;
+        s.lastDiffSet = newDiffSet;
+
+        if (hasViewersForSession(sessionId)) {
+          // Send live update to active viewers
+          sendToSessionClients(sessionId, {
+            type: "diff:update",
+            payload: {
+              diffSet: newDiffSet,
+              rawDiff: newRawDiff,
+              briefing: newBriefing,
+              changedFiles,
+              timestamp: Date.now(),
+            },
+          });
+          s.hasNewChanges = false;
+        } else {
+          // Mark as having new changes for session list indicator
+          s.hasNewChanges = true;
+          broadcastSessionList();
+        }
+      }
+    } catch {
+      // getDiff can fail if git state is mid-operation — silently skip
+    }
+  }, serverPollInterval);
+
+  sessionWatchers.set(sessionId, interval);
+}
+
+function stopSessionWatcher(sessionId: string): void {
+  const interval = sessionWatchers.get(sessionId);
+  if (interval) {
+    clearInterval(interval);
+    sessionWatchers.delete(sessionId);
+  }
+}
+
+function startAllWatchers(): void {
+  for (const [id, session] of sessions.entries()) {
+    if (session.diffRef && !sessionWatchers.has(id)) {
+      startSessionWatcher(id);
+    }
+  }
+}
+
+function stopAllWatchers(): void {
+  for (const [id, interval] of sessionWatchers.entries()) {
+    clearInterval(interval);
+  }
+  sessionWatchers.clear();
+}
+
+function hasConnectedClients(): boolean {
+  if (!wss) return false;
+  for (const client of wss.clients) {
+    if (client.readyState === WebSocket.OPEN) return true;
+  }
+  return false;
+}
+
+function broadcastSessionList(): void {
+  const summaries = Array.from(sessions.values()).map(toSummary);
+  broadcastToAll({ type: "session:list", payload: summaries });
+}
+
 // ─── API route handler ───
 
 async function handleApiRequest(
@@ -174,13 +295,19 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/reviews") {
     try {
       const body = await readBody(req);
-      const { payload, projectPath } = JSON.parse(body) as {
+      const { payload, projectPath, diffRef } = JSON.parse(body) as {
         payload: ReviewInitPayload;
         projectPath: string;
+        diffRef?: string;
       };
 
       const sessionId = `session-${randomUUID().slice(0, 8)}`;
       payload.reviewId = sessionId;
+
+      // Set watchMode when diffRef is provided so the UI knows live updates are possible
+      if (diffRef) {
+        payload.watchMode = true;
+      }
 
       const session: Session = {
         id: sessionId,
@@ -188,10 +315,19 @@ async function handleApiRequest(
         projectPath,
         status: "pending",
         createdAt: Date.now(),
-      result: null,
+        result: null,
+        diffRef,
+        lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
+        lastDiffSet: diffRef ? payload.diffSet : undefined,
+        hasNewChanges: false,
       };
 
       sessions.set(sessionId, session);
+
+      // Start watcher if clients are connected and diffRef is provided
+      if (diffRef && hasConnectedClients()) {
+        startSessionWatcher(sessionId);
+      }
 
       // Notify connected UI clients about the new session
       broadcastToAll({
@@ -307,6 +443,7 @@ async function handleApiRequest(
   // DELETE /api/reviews/:id — remove a session
   const deleteParams = matchRoute(method, url, "DELETE", "/api/reviews/:id");
   if (deleteParams) {
+    stopSessionWatcher(deleteParams.id);
     if (sessions.delete(deleteParams.id)) {
       jsonResponse(res, 200, { ok: true });
     } else {
@@ -329,7 +466,10 @@ export async function startGlobalServer(
     wsPort: preferredWsPort = 24681,
     silent = false,
     dev = false,
+    pollInterval = 2000,
   } = options;
+
+  serverPollInterval = pollInterval;
 
   // Get available ports (prefer defaults, fall back to random)
   const [httpPort, wsPort] = await Promise.all([
@@ -365,6 +505,9 @@ export async function startGlobalServer(
   wss = new WebSocketServer({ port: wsPort });
 
   wss.on("connection", (ws, req) => {
+    // Start all watchers when first client connects
+    startAllWatchers();
+
     // Parse session ID from query string: ws://localhost:PORT?sessionId=xyz
     const url = new URL(req.url ?? "/", `http://localhost:${wsPort}`);
     const sessionId = url.searchParams.get("sessionId");
@@ -376,6 +519,7 @@ export async function startGlobalServer(
       const session = sessions.get(sessionId);
       if (session) {
         session.status = "in_review";
+        session.hasNewChanges = false;
         const msg: ServerMessage = {
           type: "review:init",
           payload: session.payload,
@@ -397,6 +541,7 @@ export async function startGlobalServer(
         if (session) {
           clientSessions.set(ws, session.id);
           session.status = "in_review";
+          session.hasNewChanges = false;
           ws.send(JSON.stringify({
             type: "review:init",
             payload: session.payload,
@@ -422,11 +567,24 @@ export async function startGlobalServer(
           if (session) {
             clientSessions.set(ws, session.id);
             session.status = "in_review";
+            session.hasNewChanges = false;
+            startSessionWatcher(session.id);
             ws.send(JSON.stringify({
               type: "review:init",
               payload: session.payload,
             } satisfies ServerMessage));
           }
+        } else if (msg.type === "session:close") {
+          const closedId = msg.payload.sessionId;
+          stopSessionWatcher(closedId);
+          sessions.delete(closedId);
+          // Remove any client associations with this session
+          for (const [client, sid] of clientSessions.entries()) {
+            if (sid === closedId) {
+              clientSessions.delete(client);
+            }
+          }
+          broadcastSessionList();
         }
       } catch {
         // Ignore malformed messages
@@ -435,6 +593,11 @@ export async function startGlobalServer(
 
     ws.on("close", () => {
       clientSessions.delete(ws);
+
+      // Stop all watchers when no clients remain
+      if (!hasConnectedClients()) {
+        stopAllWatchers();
+      }
     });
   });
 
@@ -467,14 +630,6 @@ export async function startGlobalServer(
   await open(uiUrl);
 
   // Re-open browser when a review arrives and no UI clients are connected
-  function hasConnectedClients(): boolean {
-    if (!wss) return false;
-    for (const client of wss.clients) {
-      if (client.readyState === WebSocket.OPEN) return true;
-    }
-    return false;
-  }
-
   reopenBrowserIfNeeded = (): void => {
     if (!hasConnectedClients()) {
       open(uiUrl);
@@ -482,6 +637,9 @@ export async function startGlobalServer(
   };
 
   async function stop(): Promise<void> {
+    // Stop all session watchers
+    stopAllWatchers();
+
     // Close all WebSocket connections
     if (wss) {
       for (const client of wss.clients) {
