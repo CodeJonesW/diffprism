@@ -318,7 +318,7 @@ async function handleApiRequest(
     return true;
   }
 
-  // POST /api/reviews — create a new session
+  // POST /api/reviews — create or update a session
   if (method === "POST" && url === "/api/reviews") {
     try {
       const body = await readBody(req);
@@ -328,44 +328,97 @@ async function handleApiRequest(
         diffRef?: string;
       };
 
-      const sessionId = `session-${randomUUID().slice(0, 8)}`;
-      payload.reviewId = sessionId;
-
-      // Set watchMode when diffRef is provided so the UI knows live updates are possible
-      if (diffRef) {
-        payload.watchMode = true;
+      // Check for existing session with same projectPath
+      let existingSession: Session | undefined;
+      for (const session of sessions.values()) {
+        if (session.projectPath === projectPath) {
+          existingSession = session;
+          break;
+        }
       }
 
-      const session: Session = {
-        id: sessionId,
-        payload,
-        projectPath,
-        status: "pending",
-        createdAt: Date.now(),
-        result: null,
-        diffRef,
-        lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
-        lastDiffSet: diffRef ? payload.diffSet : undefined,
-        hasNewChanges: false,
-      };
+      if (existingSession) {
+        // Reuse the existing session — update in place
+        const sessionId = existingSession.id;
+        payload.reviewId = sessionId;
 
-      sessions.set(sessionId, session);
+        if (diffRef) {
+          payload.watchMode = true;
+        }
 
-      // Start watcher if clients are connected and diffRef is provided
-      if (diffRef && hasConnectedClients()) {
-        startSessionWatcher(sessionId);
+        // Stop the old watcher before updating (diffRef may have changed)
+        stopSessionWatcher(sessionId);
+
+        // Update session in place
+        existingSession.payload = payload;
+        existingSession.status = "pending";
+        existingSession.result = null;
+        existingSession.createdAt = Date.now();
+        existingSession.diffRef = diffRef;
+        existingSession.lastDiffHash = diffRef ? hashDiff(payload.rawDiff) : undefined;
+        existingSession.lastDiffSet = diffRef ? payload.diffSet : undefined;
+        existingSession.hasNewChanges = false;
+
+        // Restart watcher if needed
+        if (diffRef && hasConnectedClients()) {
+          startSessionWatcher(sessionId);
+        }
+
+        // If a UI client is viewing this session, send fresh data
+        if (hasViewersForSession(sessionId)) {
+          sendToSessionClients(sessionId, {
+            type: "review:init",
+            payload,
+          });
+        }
+
+        // Broadcast update (not added)
+        broadcastSessionUpdate(existingSession);
+
+        // Re-open browser if no UI clients are connected
+        reopenBrowserIfNeeded?.();
+
+        jsonResponse(res, 200, { sessionId });
+      } else {
+        // Create new session
+        const sessionId = `session-${randomUUID().slice(0, 8)}`;
+        payload.reviewId = sessionId;
+
+        if (diffRef) {
+          payload.watchMode = true;
+        }
+
+        const session: Session = {
+          id: sessionId,
+          payload,
+          projectPath,
+          status: "pending",
+          createdAt: Date.now(),
+          result: null,
+          diffRef,
+          lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
+          lastDiffSet: diffRef ? payload.diffSet : undefined,
+          hasNewChanges: false,
+        };
+
+        sessions.set(sessionId, session);
+
+        // Start watcher if clients are connected and diffRef is provided
+        if (diffRef && hasConnectedClients()) {
+          startSessionWatcher(sessionId);
+        }
+
+        // Notify connected UI clients about the new session
+        broadcastToAll({
+          type: "session:added",
+          payload: toSummary(session),
+        });
+
+        // Re-open browser if no UI clients are connected
+        reopenBrowserIfNeeded?.();
+
+        jsonResponse(res, 201, { sessionId });
       }
-
-      // Notify connected UI clients about the new session
-      broadcastToAll({
-        type: "session:added",
-        payload: toSummary(session),
-      });
-
-      // Re-open browser if no UI clients are connected
-      reopenBrowserIfNeeded?.();
-
-      jsonResponse(res, 201, { sessionId });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }

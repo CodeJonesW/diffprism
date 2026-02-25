@@ -742,6 +742,136 @@ describe("global-server", () => {
     });
   });
 
+  describe("session deduplication by projectPath", () => {
+    it("reuses session when same projectPath is posted twice", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const firstResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "First review" } }),
+          projectPath: "/same/project",
+        }),
+      });
+
+      expect(firstResponse.status).toBe(201);
+      const { sessionId: firstId } = (await firstResponse.json()) as { sessionId: string };
+
+      const secondResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Second review" } }),
+          projectPath: "/same/project",
+        }),
+      });
+
+      expect(secondResponse.status).toBe(200);
+      const { sessionId: secondId } = (await secondResponse.json()) as { sessionId: string };
+
+      // Same session ID reused
+      expect(secondId).toBe(firstId);
+
+      // Only one session in the list
+      const listResponse = await fetch(`${baseUrl}/api/reviews`);
+      const listData = (await listResponse.json()) as { sessions: SessionSummary[] };
+      expect(listData.sessions).toHaveLength(1);
+      expect(listData.sessions[0].title).toBe("Second review");
+    });
+
+    it("resets status and clears result when same projectPath is posted after submit", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Submit a result
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision: "approved",
+          comments: [],
+        } satisfies ReviewResult),
+      });
+
+      // Verify submitted
+      const afterSubmit = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const afterSubmitData = (await afterSubmit.json()) as SessionSummary;
+      expect(afterSubmitData.status).toBe("submitted");
+
+      // Post again with same projectPath
+      const secondResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "New review" } }),
+          projectPath: "/test/project",
+        }),
+      });
+
+      expect(secondResponse.status).toBe(200);
+      const { sessionId: secondId } = (await secondResponse.json()) as { sessionId: string };
+      expect(secondId).toBe(sessionId);
+
+      // Status reset to pending, result cleared
+      const afterReset = await fetch(`${baseUrl}/api/reviews/${sessionId}`);
+      const afterResetData = (await afterReset.json()) as SessionSummary;
+      expect(afterResetData.status).toBe("pending");
+      expect(afterResetData.decision).toBeUndefined();
+
+      // Result endpoint also shows pending
+      const resultResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}/result`);
+      const resultData = (await resultResponse.json()) as { result: null; status: string };
+      expect(resultData.result).toBeNull();
+      expect(resultData.status).toBe("pending");
+    });
+
+    it("creates separate sessions for different projectPaths", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const firstResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Project A" } }),
+          projectPath: "/project-a",
+        }),
+      });
+      const { sessionId: firstId } = (await firstResponse.json()) as { sessionId: string };
+
+      const secondResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Project B" } }),
+          projectPath: "/project-b",
+        }),
+      });
+      const { sessionId: secondId } = (await secondResponse.json()) as { sessionId: string };
+
+      // Different session IDs
+      expect(secondId).not.toBe(firstId);
+
+      // Two sessions in the list
+      const listResponse = await fetch(`${baseUrl}/api/reviews`);
+      const listData = (await listResponse.json()) as { sessions: SessionSummary[] };
+      expect(listData.sessions).toHaveLength(2);
+    });
+  });
+
   describe("live diff watching", () => {
     it("stores diffRef when provided in POST /api/reviews", async () => {
       handle = await startGlobalServer({ silent: true });
