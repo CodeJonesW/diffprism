@@ -28,6 +28,15 @@ This is the headline new capability. `diffprism server` starts a persistent proc
 
 This enables the core vision: developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer.
 
+### New: Quick Actions — Approve & Commit from the Review UI (v0.24.0)
+The ⋮ dropdown menu in the file browser header lets users **Approve & Commit** or **Approve, Commit & PR** directly from the review UI. The decision is returned to the agent with a `postReviewAction` field, and the agent executes the action immediately — no extra confirmation step. This closes the loop between review and commit in a single click.
+
+### New: Desktop Notifications (v0.23.0)
+When using the global server, users get **native desktop notifications** when a new review session arrives while the DiffPrism tab is backgrounded. A bell toggle in the session list header controls notifications, with preference persisted in localStorage. Clicking a notification focuses the tab and selects the session.
+
+### New: Dismiss Reviews (v0.22.0)
+A **Dismiss** button lets users close a review without approving or requesting changes — useful when the agent is still working, the review was triggered by mistake, or no feedback is needed. Dismiss unblocks MCP polling so the agent isn't left hanging.
+
 ### Other New Features
 - **Split (side-by-side) diff view** — Toggle between unified and split views
 - **Dark/light mode toggle** — Was dark-only, now has a toggle with theme persistence
@@ -36,7 +45,7 @@ This enables the core vision: developers using git worktrees to run multiple age
 - **Agent reasoning panel** — Collapsible panel showing why the agent made changes
 - **Global setup** — `diffprism setup --global` configures at `~/.claude/` paths, no git repo required. Auto-runs on `diffprism server` start.
 - **Teardown command** — `diffprism teardown` cleanly reverses all setup changes (MCP config, hooks, skill, gitignore)
-- **v0.21.0 is current version**
+- **v0.24.1 is current version**
 
 ## Current Landing Page Structure
 
@@ -69,10 +78,12 @@ The Why page (`/why`) and Blog page (`/blog`) exist as separate routes.
 - The current Terminal → Claude Code → Browser diagram is still valid for watch mode but doesn't tell the multi-session story
 
 ### Features Grid
-- Add **Multi-session dashboard** as a feature card — session list with status badges, branch info, change stats, click to switch between reviews
+- Add **Multi-session dashboard** as a feature card — session list with status badges, branch info, change stats, click to switch between reviews, desktop notifications when reviews arrive
 - Add **Split diff view** as a feature or mention within the existing diff viewer card
 - Update existing cards if needed (e.g., the Watch Mode card could mention it's one of three modes)
 - Consider adding **Keyboard navigation** as a feature card (j/k files, s status, ? help)
+- Add or mention **Quick actions** — Approve & Commit or Approve, Commit & PR directly from the review UI, closing the review→commit loop
+- Add or mention **Dismiss** — clean exit for reviews that aren't needed, prevents agents from hanging
 
 ### How It Works
 - Keep the 3-step simplicity but update step 2 to acknowledge the modes:
@@ -115,10 +126,11 @@ diffprism teardown            # Clean removal
 - Agent reasoning display panel
 - Dark/light mode toggle
 - Keyboard shortcuts (j/k files, s status, ? hotkey guide)
-- Three-way decisions (approve, request changes, approve with comments)
-- Structured JSON results returned to agent
-- Multi-session dashboard with status badges, branch info, file counts
+- Four review decisions: approve, request changes, approve with comments, dismiss
+- Quick action menu: Approve & Commit, Approve Commit & PR (executes post-review action without extra confirmation)
+- Structured JSON results returned to agent (includes optional `postReviewAction` field)
+- Multi-session dashboard with status badges, branch info, file counts, desktop notifications for new sessions
 - MCP tools: open_review, update_review_context, get_review_result
-- CLI: review, watch, serve, setup, server, teardown
+- CLI: review, watch, serve, setup, server, teardown, start
 - Zero-config: `npx diffprism setup` handles everything
 - Global setup: `diffprism setup --global` for no-repo-required config
