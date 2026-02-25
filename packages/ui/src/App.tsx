@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { useNotifications } from "./hooks/useNotifications";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
 import { SessionList } from "./components/SessionList";
 import type { ReviewResult } from "./types";
 
 export default function App() {
-  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket();
+  const { permission: notificationPermission, enabled: notificationsEnabled, toggle: toggleNotifications, notifyNewSession } = useNotifications({ onSessionSelect: handleSelectSession });
+  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket({ onSessionAdded: notifyNewSession });
   const {
     diffSet,
     metadata,
@@ -158,6 +160,9 @@ export default function App() {
           activeSessionId={activeSessionId}
           onSelect={handleSelectSession}
           onClose={handleCloseSession}
+          notificationPermission={notificationPermission}
+          notificationsEnabled={notificationsEnabled}
+          onToggleNotifications={toggleNotifications}
         />
       </div>
     );
