@@ -175,6 +175,24 @@ The core vision: developers using git worktrees to run multiple agents in parall
 - Convention detection from codebase patterns
 - Risk assessment with explanations
 
+### M7: Convention Intelligence & Team Workflows
+- Review profiles: `.diffprism.yml` per repo/team with configurable workflows
+- Convention learning: track reviewer patterns, codify into automated checks
+- Convention drift detection and enforcement
+- Review templates: different workflows for different change types (security-sensitive, data model, API surface)
+- Approval gates: domain-owner review requirements for sensitive paths
+- Team review dashboard: activity, coverage, bottlenecks
+- Shareable convention configs across projects
+
+### M8: Organization Scale
+- Org-level review policies and approval gates
+- Trust calibration: per-agent trust profiles with graduated autonomy
+- Multi-agent review composition (security/performance/convention agents feeding unified briefing)
+- Approval workflows with domain-owner routing and escalation rules
+- Audit trail and compliance reporting
+- Agent effectiveness metrics and convention compliance trends
+- Cross-team convention sharing
+
 ---
 
 ## Plan Alignment

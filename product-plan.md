@@ -54,7 +54,65 @@ DiffPrism as a review workbench for pull requests. Fetch PR data via the GitHub 
 
 ### Team and Enterprise Workflows
 
-The progression from developer tool to team product. Configurable review profiles (`.diffprism.yml`) with team-specific rules. Convention learning that tracks what you consistently flag and turns patterns into automated checks. Org-level policies, review templates, approval workflows. Shareable convention configs so the whole team benefits from review patterns.
+As agent adoption moves from individual developers to teams and organizations, the review surface becomes the natural place to enforce consistency and maintain quality at scale. Each capability below emerges from a real problem that surfaces when multiple people and multiple agents are producing code into the same codebase.
+
+#### Convention Intelligence
+
+The tool tracks what reviewers consistently flag and codifies those patterns into automated checks. If three engineers on the same team each flag "don't use raw SQL in this codebase" in the same month, that becomes a named convention — versioned, shareable, and enforced on future reviews.
+
+- **Convention learning:** Review decisions train the system. Patterns the team flags repeatedly become automated checks that surface in future briefings.
+- **Pattern library:** Named, versioned conventions shareable across projects and teams. A team's conventions are a first-class artifact, not tribal knowledge.
+- **Convention drift detection:** Surfaces when code diverges from established team patterns — not just style, but architectural patterns, error handling approaches, and API design conventions.
+- **Beyond linters:** Codebase-specific enforcement that goes deeper than what static analysis catches. "We always wrap external API calls in a retry utility." "Data model changes require a migration file." "New endpoints need rate limiting." These are the conventions that live in people's heads today.
+
+#### Review Orchestration
+
+Different kinds of changes need different review workflows. A formatting fix and a payment system change shouldn't go through the same process.
+
+- **Review profiles:** Configurable `.diffprism.yml` per repo or team. Define which analysis rules run, what approval requirements apply, and how changes are triaged.
+- **Review templates:** Security-sensitive changes route differently than documentation updates. Teams define the templates; the tool applies them based on which files and patterns are touched.
+- **Approval gates:** Changes to specific paths — auth, payments, data models, infrastructure — require review from designated domain owners before they can proceed.
+- **Escalation rules:** High-risk changes auto-route to senior engineers. The risk assessment from the analysis engine drives the routing, so human attention goes where it matters most.
+
+#### Trust Calibration
+
+Not all agents and not all change types carry the same risk. The review system should reflect that.
+
+- **Trust profiles per agent:** Track approval rates, change-request patterns, and iteration counts over time. An agent that consistently produces clean refactors earns different treatment than one that's new to the codebase.
+- **Graduated autonomy:** Mechanical refactors by trusted agents can be batch-approved with a single click. New business logic, API surface changes, and security-sensitive code always get full human review. The threshold is configurable, not hardcoded.
+- **Threshold tuning:** Teams define their own risk tolerance per change category and per agent. A startup iterating fast and a regulated fintech have different needs — the same tool should serve both.
+- **Audit trail:** Every review decision is logged. Every auto-approval is traceable. As agent usage scales, the ability to answer "who approved this and why" becomes essential — not just for compliance, but for debugging process failures.
+
+#### Multi-Agent Review Composition
+
+When teams run specialized analysis — security scanning, performance profiling, convention checking — those results should converge into a single briefing, not scatter across separate tools.
+
+- **Specialized analysis agents:** Security-focused, performance-focused, convention-focused agents all feed into the same unified briefing surface. The reviewer sees one coherent picture, not three separate reports.
+- **Configurable composition:** Teams choose which analysis agents run for which repos and paths. A frontend repo might run accessibility and bundle-size checks; a backend API repo might run security and rate-limit analysis.
+- **Custom analysis rules:** Team-specific patterns that go beyond generic code quality. Not "this function is too long," but "this service doesn't follow our circuit breaker pattern."
+
+#### Organization Visibility
+
+When agent-assisted development scales across an engineering org, leadership needs to understand what's happening — not to micromanage, but to identify where the process is working and where it's breaking down.
+
+- **Review activity dashboards:** What's being reviewed, what's bottlenecked, where agents are producing changes that consistently need iteration.
+- **Agent effectiveness metrics:** Which agents produce approvable code on the first pass. Which consistently need changes. Where the iteration loop is longest. This data informs both tool configuration and team practices.
+- **Convention compliance trends:** Track how well code aligns with team patterns over time. Spot drift early — before it becomes tech debt.
+- **Cross-team pattern sharing:** When one team discovers a useful convention, the org can adopt it. Review patterns become institutional knowledge that compounds.
+
+---
+
+## The Agent Scale Problem
+
+The features above aren't speculative. They're the predictable consequence of agent adoption moving from individual use to team-wide practice.
+
+**One developer, one agent** — local review is enough. `diffprism review --staged` solves the problem completely. You know the codebase, you know what you asked for, you review the output and move on.
+
+**One developer, multiple agents running in parallel** — the global server and multi-session UI handle this. You're still the single reviewer, but now you're switching between sessions, comparing approaches, approving or rejecting work from several agents at once. Still a single-person workflow, but the tooling needs to keep up with the throughput.
+
+**A team of developers, each working with agents** — this is where things change. Agent A writes retry logic one way. Agent B uses a different pattern in the same codebase. Three engineers independently flag the same convention violation in the same week. Without shared conventions, review templates, and team-wide visibility, the codebase fragments. Each developer-agent pair optimizes locally while the overall system drifts. Shared conventions and review orchestration aren't nice-to-haves at this stage — they're how you prevent the codebase from becoming incoherent.
+
+**An org with dozens of teams and hundreds of agent sessions per day** — policy enforcement, trust calibration, audit trails, and approval workflows become the difference between "agents help us ship faster" and "agents created a mess we can't maintain." The review surface — which is already where every change gets human attention — is the natural control plane. It sees every change, knows the conventions, tracks the decisions, and directs attention to the places that matter. Everything else in the stack either produces code or consumes it. The review layer is where the human judgment happens.
 
 ---
 
@@ -68,10 +126,10 @@ The progression:
 
 1. **Local diff viewer** — npm package, opens in browser, zero-config. Developer tool, bottom-up adoption. Engineers adopt it because it's the fastest way to review agent output. *(shipped)*
 2. **Multi-agent review hub** — global server, async mode, multi-session dashboard. Power-user tool for agent-heavy workflows. Becomes essential infrastructure as teams scale agent usage. *(shipped — global server, MCP routing, session UI, global setup)*
-3. **PR review workbench + AI analysis** — GitHub integration, conversational review with Claude, deep analysis layer. Team product with SaaS potential.
-4. **Review OS** — org-level policies, convention learning, approval workflows, trust calibration. Enterprise product.
+3. **PR review workbench + AI analysis** — GitHub integration brings existing PR workflows into DiffPrism's review surface. AI analysis runs privately — the engineer sees security flags, convention checks, and risk assessments alongside the diff, but only their human-authored comments post to GitHub. Teams adopt this because it makes review faster and catches things GitHub's native UI doesn't surface.
+4. **Review OS** — the review surface becomes the control plane for agent-assisted development at scale. Convention intelligence learns what the team values and enforces it automatically. Trust calibration gives agents graduated autonomy — mechanical work flows through, judgment calls get human attention. Org-wide visibility shows which agents are effective, where conventions are drifting, and what needs a senior engineer's eye. Every layer below this one feeds data into the system: reviews teach conventions, conventions inform triage, triage directs attention. The longer a team uses it, the more it knows.
 
-Each layer builds on the one below it. The review surface is the foundation. Everything else is leverage.
+Each layer builds on the one below it. The review surface is the foundation. Convention intelligence is the flywheel. Everything else is leverage.
 
 ---
 
