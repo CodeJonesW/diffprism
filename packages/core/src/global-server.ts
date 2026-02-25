@@ -405,7 +405,11 @@ async function handleApiRequest(
       const result = JSON.parse(body) as ReviewResult;
       session.result = result;
       session.status = "submitted";
-      broadcastSessionUpdate(session);
+      if (result.decision === "dismissed") {
+        broadcastSessionRemoved(postResultParams.id);
+      } else {
+        broadcastSessionUpdate(session);
+      }
 
       jsonResponse(res, 200, { ok: true });
     } catch {
@@ -591,7 +595,11 @@ export async function startGlobalServer(
             if (session) {
               session.result = msg.payload;
               session.status = "submitted";
-              broadcastSessionUpdate(session);
+              if (msg.payload.decision === "dismissed") {
+                broadcastSessionRemoved(sid);
+              } else {
+                broadcastSessionUpdate(session);
+              }
             }
           }
         } else if (msg.type === "session:select") {
@@ -610,14 +618,13 @@ export async function startGlobalServer(
         } else if (msg.type === "session:close") {
           const closedId = msg.payload.sessionId;
           stopSessionWatcher(closedId);
-          sessions.delete(closedId);
-          // Remove any client associations with this session
-          for (const [client, sid] of clientSessions.entries()) {
-            if (sid === closedId) {
-              clientSessions.delete(client);
-            }
+          const closedSession = sessions.get(closedId);
+          if (closedSession && !closedSession.result) {
+            // Store dismiss result so MCP polling can pick it up
+            closedSession.result = { decision: "dismissed", comments: [] };
+            closedSession.status = "submitted";
           }
-          broadcastSessionList();
+          broadcastSessionRemoved(closedId);
         }
       } catch {
         // Ignore malformed messages

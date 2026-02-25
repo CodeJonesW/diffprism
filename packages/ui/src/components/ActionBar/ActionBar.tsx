@@ -1,16 +1,17 @@
 import { useState } from "react";
-import { Check, X, MessageSquare } from "lucide-react";
+import { Check, X, XCircle, MessageSquare } from "lucide-react";
 import type { ReviewResult, ReviewDecision } from "../../types";
 import { useReviewStore } from "../../store/review";
 
 interface ActionBarProps {
   onSubmit: (result: ReviewResult) => void;
+  onDismiss?: () => void;
   isWatchMode?: boolean;
   watchSubmitted?: boolean;
   hasUnreviewedChanges?: boolean;
 }
 
-export function ActionBar({ onSubmit, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
+export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
   const [summary, setSummary] = useState("");
   const { diffSet, fileStatuses, comments } = useReviewStore();
 
@@ -121,6 +122,19 @@ export function ActionBar({ onSubmit, isWatchMode, watchSubmitted, hasUnreviewed
           <MessageSquare className="w-4 h-4" />
           Approve with Comments
         </button>
+
+        {onDismiss && (
+          <>
+            <div className="w-px h-6 bg-border" />
+            <button
+              onClick={onDismiss}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors bg-gray-100 dark:bg-gray-600/20 text-gray-700 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 hover:bg-gray-200 dark:hover:bg-gray-600/30 hover:border-gray-400 dark:hover:border-gray-500/50 cursor-pointer"
+            >
+              <XCircle className="w-4 h-4" />
+              Dismiss
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

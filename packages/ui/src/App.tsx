@@ -46,6 +46,18 @@ export default function App() {
     }
   }
 
+  function handleDismiss() {
+    sendResult({ decision: "dismissed", comments: [] });
+    if (isServerMode && activeSessionId) {
+      removeSession(activeSessionId);
+      wsCloseSession(activeSessionId);
+    } else if (isWatchMode) {
+      setWatchSubmitted(true);
+    } else {
+      setSubmitted(true);
+    }
+  }
+
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     wsSelectSession(sessionId);
@@ -140,12 +152,14 @@ export default function App() {
     }
 
     return (
-      <SessionList
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        onSelect={handleSelectSession}
-        onClose={handleCloseSession}
-      />
+      <div className="h-screen bg-background">
+        <SessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={handleSelectSession}
+          onClose={handleCloseSession}
+        />
+      </div>
     );
   }
 
@@ -202,6 +216,7 @@ export default function App() {
   return (
     <ReviewView
       onSubmit={handleSubmit}
+      onDismiss={handleDismiss}
       isWatchMode={isWatchMode || isServerMode}
       watchSubmitted={watchSubmitted}
       hasUnreviewedChanges={hasUnreviewedChanges}

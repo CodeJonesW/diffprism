@@ -54,6 +54,14 @@ function statusBadge(session: SessionSummary) {
     );
   }
 
+  if (decision === "dismissed") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-600/20 text-gray-400 border border-gray-500/30">
+        Dismissed
+      </span>
+    );
+  }
+
   // Fallback for submitted without a decision
   return (
     <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
@@ -65,17 +73,19 @@ function statusBadge(session: SessionSummary) {
 export function SessionList({ sessions, activeSessionId, onSelect, onClose }: SessionListProps) {
   if (sessions.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full bg-background text-center px-8">
-        <div className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center mb-4">
-          <FileCode className="w-6 h-6 text-text-secondary" />
+      <div className="flex flex-col h-full bg-background">
+        <div className="flex flex-1 flex-col items-center justify-center text-center px-8">
+          <div className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center mb-4">
+            <FileCode className="w-6 h-6 text-text-secondary" />
+          </div>
+          <h2 className="text-text-primary text-lg font-semibold mb-2">
+            No reviews yet
+          </h2>
+          <p className="text-text-secondary text-sm max-w-xs">
+            Reviews from Claude Code sessions will appear here when they use the{" "}
+            <code className="text-accent text-xs">open_review</code> tool.
+          </p>
         </div>
-        <h2 className="text-text-primary text-lg font-semibold mb-2">
-          No reviews yet
-        </h2>
-        <p className="text-text-secondary text-sm max-w-xs">
-          Reviews from Claude Code sessions will appear here when they use the{" "}
-          <code className="text-accent text-xs">open_review</code> tool.
-        </p>
       </div>
     );
   }

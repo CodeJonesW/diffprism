@@ -38,7 +38,8 @@ export interface DiffSet {
 export type ReviewDecision =
   | "approved"
   | "changes_requested"
-  | "approved_with_comments";
+  | "approved_with_comments"
+  | "dismissed";
 
 export type FileReviewStatus =
   | "unreviewed"
