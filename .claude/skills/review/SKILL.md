@@ -26,14 +26,12 @@ Look for `diffprism.config.json` at the project root. If it exists, read it for 
 
 ```json
 {
-  "reviewTrigger": "ask | before_commit | always",
   "defaultDiffScope": "staged | unstaged | working-copy",
   "includeReasoning": true | false
 }
 ```
 
 **Defaults** (when fields are missing or file doesn't exist):
-- `reviewTrigger`: `"ask"`
 - `defaultDiffScope`: `"working-copy"`
 - `includeReasoning`: `true`
 
@@ -75,9 +73,6 @@ You can also check for feedback without blocking by calling `get_review_result` 
 
 ## Behavior Rules
 
-- When invoked via `/review`, always open a review regardless of the `reviewTrigger` setting.
-- The `reviewTrigger` setting only applies to automatic review behavior during other workflows:
-  - `"ask"` — Never auto-review; only review when the user asks.
-  - `"before_commit"` — Open a review before creating any git commit.
-  - `"always"` — Open a review after any code change.
-- Power users can create `diffprism.config.json` manually to customize defaults.
+- **IMPORTANT: Do NOT open reviews automatically.** Only open a review when the user explicitly invokes `/review` or directly asks for a review.
+- Do NOT open reviews before commits, after code changes, or at any other time unless the user requests it.
+- Power users can create `diffprism.config.json` manually to customize defaults (diff scope, reasoning).
