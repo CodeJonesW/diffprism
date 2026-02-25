@@ -207,7 +207,7 @@ export function FileBrowser() {
             {basename(file.path)}
           </div>
           {dir && (
-            <div className="text-xs text-text-secondary/50 dark:text-text-secondary/50 truncate">
+            <div className="text-xs text-text-secondary/70 dark:text-text-secondary/90 truncate">
               {dir}
             </div>
           )}
