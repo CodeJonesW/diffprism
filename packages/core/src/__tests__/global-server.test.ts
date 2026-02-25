@@ -571,6 +571,177 @@ describe("global-server", () => {
     });
   });
 
+  describe("dismiss behavior", () => {
+    it("session:close stores dismissed result for MCP polling", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client and select the session
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+
+      // Wait for initial messages
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Select the session first
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Close session via session:close
+      ws.send(JSON.stringify({ type: "session:close", payload: { sessionId } }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      // MCP should still be able to poll the dismissed result
+      const resultResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}/result`);
+      const resultData = (await resultResponse.json()) as {
+        result: ReviewResult;
+        status: string;
+      };
+      expect(resultData.result).not.toBeNull();
+      expect(resultData.result.decision).toBe("dismissed");
+      expect(resultData.status).toBe("submitted");
+    });
+
+    it("dismissed review:submit via WS broadcasts session:removed", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create two sessions so auto-select doesn't trigger
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "First" } }),
+          projectPath: "/test-a",
+        }),
+      });
+
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ metadata: { title: "Second" } }),
+          projectPath: "/test-b",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial session:list
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Select the session
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      // Clear messages to focus on dismiss
+      messages.length = 0;
+
+      // Submit dismissed result
+      ws.send(JSON.stringify({
+        type: "review:submit",
+        payload: { decision: "dismissed", comments: [] },
+      }));
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const removedMsg = messages.find((m) => m.type === "session:removed");
+      expect(removedMsg).toBeDefined();
+      expect((removedMsg!.payload as { sessionId: string }).sessionId).toBe(sessionId);
+
+      // Ensure session:updated was NOT sent for dismissed
+      const updateMsg = messages.find((m) => m.type === "session:updated");
+      expect(updateMsg).toBeUndefined();
+    });
+
+    it("dismissed result via HTTP broadcasts session:removed", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Connect WS client
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+
+      const messages: ServerMessage[] = [];
+      await new Promise<void>((resolve) => {
+        ws.on("open", () => resolve());
+      });
+      ws.on("message", (data) => {
+        messages.push(JSON.parse(data.toString()) as ServerMessage);
+      });
+
+      // Wait for initial messages
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      messages.length = 0;
+
+      // Submit dismissed result via HTTP
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "dismissed", comments: [] }),
+      });
+
+      // Wait for broadcast
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      ws.close();
+
+      const removedMsg = messages.find((m) => m.type === "session:removed");
+      expect(removedMsg).toBeDefined();
+      expect((removedMsg!.payload as { sessionId: string }).sessionId).toBe(sessionId);
+
+      // MCP can still poll the result
+      const resultResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}/result`);
+      const resultData = (await resultResponse.json()) as {
+        result: ReviewResult;
+        status: string;
+      };
+      expect(resultData.result.decision).toBe("dismissed");
+    });
+  });
+
   describe("live diff watching", () => {
     it("stores diffRef when provided in POST /api/reviews", async () => {
       handle = await startGlobalServer({ silent: true });
