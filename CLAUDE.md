@@ -193,6 +193,11 @@ The core vision: developers using git worktrees to run multiple agents in parall
 - Agent effectiveness metrics and convention compliance trends
 - Cross-team convention sharing
 
+### Beyond M8: Specialized Review Agents & the Long Game
+The long-term trajectory deepens the human's toolbox with specialized review agents — security, conventions, performance, past-mistakes — that the human deploys to aid their review. Each agent produces structured verdicts that feed into the unified briefing. As these agents mature, the human's role may shift from reading every diff to directing agent-driven review and handling exception queues. The review surface evolves from diff viewer to orchestration layer.
+
+This is future vision, not active work. See `product-plan.md` § "The Long Game" for the full description.
+
 ---
 
 ## Plan Alignment
@@ -207,7 +212,7 @@ DiffPrism has two planning documents that define the roadmap:
 - Work targets a feature outside the current active milestones (M1/M2/M3)
 - The plans contradict each other (e.g., different phase ordering, conflicting scope)
 - CLAUDE.md `## Roadmap` has drifted from the plan files (missing items, wrong status)
-- A request pulls in future-phase work (M5+) without explicit user approval
+- A request pulls in future-phase work (M5+) or command center vision (post-M8) without explicit user approval
 
 Use **`/align`** for a deeper consistency check across plans, current work, and open issues.
 

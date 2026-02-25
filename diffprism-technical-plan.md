@@ -792,17 +792,26 @@ shared types (core/types.ts)
 
 ## Future Vision (Post-MVP)
 
-### Codebase Convention Learning
-The tool tracks review patterns over time. When you consistently flag a certain pattern (e.g., "we don't use raw SQL"), it becomes a convention that future analyses check automatically.
+### Now Milestoned (M7/M8)
+The following items from the original future vision are now scoped into active milestones:
+- **Codebase Convention Learning** → M7: Convention Intelligence
+- **Trust Calibration** → M8: Organization Scale
+- **Multi-Agent Review Composition** → M8: Organization Scale
+- **Team Conventions Sync** → M7: Shareable convention configs
 
-### Trust Calibration
-Over time, build a trust profile for agent-generated changes. Mechanical refactors by Claude Code get auto-approved. New business logic gets full review. The thresholds adjust based on the agent's track record.
+### Specialized Review Agent Architecture (Post-M8)
 
-### Multi-Agent Review Composition
-Multiple AI agents can contribute to the review briefing — a security-focused agent, a performance-focused agent, a style-focused agent — all feeding into the same unified briefing surface.
+The review surface hosts specialized agents the human can deploy during review — security, conventions, performance, past-mistakes, dependencies. Each agent has a narrow skill, runs on demand, and produces structured verdicts that feed into the existing briefing surface. Technical implications:
 
-### Team Conventions Sync
-Export learned conventions as a shareable config so the whole team benefits from review patterns.
+**Agent Protocol.** Review agents implement a defined interface: receive a change payload (DiffSet + context), return a structured verdict (pass / flag with explanation / escalate with reason). The protocol is open — teams or third parties can build custom review agents that plug into DiffPrism.
+
+**Agent Runtime.** The global server (from M3) evolves to host review agents as long-lived processes or on-demand workers. Agents are configured per-repo via `.diffprism.yml` and compose into the existing briefing pipeline.
+
+**Policy Engine.** A rules engine evaluates review policies against change metadata and agent verdicts. Policies define which changes need human eyes and which can be handled by agents alone. Policies are versioned, auditable, composable. The engine tracks effectiveness metrics (false positive rate, miss rate) for calibration.
+
+**Exception Queue.** When agents escalate changes, they enter a prioritized queue. The UI surfaces this queue alongside the existing diff viewer — the human can pull any exception into the full review surface for deep inspection.
+
+See `product-plan.md` § "The Long Game" for the full product vision of this trajectory.
 
 ### Interactive Simulation
 For UI changes, embed a live preview. For API changes, show example request/response diffs. For data model changes, show migration impact.

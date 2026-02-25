@@ -83,13 +83,19 @@ Not all agents and not all change types carry the same risk. The review system s
 - **Threshold tuning:** Teams define their own risk tolerance per change category and per agent. A startup iterating fast and a regulated fintech have different needs — the same tool should serve both.
 - **Audit trail:** Every review decision is logged. Every auto-approval is traceable. As agent usage scales, the ability to answer "who approved this and why" becomes essential — not just for compliance, but for debugging process failures.
 
-#### Multi-Agent Review Composition
+#### Specialized Review Agents
 
-When teams run specialized analysis — security scanning, performance profiling, convention checking — those results should converge into a single briefing, not scatter across separate tools.
+The human reviewer gets a bench of specialized agents they can deploy during any review. Each agent has a narrow skill, runs on demand, and produces a structured verdict — pass, flag (with explanation), or escalate (requires human attention) — that feeds into the same unified briefing surface. The reviewer sees one coherent picture, enriched by as many agents as they choose to run.
 
-- **Specialized analysis agents:** Security-focused, performance-focused, convention-focused agents all feed into the same unified briefing surface. The reviewer sees one coherent picture, not three separate reports.
-- **Configurable composition:** Teams choose which analysis agents run for which repos and paths. A frontend repo might run accessibility and bundle-size checks; a backend API repo might run security and rate-limit analysis.
-- **Custom analysis rules:** Team-specific patterns that go beyond generic code quality. Not "this function is too long," but "this service doesn't follow our circuit breaker pattern."
+- **Security agent** — scans for auth vulnerabilities, injection vectors, secrets exposure, and permission escalation. The reviewer points it at changes touching auth, API boundaries, or user input handling. It knows OWASP patterns, but also learns from the team's own security review history.
+- **Convention agent** — checks against the team's learned conventions (from Convention Intelligence). Flags divergence from established patterns — not just style, but architectural patterns, error handling approaches, and API design conventions that live in people's heads today.
+- **Past-mistakes agent** — maintains a record of past review rejections and production incidents. Checks whether a new change repeats a known bad pattern. "We fixed this exact retry bug in PR #847." "This caching approach caused a memory leak in the billing service last quarter." Institutional memory that doesn't depend on who's reviewing.
+- **Performance agent** — profiles changes for N+1 queries, unbounded loops, missing pagination, bundle size regressions, and unindexed database access patterns. Runs against backend and frontend changes with different rule sets.
+- **Dependency agent** — evaluates new dependencies against security advisories, maintenance status, license compatibility, and bundle impact. Flags abandonware, known-vulnerable versions, and license conflicts before they reach production.
+
+Agents are composable: teams configure which agents run for which repos and paths via `.diffprism.yml`. A frontend repo might run accessibility and bundle-size checks; a backend API repo might run security and rate-limit analysis. A fintech might run every agent on every change; a prototype repo might run none.
+
+- **Open agent protocol:** The interface for review agents is a defined protocol — receive a change payload (DiffSet + context), return a structured verdict. Teams and third parties can build custom review agents that plug into DiffPrism. Not just "this function is too long," but "this service doesn't follow our circuit breaker pattern" — review logic that's specific to how your team builds software.
 
 #### Organization Visibility
 
@@ -114,6 +120,8 @@ The features above aren't speculative. They're the predictable consequence of ag
 
 **An org with dozens of teams and hundreds of agent sessions per day** — policy enforcement, trust calibration, audit trails, and approval workflows become the difference between "agents help us ship faster" and "agents created a mess we can't maintain." The review surface — which is already where every change gets human attention — is the natural control plane. It sees every change, knows the conventions, tracks the decisions, and directs attention to the places that matter. Everything else in the stack either produces code or consumes it. The review layer is where the human judgment happens.
 
+**An org where agents outnumber engineers** — the human can no longer read every diff even if they wanted to. Specialized review agents become essential — security, conventions, performance, past-mistakes — each handling a dimension of review that the human used to do manually. The human's job shifts toward defining review policies, calibrating agent effectiveness, and handling the exception queue: the changes that no agent is equipped to judge. The review surface — already the place where every change gets human attention — becomes the orchestration layer for this new workflow.
+
 ---
 
 ## Why This Wins
@@ -128,8 +136,35 @@ The progression:
 2. **Multi-agent review hub** — global server, async mode, multi-session dashboard. Power-user tool for agent-heavy workflows. Becomes essential infrastructure as teams scale agent usage. *(shipped — global server, MCP routing, session UI, global setup)*
 3. **PR review workbench + AI analysis** — GitHub integration brings existing PR workflows into DiffPrism's review surface. AI analysis runs privately — the engineer sees security flags, convention checks, and risk assessments alongside the diff, but only their human-authored comments post to GitHub. Teams adopt this because it makes review faster and catches things GitHub's native UI doesn't surface.
 4. **Review OS** — the review surface becomes the control plane for agent-assisted development at scale. Convention intelligence learns what the team values and enforces it automatically. Trust calibration gives agents graduated autonomy — mechanical work flows through, judgment calls get human attention. Org-wide visibility shows which agents are effective, where conventions are drifting, and what needs a senior engineer's eye. Every layer below this one feeds data into the system: reviews teach conventions, conventions inform triage, triage directs attention. The longer a team uses it, the more it knows.
+5. **Agent-assisted review** — specialized review agents become tools the human wields during every review. Security scanning, convention checking, performance profiling, past-mistake detection — all running on demand and feeding into a single briefing. The human reviewer is still the decision-maker, but they're working with a team of agents that handle dimensions of review no single person can cover consistently. Eventually, agents handle enough of the mechanical review work that the human's role shifts from reading every diff to directing agent-driven review and handling the judgment calls that agents escalate.
 
-Each layer builds on the one below it. The review surface is the foundation. Convention intelligence is the flywheel. Everything else is leverage.
+Each layer builds on the one below it. The review surface is the foundation. Convention intelligence is the flywheel. Specialized review agents are the multiplier. Everything else is leverage.
+
+---
+
+## The Long Game
+
+Everything through layer 4 assumes the human is the reviewer. They read diffs. They make line-level judgments. The tool makes them faster and better at it. That model works — and it's the right model for the current state of agent-assisted development, where agents are productive but unpredictable enough that human review of every change is warranted.
+
+But the trajectory is clear. As specialized review agents mature — as the security agent gets reliable, as the convention agent learns what the team actually cares about, as the past-mistakes agent accumulates enough history to be genuinely useful — the human's role naturally shifts. Not away from judgment, but toward a different kind of judgment.
+
+### From amplification to orchestration
+
+Through M8, DiffPrism amplifies the human reviewer — makes it faster and better to read and judge every change. Beyond M8, the human starts directing the review process rather than executing every step of it. They define which agents run on which changes. They set the policies: "formatting-only changes auto-approve if the convention agent passes," "auth changes require the security agent plus human sign-off," "dependency updates auto-approve if the dependency agent passes and there are no major version bumps." They calibrate with data — tracking how often auto-approved changes later cause issues — and adjust.
+
+### Exception-based review
+
+Instead of scanning every diff, the human works an exception queue: changes that agents escalated because confidence was low, agents disagreed, or a policy required human attention. The diff viewer is still there — when the human pulls an exception from the queue, they land in the same rich review surface that exists today. But most of their time is spent at the strategic layer: setting policy, calibrating agent skills, and reviewing the cases that no agent is equipped to judge.
+
+### Agent-to-agent feedback
+
+A coding agent's output is reviewed by specialized agents before the human ever sees it. The human sees the synthesis: "Security agent passed. Convention agent flagged two issues, both auto-resolved by the coding agent on retry. Performance agent escalated: new database query in a loop on line 47." The human reads one paragraph and decides whether to look deeper or approve.
+
+### The human's attention as the scarcest resource
+
+Every feature in this trajectory serves one goal: protect the human's attention. Auto-approvals, smart queuing, urgency ranking, noise suppression — all designed so the human's limited review bandwidth goes to the decisions that actually need human judgment. The product direction, the architectural calls, the tradeoffs that require understanding the business context — that's where the human's time belongs.
+
+This is where the progression leads if the layers below it work. It's not a promise — it's the trajectory. The current work (M1-M8) builds the foundation that makes it possible.
 
 ---
 
