@@ -153,7 +153,7 @@ Or be explicit:
 Use the open_review tool with diff_ref "HEAD~1..HEAD" and title "Test review"
 ```
 
-Claude will call the `open_review` MCP tool. A browser window should open with the DiffPrism diff viewer. Submit a review decision (Approve / Request Changes / Approve with Comments), and the result is returned to Claude as structured JSON.
+Claude will call the `open_review` MCP tool. A browser window should open with the DiffPrism diff viewer. Submit a review decision (Approve / Request Changes / Approve with Comments / Dismiss), and the result is returned to Claude as structured JSON. You can also use the ⋮ quick action menu to Approve & Commit or Approve, Commit & PR in one step.
 
 ## Tool Reference
 
@@ -200,10 +200,11 @@ Fetches the most recent review result from a `diffprism watch` session. The resu
 }
 ```
 
-- `decision` — one of: `approved`, `changes_requested`, or `approved_with_comments`
+- `decision` — one of: `approved`, `changes_requested`, `approved_with_comments`, or `dismissed`
 - `comments` — array of `{ file, line, body, type }` where type is `must_fix`, `suggestion`, `question`, or `nitpick`
 - `fileStatuses` — (optional) map of file path to review status (`unreviewed`, `reviewed`, `approved`, `needs_changes`)
 - `summary` — (optional) free-text summary from the reviewer
+- `postReviewAction` — (optional) `"commit"` or `"commit_and_pr"` — set when the user selects a quick action from the ⋮ menu in the review UI
 
 ## The `/review` Skill
 

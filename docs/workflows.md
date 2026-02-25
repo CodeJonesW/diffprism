@@ -137,3 +137,5 @@ When `/review` is invoked, the system checks in order:
 | Global process | None | None | `diffprism server` |
 | Live diff updates | No | Yes (polls 1s) | No (per `open_review` call) |
 | After submit | Tab auto-closes | Resumes watching | Returns to session list |
+| Desktop notifications | No | No | Yes (v0.23.0) |
+| Quick actions (commit/PR) | Yes | Yes | Yes |

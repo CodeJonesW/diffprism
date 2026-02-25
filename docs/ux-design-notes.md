@@ -14,17 +14,19 @@ Living document capturing user experience observations, design decisions, and ex
 
 ## Review UI
 
-### Current state (v0.21.0)
+### Current state (v0.24.1)
 - Dark/light mode toggle with theme persistence (v0.9.0)
 - Unified + split (side-by-side) diff view toggle (v0.6.0)
 - Syntax highlighting via refractor v4
-- Three review decisions: Approve / Request Changes / Approve with Comments
+- Four review decisions: Approve / Request Changes / Approve with Comments / Dismiss (v0.22.0)
+- Quick action menu (⋮): Approve & Commit, Approve Commit & PR — returns `postReviewAction` to agent (v0.24.0)
 - Inline line-level commenting — click any line to add a comment (v0.8.0)
 - Comment types: must_fix, suggestion, question, nitpick (v0.8.0)
 - File-level status tracking: unreviewed, reviewed, approved, needs_changes (v0.7.0)
 - Keyboard shortcuts: j/k navigate files, s cycles file status, ? opens hotkey guide (v0.2.12)
 - Agent reasoning display in collapsible context panel (v0.5.0)
 - Review briefing bar: complexity scoring, test coverage gaps, pattern flags (v0.3.0+)
+- Desktop notifications for new review sessions in global server mode (v0.23.0)
 
 ### Observations
 - (Add observations here as they arise from real usage)
@@ -98,6 +100,50 @@ Added `diffprism server` — a persistent global server that accepts reviews fro
 ### WS Protocol Additions
 - Server → Client: `session:list` (all sessions), `session:added` (new session notification)
 - Client → Server: `session:select` (user clicks a session)
+
+## Dismiss Reviews (v0.22.0)
+
+### Decision
+Added a Dismiss button to the review action bar. Users can close a review without approving or requesting changes.
+
+### Rationale
+Edge cases where users need to close a review without providing feedback (agent still working, review triggered by mistake, no feedback needed) left MCP polling hanging for up to 10 minutes. Dismiss provides a clean exit path that stores a result and unblocks MCP.
+
+### UX Behavior
+- "Dismiss" button appears after "Approve with Comments" in the action bar (neutral gray)
+- Session list X button also stores a dismiss result so MCP doesn't hang
+- `ReviewDecision` type now includes `"dismissed"`
+
+---
+
+## Desktop Notifications (v0.23.0)
+
+### Decision
+Added Web Notifications API support for the global server UI. When a new review session arrives while the DiffPrism tab is backgrounded, users get a native desktop notification.
+
+### UX Behavior
+- Bell toggle in the session list header enables/disables notifications
+- Preference persisted in localStorage
+- Clicking a notification focuses the tab and selects the session
+- Only fires when the tab is not visible (uses Page Visibility API)
+
+---
+
+## Quick Actions — Approve & Commit (v0.24.0)
+
+### Decision
+Added a ⋮ dropdown menu in the file browser header with two quick actions: **Approve & Commit** and **Approve, Commit & PR**.
+
+### Rationale
+The review→commit flow required the user to approve in the review UI, then tell the agent to commit. Quick actions close this loop in a single click — the `postReviewAction` field is returned to the agent, which executes immediately without asking for confirmation (v0.24.1).
+
+### UX Behavior
+- ⋮ menu in file browser header, two items
+- Submits the review with `decision: "approved"` and the selected `postReviewAction`
+- `PostReviewAction` type: `"commit"` or `"commit_and_pr"`
+- Backwards compatible — `postReviewAction` is optional on `ReviewResult`
+
+---
 
 ## Multi-Agent / Worktree Support (Remaining)
 

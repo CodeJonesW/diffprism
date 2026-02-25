@@ -13,10 +13,12 @@ DiffPrism gives you a visual review step for AI-written code — stage your chan
 - **Agent reasoning panel** — see why the AI made each change
 - **Dark/light mode** — toggle with theme persistence
 - **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status, `Cmd/Ctrl+Enter` saves comments, `?` toggles hotkey guide
-- **Three-way decisions** — approve, request changes, or approve with comments
+- **Four review decisions** — approve, request changes, approve with comments, or dismiss
+- **Quick actions** — Approve & Commit or Approve, Commit & PR directly from the review UI via the ⋮ menu; the agent executes the action automatically
 - **Branch display** — current git branch shown in the review header
 - **Global server mode** — `diffprism server` runs a persistent multi-session review server, multiple agents post reviews to one browser tab
 - **Multi-session UI** — session list with live status badges, branch info, file counts, and change stats; stale sessions auto-expire
+- **Desktop notifications** — native browser notifications when new review sessions arrive while the tab is backgrounded (global server mode)
 - **One-command setup & teardown** — `diffprism setup` configures Claude Code integration, `diffprism teardown` cleanly reverses it
 
 ## Quick Start
@@ -71,7 +73,7 @@ diffprism review main..feature-branch
 diffprism review --staged --title "Add auth middleware"
 ```
 
-A browser window opens with the diff viewer. Review the changes and click **Approve**, **Request Changes**, or **Approve with Comments**.
+A browser window opens with the diff viewer. Review the changes and click **Approve**, **Request Changes**, **Approve with Comments**, or **Dismiss**. Use the ⋮ menu for quick actions like Approve & Commit.
 
 ### Quick Start (setup + watch in one command)
 
@@ -190,9 +192,10 @@ Fetches the most recent review result from a DiffPrism session (watch mode or gl
 
 | Field | Description |
 |-------|-------------|
-| `decision` | `approved`, `changes_requested`, or `approved_with_comments` |
+| `decision` | `approved`, `changes_requested`, `approved_with_comments`, or `dismissed` |
 | `comments` | Array of inline comments with file, line, body, and type (`must_fix`, `suggestion`, `question`, `nitpick`) |
 | `summary` | Optional reviewer summary |
+| `postReviewAction` | Optional: `"commit"` or `"commit_and_pr"` — set when user selects a quick action from the ⋮ menu |
 
 ## How It Works
 
