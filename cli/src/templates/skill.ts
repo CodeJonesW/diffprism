@@ -52,6 +52,15 @@ The tool blocks until the user submits their review in the browser. When it retu
 - **\`approved_with_comments\`** — Note the comments, address any actionable feedback.
 - **\`changes_requested\`** — Read the comments carefully, make the requested changes, and offer to open another review.
 
+#### Post-Review Actions
+
+The result may include a \`postReviewAction\` field. If present, **execute the action immediately without asking for confirmation** — the user already chose this action in the review UI:
+
+- **\`"commit"\`** — Commit the reviewed changes (stage relevant files, create a commit with an appropriate message).
+- **\`"commit_and_pr"\`** — Commit the changes and open a pull request.
+
+If \`postReviewAction\` is not present or is empty, do nothing extra — just report the result.
+
 ### 5. Error Handling
 
 If the \`mcp__diffprism__open_review\` tool is not available:
