@@ -20,6 +20,7 @@ export default function App() {
     activeSessionId,
     selectSession,
     removeSession,
+    clearReview,
   } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
@@ -36,7 +37,9 @@ export default function App() {
 
   function handleSubmit(result: ReviewResult) {
     sendResult(result);
-    if (isWatchMode || isServerMode) {
+    if (isServerMode) {
+      clearReview();
+    } else if (isWatchMode) {
       setWatchSubmitted(true);
     } else {
       setSubmitted(true);
