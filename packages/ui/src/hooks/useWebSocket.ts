@@ -1,9 +1,16 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useReviewStore } from "../store/review";
-import type { ReviewResult, ServerMessage, ClientMessage } from "../types";
+import type { ReviewResult, ServerMessage, ClientMessage, SessionSummary } from "../types";
 
-export function useWebSocket() {
+interface UseWebSocketOptions {
+  onSessionAdded?: (session: SessionSummary) => void;
+}
+
+export function useWebSocket(options?: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
+  const onSessionAddedRef = useRef(options?.onSessionAdded);
+  onSessionAddedRef.current = options?.onSessionAdded;
+
   const {
     connectionStatus,
     setConnectionStatus,
@@ -60,6 +67,7 @@ export function useWebSocket() {
           setSessions(message.payload);
         } else if (message.type === "session:added") {
           addSession(message.payload);
+          onSessionAddedRef.current?.(message.payload);
         } else if (message.type === "session:updated") {
           updateSession(message.payload);
         } else if (message.type === "session:removed") {

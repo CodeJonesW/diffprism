@@ -1,4 +1,6 @@
 import { GitBranch, FileCode, Clock, Radio, X } from "lucide-react";
+import { NotificationToggle } from "../NotificationToggle";
+import type { NotificationPermission } from "../../hooks/useNotifications.js";
 import type { SessionSummary } from "../../types";
 
 interface SessionListProps {
@@ -6,6 +8,9 @@ interface SessionListProps {
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
   onClose?: (sessionId: string) => void;
+  notificationPermission?: NotificationPermission;
+  notificationsEnabled?: boolean;
+  onToggleNotifications?: () => void;
 }
 
 function formatTime(timestamp: number): string {
@@ -70,10 +75,19 @@ function statusBadge(session: SessionSummary) {
   );
 }
 
-export function SessionList({ sessions, activeSessionId, onSelect, onClose }: SessionListProps) {
+export function SessionList({ sessions, activeSessionId, onSelect, onClose, notificationPermission, notificationsEnabled, onToggleNotifications }: SessionListProps) {
   if (sessions.length === 0) {
     return (
       <div className="flex flex-col h-full bg-background">
+        {onToggleNotifications && notificationPermission && (
+          <div className="flex justify-end px-6 pt-4">
+            <NotificationToggle
+              permission={notificationPermission}
+              enabled={notificationsEnabled ?? false}
+              onToggle={onToggleNotifications}
+            />
+          </div>
+        )}
         <div className="flex flex-1 flex-col items-center justify-center text-center px-8">
           <div className="w-12 h-12 rounded-full bg-surface border border-border flex items-center justify-center mb-4">
             <FileCode className="w-6 h-6 text-text-secondary" />
@@ -93,13 +107,22 @@ export function SessionList({ sessions, activeSessionId, onSelect, onClose }: Se
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Header */}
-      <div className="px-6 py-4 border-b border-border">
-        <h2 className="text-text-primary text-sm font-semibold">
-          Review Sessions
-        </h2>
-        <span className="text-text-secondary text-xs">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
-        </span>
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div>
+          <h2 className="text-text-primary text-sm font-semibold">
+            Review Sessions
+          </h2>
+          <span className="text-text-secondary text-xs">
+            {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {onToggleNotifications && notificationPermission && (
+          <NotificationToggle
+            permission={notificationPermission}
+            enabled={notificationsEnabled ?? false}
+            onToggle={onToggleNotifications}
+          />
+        )}
       </div>
 
       {/* Session cards */}
