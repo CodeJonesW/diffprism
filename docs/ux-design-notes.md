@@ -43,10 +43,11 @@ Living document capturing user experience observations, design decisions, and ex
 - **Design:** The setup command is non-interactive and idempotent — it merges into existing config files rather than overwriting, and skips files that are already correctly configured. The `--force` flag overrides skip behavior.
 - **Skill-based integration:** Instead of requiring users to add instructions to `CLAUDE.md`, we install a `/review` skill that Claude discovers automatically. This is more discoverable (shows up in Claude Code's skill list) and keeps `CLAUDE.md` cleaner.
 
-### First-run onboarding via skill
-- **Decision:** Preferences (`reviewTrigger`, `defaultDiffScope`, `includeReasoning`) are gathered conversationally by Claude on first `/review` invocation, not by the setup command
-- **Rationale:** Keeps `diffprism setup` non-interactive (can run in scripts/CI), while letting Claude ask the right questions in context. Users can re-trigger onboarding by deleting `diffprism.config.json`.
+### Optional config file
+- **Decision:** Preferences (`defaultDiffScope`, `includeReasoning`) can be set via `diffprism.config.json` at the project root
+- **Rationale:** Keeps `diffprism setup` non-interactive (can run in scripts/CI). Config is optional — sensible defaults are used when the file doesn't exist.
 - **Config location:** `diffprism.config.json` lives at project root (not inside `.claude/`) so it can be committed and shared with the team
+- **Note (v0.22):** Removed `reviewTrigger` config — it caused Claude to proactively open reviews before commits even though the default was `"ask"`. Reviews now only open when the user explicitly invokes `/review`.
 
 ---
 

@@ -209,21 +209,17 @@ Fetches the most recent review result from a `diffprism watch` session. The resu
 
 If you ran `npx diffprism setup`, the `/review` skill is already installed. Type `/review` in Claude Code to open a DiffPrism review at any time.
 
-On first use, Claude will ask your preferences and save them to `diffprism.config.json`:
+You can optionally create `diffprism.config.json` at your project root to customize defaults:
 
 ```json
 {
-  "reviewTrigger": "ask",
   "defaultDiffScope": "working-copy",
   "includeReasoning": true
 }
 ```
 
-- `reviewTrigger` — When Claude should open reviews automatically: `"ask"` (only when asked), `"before_commit"` (before every commit), `"always"` (after every code change)
 - `defaultDiffScope` — What to diff by default: `"working-copy"` (staged+unstaged grouped), `"staged"`, or `"unstaged"`
 - `includeReasoning` — Whether Claude includes its reasoning in the review
-
-To re-run onboarding, delete `diffprism.config.json` and use `/review` again.
 
 ## Adding DiffPrism to Your CLAUDE.md
 
