@@ -54,11 +54,14 @@ export interface ReviewComment {
   type: "must_fix" | "suggestion" | "question" | "nitpick";
 }
 
+export type PostReviewAction = "commit" | "commit_and_pr";
+
 export interface ReviewResult {
   decision: ReviewDecision;
   comments: ReviewComment[];
   fileStatuses?: Record<string, FileReviewStatus>;
   summary?: string;
+  postReviewAction?: PostReviewAction;
 }
 
 // ─── Analysis / Briefing Types ───

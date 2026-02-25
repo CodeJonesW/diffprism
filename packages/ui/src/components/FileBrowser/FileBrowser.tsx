@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useReviewStore } from "../../store/review";
 import {
   FileCode,
@@ -10,8 +10,11 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronRight,
+  MoreVertical,
+  Check,
+  GitPullRequest,
 } from "lucide-react";
-import type { DiffFile, FileReviewStatus } from "../../types";
+import type { DiffFile, FileReviewStatus, ReviewResult, PostReviewAction } from "../../types";
 import { getFileKey } from "../../lib/file-key";
 
 function getStatusBadge(status: DiffFile["status"]) {
@@ -78,11 +81,17 @@ function dirname(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
-export function FileBrowser() {
-  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide } =
+interface FileBrowserProps {
+  onSubmit: (result: ReviewResult) => void;
+}
+
+export function FileBrowser({ onSubmit }: FileBrowserProps) {
+  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments } =
     useReviewStore();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // Determine if we're in grouped mode (files have stage set)
   const hasGroups = useMemo(() => {
@@ -160,6 +169,34 @@ export function FileBrowser() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide]);
+
+  // Close menu on click outside
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
+
+  const handleQuickAction = useCallback(
+    (action: PostReviewAction) => {
+      const hasStatuses = Object.values(fileStatuses).some(
+        (s) => s !== "unreviewed",
+      );
+      onSubmit({
+        decision: "approved",
+        comments,
+        fileStatuses: hasStatuses ? fileStatuses : undefined,
+        postReviewAction: action,
+      });
+      setMenuOpen(false);
+    },
+    [fileStatuses, comments, onSubmit],
+  );
 
   if (!diffSet) return null;
 
@@ -306,7 +343,36 @@ export function FileBrowser() {
     <div className="flex flex-col h-full bg-surface border-r border-border">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border">
-        <h2 className="text-text-primary text-sm font-semibold">Files</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-text-primary text-sm font-semibold">Files</h2>
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen((prev) => !prev)}
+              className="p-1 rounded hover:bg-text-primary/10 transition-colors cursor-pointer text-text-secondary hover:text-text-primary"
+              title="Quick actions"
+            >
+              <MoreVertical className="w-4 h-4" />
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-52 bg-surface border border-border rounded-lg shadow-lg z-50 py-1">
+                <button
+                  onClick={() => handleQuickAction("commit")}
+                  className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-text-primary/10 flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Check className="w-4 h-4 text-green-700 dark:text-green-400" />
+                  Approve & Commit
+                </button>
+                <button
+                  onClick={() => handleQuickAction("commit_and_pr")}
+                  className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-text-primary/10 flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <GitPullRequest className="w-4 h-4 text-blue-700 dark:text-blue-400" />
+                  Approve, Commit & PR
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-3 mt-1">
           <span className="text-text-secondary text-xs">
             {diffSet.files.length} file{diffSet.files.length !== 1 ? "s" : ""}
