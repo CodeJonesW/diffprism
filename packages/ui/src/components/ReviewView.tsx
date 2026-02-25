@@ -22,7 +22,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar — File Browser */}
         <div className="w-[280px] flex-shrink-0">
-          <FileBrowser />
+          <FileBrowser onSubmit={onSubmit} />
         </div>
 
         {/* Main area — Diff Viewer */}
