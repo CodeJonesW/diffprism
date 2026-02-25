@@ -152,12 +152,14 @@ export default function App() {
     }
 
     return (
-      <SessionList
-        sessions={sessions}
-        activeSessionId={activeSessionId}
-        onSelect={handleSelectSession}
-        onClose={handleCloseSession}
-      />
+      <div className="h-screen bg-background">
+        <SessionList
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelect={handleSelectSession}
+          onClose={handleCloseSession}
+        />
+      </div>
     );
   }
 
