@@ -54,6 +54,14 @@ function statusBadge(session: SessionSummary) {
     );
   }
 
+  if (decision === "dismissed") {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-600/20 text-gray-400 border border-gray-500/30">
+        Dismissed
+      </span>
+    );
+  }
+
   // Fallback for submitted without a decision
   return (
     <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">

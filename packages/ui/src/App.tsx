@@ -46,6 +46,18 @@ export default function App() {
     }
   }
 
+  function handleDismiss() {
+    sendResult({ decision: "dismissed", comments: [] });
+    if (isServerMode && activeSessionId) {
+      removeSession(activeSessionId);
+      wsCloseSession(activeSessionId);
+    } else if (isWatchMode) {
+      setWatchSubmitted(true);
+    } else {
+      setSubmitted(true);
+    }
+  }
+
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
     wsSelectSession(sessionId);
@@ -202,6 +214,7 @@ export default function App() {
   return (
     <ReviewView
       onSubmit={handleSubmit}
+      onDismiss={handleDismiss}
       isWatchMode={isWatchMode || isServerMode}
       watchSubmitted={watchSubmitted}
       hasUnreviewedChanges={hasUnreviewedChanges}
