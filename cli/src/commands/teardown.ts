@@ -63,6 +63,9 @@ function teardownClaudePermissions(
     "mcp__diffprism__get_review_result",
     "mcp__diffprism__get_diff",
     "mcp__diffprism__analyze_diff",
+    "mcp__diffprism__add_annotation",
+    "mcp__diffprism__get_review_state",
+    "mcp__diffprism__flag_for_attention",
   ];
 
   const filtered = allow.filter((t) => !toolNames.includes(t));

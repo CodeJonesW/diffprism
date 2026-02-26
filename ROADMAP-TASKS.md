@@ -3,7 +3,7 @@
 > This document tracks implementation progress toward the new vision. Update checkboxes as work is completed. Each session should read this file to understand what's done and what's next.
 
 **Last updated:** 2026-02-26
-**Current version:** v0.28.0
+**Current version:** v0.30.0
 **Branch for plan docs:** `new-maps`
 
 ---
@@ -20,7 +20,7 @@
 
 *The analysis engine exists. These tasks expose it headlessly so agents can self-review. This is wiring, not building.*
 
-- [ ] **1.1 `get_diff` MCP tool**
+- [x] **1.1 `get_diff` MCP tool** *(shipped v0.29.0, PR #128)*
   - Add tool handler in `packages/mcp-server/src/index.ts`
   - Accepts `diff_ref` parameter (same values as `open_review`: "staged", "unstaged", "working-copy", or ref range)
   - Calls `getDiff()` from `@diffprism/git`, returns `DiffSet` as JSON
@@ -28,7 +28,7 @@
   - Files: `packages/mcp-server/src/index.ts`
   - Verify: agent can call `get_diff({ diff_ref: "unstaged" })` and receive structured DiffSet
 
-- [ ] **1.2 `analyze_diff` MCP tool**
+- [x] **1.2 `analyze_diff` MCP tool** *(shipped v0.29.0, PR #128)*
   - Add tool handler in `packages/mcp-server/src/index.ts`
   - Accepts `diff_ref` parameter
   - Calls `getDiff()` → `analyze()`, returns `ReviewBriefing` as JSON
@@ -36,7 +36,7 @@
   - Files: `packages/mcp-server/src/index.ts`
   - Verify: agent can call `analyze_diff({ diff_ref: "unstaged" })` and receive ReviewBriefing with complexity scores, test gaps, pattern flags
 
-- [ ] **1.3 Update `/review` skill + docs for self-review pattern**
+- [x] **1.3 Update `/review` skill + docs for self-review pattern** *(shipped v0.29.0, PR #128)*
   - Update `cli/src/templates/skill.ts` to document the self-review loop:
     ```
     Agent writes code
@@ -48,7 +48,7 @@
   - Update `docs/workflows.md` with Posture 2 workflow section
   - Files: `cli/src/templates/skill.ts`, `docs/workflows.md`
 
-- [ ] **1.4 Update `diffprism setup` to auto-approve new tools**
+- [x] **1.4 Update `diffprism setup` to auto-approve new tools** *(shipped v0.29.0, PR #128)*
   - Add `get_diff` and `analyze_diff` to the auto-approve tool list
   - Files: `cli/src/commands/setup.ts`
   - Verify: `diffprism setup` includes new tools in `.claude/settings.json`
@@ -61,7 +61,7 @@
 
 *The triage system currently puts everything in "notable." Real categorization makes both human review and agent self-review more useful.*
 
-- [ ] **2.1 Implement real file categorization**
+- [x] **2.1 Implement real file categorization** *(shipped v0.30.0, PR #129)*
   - Update `categorizeFiles()` in `packages/analysis/src/deterministic.ts`
   - Critical: files with security patterns, breaking API changes, high complexity (score >= 8)
   - Mechanical: pure renames, formatting-only changes, import-only changes, config-only
@@ -85,13 +85,13 @@
 
 *Unlocks "agent as reviewer" — specialized agents can post structured findings to review sessions.*
 
-- [ ] **3.1 Add annotation types to core**
+- [x] **3.1 Add annotation types to core** *(shipped v0.30.0, PR #129)*
   - New interfaces in `packages/core/src/types.ts`:
     - `Annotation`: file, line, body, type (finding/suggestion/question/warning), confidence (0-1), category (security/performance/convention/etc), sourceAgent
     - `SessionState`: files, comments, annotations, per-file status
   - Mirror types in `packages/ui/src/types.ts`
 
-- [ ] **3.2 Add annotation API to global server**
+- [x] **3.2 Add annotation API to global server** *(shipped v0.30.0, PR #129)*
   - `POST /api/reviews/:id/annotations` — agent posts findings
   - `GET /api/reviews/:id/state` — returns full session state
   - WebSocket: `annotation:added` event pushes to connected UI clients
@@ -139,12 +139,12 @@
 
 ## Phase 5: Platform Foundations (Track C)
 
-- [ ] **5.1 Worktree detection & metadata (#45)**
+- [x] **5.1 Worktree detection & metadata (#45)** *(shipped v0.30.0, PR #129)*
   - Detect if running in a git worktree, extract branch/path info
   - Surface in session metadata for multi-agent context
   - Files: `packages/git/src/local.ts`, `packages/core/src/types.ts`
 
-- [ ] **5.2 Review history persistence**
+- [x] **5.2 Review history persistence** *(shipped v0.30.0, PR #129)*
   - Store review decisions per-repo (local JSON in `.diffprism/history/`)
   - Record: timestamp, decision, files reviewed, comments made, ref
   - Foundation for convention learning later
@@ -186,8 +186,8 @@
 
 These need answers before or during implementation. Record decisions here as they're made.
 
-1. **Headless tool output verbosity** — Should `analyze_diff` return the full `ReviewBriefing` or a condensed summary? → _Decision: TBD_
-2. **Self-review loop integration** — Built into `/review` skill automatically, or pattern agents discover via docs? → _Decision: TBD_
+1. **Headless tool output verbosity** — Should `analyze_diff` return the full `ReviewBriefing` or a condensed summary? → _Decision: Full ReviewBriefing JSON (shipped v0.29.0)_
+2. **Self-review loop integration** — Built into `/review` skill automatically, or pattern agents discover via docs? → _Decision: Documented in skill template + workflows.md (shipped v0.29.0)_
 3. **Annotation persistence** — Do agent annotations persist across sessions or are they per-review? → _Decision: TBD_
 4. **Multi-agent annotation conflicts** — When two agents annotate the same line, stack or merge? → _Decision: TBD_
 5. **Verification command sandboxing** — How to safely run tests/lint in the repo from the review UI? → _Decision: TBD_
@@ -201,3 +201,6 @@ Record what was accomplished each session to maintain context.
 | Date | Session | What was done |
 |------|---------|---------------|
 | 2026-02-26 | Planning | Analyzed product plan, technical plan, and CLAUDE.md. Created this task tracker. Identified Phase 1 (headless tools) as immediate priority. |
+| 2026-02-26 | Phase 1 | Shipped headless `get_diff` + `analyze_diff` MCP tools, updated setup/teardown, skill docs, workflows. PR #128 → v0.29.0. |
+| 2026-02-26 | Phase 2-5 parallel | 5 worktree agents: real file triage (2.1), annotation types (3.1), annotation API (3.2), worktree detection (5.1), review history (5.2). Merged + fixed CI. PR #129 → v0.30.0. |
+| 2026-02-26 | Phase 3-5 parallel | Launching 5 agents: add_annotation MCP (3.3), get_review_state MCP (3.4), triage UI (2.2), annotation rendering (3.5), flag_for_attention (5.3). |

@@ -96,12 +96,15 @@ describe("mcp-server", () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(5);
+    expect(mockToolFn).toHaveBeenCalledTimes(8);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
     expect(mockToolFn.mock.calls[3][0]).toBe("get_diff");
     expect(mockToolFn.mock.calls[4][0]).toBe("analyze_diff");
+    expect(mockToolFn.mock.calls[5][0]).toBe("add_annotation");
+    expect(mockToolFn.mock.calls[6][0]).toBe("get_review_state");
+    expect(mockToolFn.mock.calls[7][0]).toBe("flag_for_attention");
   });
 
   it("connects the stdio transport", async () => {

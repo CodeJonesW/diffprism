@@ -564,6 +564,336 @@ export async function startMcpServer(): Promise<void> {
     },
   );
 
+  server.tool(
+    "add_annotation",
+    "Post a structured finding (annotation) to a review session. Use this to flag issues, suggest improvements, or ask questions about specific lines of code in a review. Requires a running global server (`diffprism server`).",
+    {
+      session_id: z
+        .string()
+        .describe("Review session ID from open_review"),
+      file: z.string().describe("File path within the diff to annotate"),
+      line: z.number().describe("Line number to annotate"),
+      body: z
+        .string()
+        .describe("The annotation text — your finding, suggestion, or question"),
+      type: z
+        .enum(["finding", "suggestion", "question", "warning"])
+        .describe("Type of annotation"),
+      confidence: z
+        .number()
+        .min(0)
+        .max(1)
+        .optional()
+        .describe("Confidence in the finding (0-1, defaults to 1)"),
+      category: z
+        .enum([
+          "security",
+          "performance",
+          "convention",
+          "correctness",
+          "complexity",
+          "test-coverage",
+          "documentation",
+          "other",
+        ])
+        .optional()
+        .describe("Category of the finding (defaults to 'other')"),
+      source_agent: z
+        .string()
+        .optional()
+        .describe("Agent identifier (e.g., 'security-reviewer')"),
+    },
+    async ({
+      session_id,
+      file,
+      line,
+      body,
+      type,
+      confidence,
+      category,
+      source_agent,
+    }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No global server running. Start one with `diffprism server`.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${session_id}/annotations`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file,
+              line,
+              body,
+              type,
+              confidence: confidence ?? 1,
+              category: category ?? "other",
+              source: {
+                agent: source_agent ?? "unknown",
+                tool: "add_annotation",
+              },
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          const errorMsg =
+            (errorData as Record<string, string>).error ??
+            `Server returned ${response.status}`;
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: ${errorMsg}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const data = (await response.json()) as { annotationId: string };
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { annotationId: data.annotationId, sessionId: session_id },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_review_state",
+    "Get the current state of a review session including session summary and annotations. Returns session metadata, status, and any agent annotations. Use this to check on a review's progress or read agent findings.",
+    {
+      session_id: z
+        .string()
+        .optional()
+        .describe(
+          "Review session ID. If omitted, uses the most recently created session.",
+        ),
+    },
+    async ({ session_id }) => {
+      try {
+        const sessionId = session_id ?? lastGlobalSessionId;
+        if (!sessionId) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No session ID provided and no recent session available.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No global server running. Start one with `diffprism server`.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const [sessionResponse, annotationsResponse] = await Promise.all([
+          fetch(
+            `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}`,
+          ),
+          fetch(
+            `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+          ),
+        ]);
+
+        if (!sessionResponse.ok) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Session not found: ${sessionId}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const session = await sessionResponse.json();
+        const annotations = annotationsResponse.ok
+          ? await annotationsResponse.json()
+          : { annotations: [] };
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                {
+                  session,
+                  annotations: (annotations as { annotations: unknown[] })
+                    .annotations,
+                },
+                null,
+                2,
+              ),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "flag_for_attention",
+    "Mark specific files in a review session for human attention. Posts warning annotations for each flagged file. Use this to highlight files that need careful human review. Requires a running global server (`diffprism server`).",
+    {
+      session_id: z
+        .string()
+        .optional()
+        .describe(
+          "Review session ID. If omitted, uses the most recently created session.",
+        ),
+      files: z
+        .array(
+          z.object({
+            path: z.string().describe("File path to flag for attention"),
+            reason: z
+              .string()
+              .describe("Why this file needs human attention"),
+            line: z
+              .number()
+              .optional()
+              .describe("Specific line to highlight (defaults to 1)"),
+          }),
+        )
+        .describe("Files to flag for human attention"),
+      source_agent: z
+        .string()
+        .optional()
+        .describe("Agent identifier (e.g., 'security-reviewer')"),
+    },
+    async ({ session_id, files, source_agent }) => {
+      try {
+        const sessionId = session_id ?? lastGlobalSessionId;
+        if (!sessionId) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No session ID provided and no recent session available.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No global server running. Start one with `diffprism server`.",
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        let flagged = 0;
+        for (const file of files) {
+          const response = await fetch(
+            `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                file: file.path,
+                line: file.line ?? 1,
+                body: file.reason,
+                type: "warning",
+                confidence: 1,
+                category: "other",
+                source: {
+                  agent: source_agent ?? "flag_for_attention",
+                  tool: "flag_for_attention",
+                },
+              }),
+            },
+          );
+
+          if (response.ok) {
+            flagged++;
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ flagged, sessionId }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

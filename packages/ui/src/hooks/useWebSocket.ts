@@ -22,6 +22,8 @@ export function useWebSocket(options?: UseWebSocketOptions) {
     addSession,
     updateSession,
     removeSession,
+    addAnnotation,
+    dismissAnnotation,
   } = useReviewStore();
 
   useEffect(() => {
@@ -74,6 +76,10 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           updateSession(message.payload);
         } else if (message.type === "session:removed") {
           removeSession(message.payload.sessionId);
+        } else if (message.type === "annotation:added") {
+          addAnnotation(message.payload);
+        } else if (message.type === "annotation:dismissed") {
+          dismissAnnotation(message.payload.annotationId);
         }
       } catch (err) {
         console.error("Failed to parse WebSocket message:", err);
@@ -92,7 +98,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
       ws.close();
       wsRef.current = null;
     };
-  }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession]);
+  }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession, addAnnotation, dismissAnnotation]);
 
   const sendResult = useCallback((result: ReviewResult) => {
     const ws = wsRef.current;
