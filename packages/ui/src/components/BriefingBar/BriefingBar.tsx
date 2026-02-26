@@ -10,14 +10,13 @@ import {
   Gauge,
   ShieldAlert,
   Search,
-  GitBranch,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 import { RefSelector } from "../RefSelector";
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
-  const { briefing, metadata, isServerMode, clearReview } = useReviewStore();
+  const { briefing, isServerMode, clearReview } = useReviewStore();
 
   if (!briefing) return null;
   
@@ -57,13 +56,6 @@ export function BriefingBar() {
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border border-red-300 dark:border-red-500/30 font-semibold">
               <ShieldAlert className="w-3 h-3" />
               {securityFlags.length} security flag{securityFlags.length !== 1 ? "s" : ""}
-            </span>
-          )}
-
-          {metadata?.currentBranch && !isServerMode && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 font-mono">
-              <GitBranch className="w-3 h-3" />
-              {metadata.currentBranch}
             </span>
           )}
 
@@ -117,11 +109,9 @@ export function BriefingBar() {
           )}
         </div>
       </button>
-      {isServerMode && (
-        <div className="px-3 py-2.5 border-l border-border flex-shrink-0">
-          <RefSelector />
-        </div>
-      )}
+      <div className="px-3 py-2.5 border-l border-border flex-shrink-0">
+        <RefSelector />
+      </div>
       </div>
 
       {/* Expanded details */}

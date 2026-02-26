@@ -61,6 +61,8 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           initReview(message.payload);
         } else if (message.type === "diff:update") {
           updateDiff(message.payload);
+        } else if (message.type === "diff:error") {
+          console.error("Diff error:", message.payload.error);
         } else if (message.type === "context:update") {
           updateContext(message.payload);
         } else if (message.type === "session:list") {

@@ -5,6 +5,8 @@ import type {
   ReviewInitPayload,
   DiffUpdatePayload,
   ContextUpdatePayload,
+  DiffErrorPayload,
+  GitRefsPayload,
   ServerMessage,
   ClientMessage,
 } from "./types.js";
@@ -15,7 +17,9 @@ export interface WatchBridge {
   storeInitPayload: (payload: ReviewInitPayload) => void;
   sendDiffUpdate: (payload: DiffUpdatePayload) => void;
   sendContextUpdate: (payload: ContextUpdatePayload) => void;
+  sendDiffError: (payload: DiffErrorPayload) => void;
   onSubmit: (callback: (result: ReviewResult) => void) => void;
+  waitForResult: () => Promise<ReviewResult>;
   triggerRefresh: () => void;
   close: () => Promise<void>;
 }
@@ -23,6 +27,9 @@ export interface WatchBridge {
 export interface WatchBridgeCallbacks {
   onRefreshRequest: () => void;
   onContextUpdate: (payload: ContextUpdatePayload) => void;
+  onDiffRefChange?: (diffRef: string) => void;
+  onRefsRequest?: () => Promise<GitRefsPayload | null>;
+  onCompareRequest?: (ref: string) => Promise<boolean>;
 }
 
 export function createWatchBridge(
@@ -34,9 +41,10 @@ export function createWatchBridge(
   let pendingInit: ReviewInitPayload | null = null;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   let submitCallback: ((result: ReviewResult) => void) | null = null;
+  let resultReject: ((err: Error) => void) | null = null;
 
   // Create HTTP server with API routes
-  const httpServer = http.createServer((req, res) => {
+  const httpServer = http.createServer(async (req, res) => {
     // CORS headers for local dev
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -84,6 +92,60 @@ export function createWatchBridge(
       return;
     }
 
+    // Strip query string for route matching
+    const pathname = (req.url ?? "").split("?")[0];
+
+    // GET /api/refs or /api/reviews/:id/refs
+    if (req.method === "GET" && (pathname === "/api/refs" || /^\/api\/reviews\/[^/]+\/refs$/.test(pathname))) {
+      if (callbacks.onRefsRequest) {
+        const refsPayload = await callbacks.onRefsRequest();
+        if (refsPayload) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(refsPayload));
+        } else {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to list git refs" }));
+        }
+      } else {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+      return;
+    }
+
+    // POST /api/compare or /api/reviews/:id/compare
+    if (req.method === "POST" && (pathname === "/api/compare" || /^\/api\/reviews\/[^/]+\/compare$/.test(pathname))) {
+      if (callbacks.onCompareRequest) {
+        let body = "";
+        req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        req.on("end", async () => {
+          try {
+            const { ref } = JSON.parse(body) as { ref: string };
+            if (!ref) {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "Missing ref" }));
+              return;
+            }
+            const success = await callbacks.onCompareRequest!(ref);
+            if (success) {
+              res.writeHead(200, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ ok: true }));
+            } else {
+              res.writeHead(400, { "Content-Type": "application/json" });
+              res.end(JSON.stringify({ error: "Failed to compute diff" }));
+            }
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Invalid JSON" }));
+          }
+        });
+      } else {
+        res.writeHead(404);
+        res.end("Not found");
+      }
+      return;
+    }
+
     res.writeHead(404);
     res.end("Not found");
   });
@@ -118,6 +180,8 @@ export function createWatchBridge(
         const msg = JSON.parse(data.toString()) as ClientMessage;
         if (msg.type === "review:submit" && submitCallback) {
           submitCallback(msg.payload);
+        } else if (msg.type === "diff:change_ref" && callbacks.onDiffRefChange) {
+          callbacks.onDiffRefChange(msg.payload.diffRef);
         }
       } catch {
         // Ignore malformed messages
@@ -127,9 +191,20 @@ export function createWatchBridge(
     ws.on("close", () => {
       client = null;
       // Grace period for reconnects (React dev mode, page reload)
-      closeTimer = setTimeout(() => {
-        closeTimer = null;
-      }, 2000);
+      if (resultReject) {
+        closeTimer = setTimeout(() => {
+          closeTimer = null;
+          if (resultReject) {
+            resultReject(new Error("Browser closed before review was submitted"));
+            resultReject = null;
+            submitCallback = null;
+          }
+        }, 2000);
+      } else {
+        closeTimer = setTimeout(() => {
+          closeTimer = null;
+        }, 2000);
+      }
     });
   });
 
@@ -160,8 +235,19 @@ export function createWatchBridge(
           sendToClient({ type: "context:update", payload });
         },
 
+        sendDiffError(payload: DiffErrorPayload) {
+          sendToClient({ type: "diff:error", payload });
+        },
+
         onSubmit(callback: (result: ReviewResult) => void) {
           submitCallback = callback;
+        },
+
+        waitForResult(): Promise<ReviewResult> {
+          return new Promise<ReviewResult>((resolve, reject) => {
+            submitCallback = resolve;
+            resultReject = reject;
+          });
         },
 
         triggerRefresh() {

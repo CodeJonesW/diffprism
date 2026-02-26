@@ -28,6 +28,8 @@ import {
   createStaticServer,
 } from "./ui-server.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
+import { createDiffPoller } from "./diff-poller.js";
+import type { DiffPoller } from "./diff-poller.js";
 
 // ─── TTL constants ───
 
@@ -55,8 +57,8 @@ const sessions = new Map<string, Session>();
 // Track which WS clients are viewing which session
 const clientSessions = new Map<WebSocket, string>();
 
-// Session watcher intervals for live diff polling
-const sessionWatchers = new Map<string, NodeJS.Timeout>();
+// Session watchers using DiffPoller for live diff polling
+const sessionWatchers = new Map<string, DiffPoller>();
 let serverPollInterval = 2000;
 
 // Module-level callback set by startGlobalServer to reopen browser when needed
@@ -192,64 +194,45 @@ function startSessionWatcher(sessionId: string): void {
   const session = sessions.get(sessionId);
   if (!session?.diffRef) return;
 
-  const interval = setInterval(() => {
-    const s = sessions.get(sessionId);
-    if (!s?.diffRef) {
-      stopSessionWatcher(sessionId);
-      return;
-    }
+  const poller = createDiffPoller({
+    diffRef: session.diffRef,
+    cwd: session.projectPath,
+    pollInterval: serverPollInterval,
+    onDiffChanged: (updatePayload) => {
+      const s = sessions.get(sessionId);
+      if (!s) return;
 
-    try {
-      const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(s.diffRef, {
-        cwd: s.projectPath,
-      });
-      const newHash = hashDiff(newRawDiff);
+      // Update session payload
+      s.payload = {
+        ...s.payload,
+        diffSet: updatePayload.diffSet,
+        rawDiff: updatePayload.rawDiff,
+        briefing: updatePayload.briefing,
+      };
+      s.lastDiffHash = hashDiff(updatePayload.rawDiff);
+      s.lastDiffSet = updatePayload.diffSet;
 
-      if (newHash !== s.lastDiffHash) {
-        const newBriefing = analyze(newDiffSet);
-        const changedFiles = detectChangedFiles(s.lastDiffSet ?? null, newDiffSet);
-
-        // Update session payload
-        s.payload = {
-          ...s.payload,
-          diffSet: newDiffSet,
-          rawDiff: newRawDiff,
-          briefing: newBriefing,
-        };
-        s.lastDiffHash = newHash;
-        s.lastDiffSet = newDiffSet;
-
-        if (hasViewersForSession(sessionId)) {
-          // Send live update to active viewers
-          sendToSessionClients(sessionId, {
-            type: "diff:update",
-            payload: {
-              diffSet: newDiffSet,
-              rawDiff: newRawDiff,
-              briefing: newBriefing,
-              changedFiles,
-              timestamp: Date.now(),
-            },
-          });
-          s.hasNewChanges = false;
-        } else {
-          // Mark as having new changes for session list indicator
-          s.hasNewChanges = true;
-          broadcastSessionList();
-        }
+      if (hasViewersForSession(sessionId)) {
+        sendToSessionClients(sessionId, {
+          type: "diff:update",
+          payload: updatePayload,
+        });
+        s.hasNewChanges = false;
+      } else {
+        s.hasNewChanges = true;
+        broadcastSessionList();
       }
-    } catch {
-      // getDiff can fail if git state is mid-operation — silently skip
-    }
-  }, serverPollInterval);
+    },
+  });
 
-  sessionWatchers.set(sessionId, interval);
+  poller.start();
+  sessionWatchers.set(sessionId, poller);
 }
 
 function stopSessionWatcher(sessionId: string): void {
-  const interval = sessionWatchers.get(sessionId);
-  if (interval) {
-    clearInterval(interval);
+  const poller = sessionWatchers.get(sessionId);
+  if (poller) {
+    poller.stop();
     sessionWatchers.delete(sessionId);
   }
 }
@@ -263,8 +246,8 @@ function startAllWatchers(): void {
 }
 
 function stopAllWatchers(): void {
-  for (const [id, interval] of sessionWatchers.entries()) {
-    clearInterval(interval);
+  for (const [, poller] of sessionWatchers.entries()) {
+    poller.stop();
   }
   sessionWatchers.clear();
 }
@@ -759,6 +742,55 @@ export async function startGlobalServer(
             closedSession.status = "submitted";
           }
           broadcastSessionRemoved(closedId);
+        } else if (msg.type === "diff:change_ref") {
+          const sid = clientSessions.get(ws);
+          if (sid) {
+            const session = sessions.get(sid);
+            if (session) {
+              const newRef = msg.payload.diffRef;
+              try {
+                const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(newRef, {
+                  cwd: session.projectPath,
+                });
+                const newBriefing = analyze(newDiffSet);
+
+                // Update session
+                session.payload = {
+                  ...session.payload,
+                  diffSet: newDiffSet,
+                  rawDiff: newRawDiff,
+                  briefing: newBriefing,
+                };
+                session.diffRef = newRef;
+                session.lastDiffHash = hashDiff(newRawDiff);
+                session.lastDiffSet = newDiffSet;
+
+                // Restart watcher with new ref
+                stopSessionWatcher(sid);
+                startSessionWatcher(sid);
+
+                // Send update to client
+                sendToSessionClients(sid, {
+                  type: "diff:update",
+                  payload: {
+                    diffSet: newDiffSet,
+                    rawDiff: newRawDiff,
+                    briefing: newBriefing,
+                    changedFiles: newDiffSet.files.map((f) => f.path),
+                    timestamp: Date.now(),
+                  },
+                });
+              } catch (err) {
+                const errorMsg: ServerMessage = {
+                  type: "diff:error",
+                  payload: {
+                    error: err instanceof Error ? err.message : String(err),
+                  },
+                };
+                ws.send(JSON.stringify(errorMsg));
+              }
+            }
+          }
         }
       } catch {
         // Ignore malformed messages

@@ -23,14 +23,46 @@ vi.mock("../review-manager.js", () => ({
 }));
 
 const mockSendInit = vi.fn();
+const mockStoreInitPayload = vi.fn();
+const mockSendDiffUpdate = vi.fn();
+const mockSendContextUpdate = vi.fn();
+const mockSendDiffError = vi.fn();
+const mockOnSubmit = vi.fn();
 const mockWaitForResult = vi.fn();
+const mockTriggerRefresh = vi.fn();
 const mockBridgeClose = vi.fn();
-vi.mock("../ws-bridge.js", () => ({
-  createWsBridge: () => ({
-    sendInit: mockSendInit,
-    waitForResult: mockWaitForResult,
-    close: mockBridgeClose,
+vi.mock("../watch-bridge.js", () => ({
+  createWatchBridge: () =>
+    Promise.resolve({
+      port: 9999,
+      sendInit: mockSendInit,
+      storeInitPayload: mockStoreInitPayload,
+      sendDiffUpdate: mockSendDiffUpdate,
+      sendContextUpdate: mockSendContextUpdate,
+      sendDiffError: mockSendDiffError,
+      onSubmit: mockOnSubmit,
+      waitForResult: mockWaitForResult,
+      triggerRefresh: mockTriggerRefresh,
+      close: mockBridgeClose,
+    }),
+}));
+
+const mockPollerStart = vi.fn();
+const mockPollerStop = vi.fn();
+const mockPollerSetDiffRef = vi.fn();
+const mockPollerRefresh = vi.fn();
+vi.mock("../diff-poller.js", () => ({
+  createDiffPoller: () => ({
+    start: mockPollerStart,
+    stop: mockPollerStop,
+    setDiffRef: mockPollerSetDiffRef,
+    refresh: mockPollerRefresh,
   }),
+}));
+
+vi.mock("../watch-file.js", () => ({
+  writeWatchFile: vi.fn(),
+  removeWatchFile: vi.fn(),
 }));
 
 vi.mock("get-port", () => ({

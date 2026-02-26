@@ -2,7 +2,7 @@ import http from "node:http";
 import getPort from "get-port";
 import open from "open";
 
-import { getDiff, getCurrentBranch } from "@diffprism/git";
+import { getDiff, getCurrentBranch, listBranches, listCommits } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import type {
@@ -14,6 +14,7 @@ import type {
   ReviewMetadata,
 } from "./types.js";
 import { createWatchBridge } from "./watch-bridge.js";
+import { createDiffPoller } from "./diff-poller.js";
 import { writeWatchFile, removeWatchFile, writeReviewResult } from "./watch-file.js";
 import {
   resolveUiDist,
@@ -21,7 +22,6 @@ import {
   startViteDevServer,
   createStaticServer,
 } from "./ui-server.js";
-import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 
 export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
   const {
@@ -40,9 +40,6 @@ export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
   const currentBranch = getCurrentBranch({ cwd });
   const initialBriefing = analyze(initialDiffSet);
 
-  let lastDiffHash = hashDiff(initialRawDiff);
-  let lastDiffSet = initialDiffSet;
-
   // Track mutable metadata
   const metadata: ReviewMetadata = {
     title,
@@ -57,17 +54,70 @@ export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
     getPort(),
   ]);
 
-  // 3. Create watch bridge with refresh flag
-  let refreshRequested = false;
+  const reviewId = "watch-session";
 
+  // Shared handler for ref changes (used by both WS and HTTP paths)
+  function handleDiffRefChange(newRef: string): void {
+    const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(newRef, { cwd });
+    const newBriefing = analyze(newDiffSet);
+
+    bridge.sendDiffUpdate({
+      diffSet: newDiffSet,
+      rawDiff: newRawDiff,
+      briefing: newBriefing,
+      changedFiles: newDiffSet.files.map((f) => f.path),
+      timestamp: Date.now(),
+    });
+
+    bridge.storeInitPayload({
+      reviewId,
+      diffSet: newDiffSet,
+      rawDiff: newRawDiff,
+      briefing: newBriefing,
+      metadata,
+      watchMode: true,
+    });
+
+    poller.setDiffRef(newRef);
+  }
+
+  // 3. Create watch bridge with ref selection support
   const bridge = await createWatchBridge(bridgePort, {
     onRefreshRequest: () => {
-      refreshRequested = true;
+      poller.refresh();
     },
     onContextUpdate: (payload: ContextUpdatePayload) => {
       if (payload.reasoning !== undefined) metadata.reasoning = payload.reasoning;
       if (payload.title !== undefined) metadata.title = payload.title;
       if (payload.description !== undefined) metadata.description = payload.description;
+    },
+    onDiffRefChange: (newRef: string) => {
+      try {
+        handleDiffRefChange(newRef);
+      } catch (err) {
+        bridge.sendDiffError({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    onRefsRequest: async () => {
+      try {
+        const resolvedCwd = cwd ?? process.cwd();
+        const branches = listBranches({ cwd: resolvedCwd });
+        const commits = listCommits({ cwd: resolvedCwd });
+        const branch = getCurrentBranch({ cwd: resolvedCwd });
+        return { branches, commits, currentBranch: branch };
+      } catch {
+        return null;
+      }
+    },
+    onCompareRequest: async (ref: string) => {
+      try {
+        handleDiffRefChange(ref);
+        return true;
+      } catch {
+        return false;
+      }
     },
   });
 
@@ -94,8 +144,7 @@ export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
   });
 
   // 6. Open browser
-  const reviewId = "watch-session";
-  const url = `http://localhost:${uiPort}?wsPort=${bridgePort}&reviewId=${reviewId}`;
+  const url = `http://localhost:${uiPort}?wsPort=${bridgePort}&httpPort=${bridgePort}&reviewId=${reviewId}`;
 
   if (!silent) {
     console.log(`\nDiffPrism Watch: ${title ?? `watching ${diffRef}`}`);
@@ -130,59 +179,36 @@ export async function startWatch(options: WatchOptions): Promise<WatchHandle> {
     writeReviewResult(cwd, result);
   });
 
-  // 9. Start poll loop
-  let pollRunning = true;
-  const pollLoop = setInterval(() => {
-    if (!pollRunning) return;
+  // 9. Start diff poller
+  const poller = createDiffPoller({
+    diffRef,
+    cwd: cwd ?? process.cwd(),
+    pollInterval,
+    onDiffChanged: (updatePayload: DiffUpdatePayload) => {
+      // Update stored init payload for reconnects
+      bridge.storeInitPayload({
+        reviewId,
+        diffSet: updatePayload.diffSet,
+        rawDiff: updatePayload.rawDiff,
+        briefing: updatePayload.briefing,
+        metadata,
+        watchMode: true,
+      });
 
-    try {
-      const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(diffRef, { cwd });
-      const newHash = hashDiff(newRawDiff);
+      bridge.sendDiffUpdate(updatePayload);
 
-      if (newHash !== lastDiffHash || refreshRequested) {
-        refreshRequested = false;
-
-        const newBriefing = analyze(newDiffSet);
-        const changedFiles = detectChangedFiles(lastDiffSet, newDiffSet);
-
-        lastDiffHash = newHash;
-        lastDiffSet = newDiffSet;
-
-        // Update stored init payload for reconnects (don't send to connected client)
-        bridge.storeInitPayload({
-          reviewId,
-          diffSet: newDiffSet,
-          rawDiff: newRawDiff,
-          briefing: newBriefing,
-          metadata,
-          watchMode: true,
-        });
-
-        const updatePayload: DiffUpdatePayload = {
-          diffSet: newDiffSet,
-          rawDiff: newRawDiff,
-          briefing: newBriefing,
-          changedFiles,
-          timestamp: Date.now(),
-        };
-
-        bridge.sendDiffUpdate(updatePayload);
-
-        if (!silent && changedFiles.length > 0) {
-          console.log(
-            `[${new Date().toLocaleTimeString()}] Diff updated: ${changedFiles.length} file(s) changed`,
-          );
-        }
+      if (!silent && updatePayload.changedFiles.length > 0) {
+        console.log(
+          `[${new Date().toLocaleTimeString()}] Diff updated: ${updatePayload.changedFiles.length} file(s) changed`,
+        );
       }
-    } catch {
-      // getDiff can fail if git state is mid-operation — silently skip
-    }
-  }, pollInterval);
+    },
+  });
+  poller.start();
 
   // 10. Build the stop function
   async function stop(): Promise<void> {
-    pollRunning = false;
-    clearInterval(pollLoop);
+    poller.stop();
     await bridge.close();
     if (viteServer) {
       await viteServer.close();

@@ -154,9 +154,14 @@ export interface ReviewMetadata {
   currentBranch?: string;
 }
 
+export interface DiffErrorPayload {
+  error: string;
+}
+
 export type ServerMessage =
   | { type: "review:init"; payload: ReviewInitPayload }
   | { type: "diff:update"; payload: DiffUpdatePayload }
+  | { type: "diff:error"; payload: DiffErrorPayload }
   | { type: "context:update"; payload: ContextUpdatePayload }
   | { type: "session:list"; payload: SessionSummary[] }
   | { type: "session:added"; payload: SessionSummary }
@@ -165,6 +170,7 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }
+  | { type: "diff:change_ref"; payload: { diffRef: string } }
   | { type: "session:select"; payload: { sessionId: string } }
   | { type: "session:close"; payload: { sessionId: string } };
 
