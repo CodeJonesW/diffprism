@@ -357,6 +357,13 @@
   color: var(--color-token-string);
 }
 
+/* ─── Hunk focus ─── */
+
+.diff-hunk-focused {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
 /* ─── Inline commenting ─── */
 
 /* Make gutters clickable */
