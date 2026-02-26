@@ -123,74 +123,93 @@ Add entries under the appropriate section with the version, rationale, and any l
 
 ## Roadmap
 
-### M1: Usable Review Experience — ~80% complete
+The roadmap is organized into three parallel tracks corresponding to three agent postures. See `product-plan.md` for the full strategic framing.
+
+### Shipped Foundation
+
+**Review UI (M0/M1):**
 - ~~Split diff view (side-by-side) with toggle~~ ✅ v0.6.0
-- ~~Inline line-level commenting (click any line to add comment)~~ ✅ v0.8.0
+- ~~Inline line-level commenting~~ ✅ v0.8.0
 - ~~Comment types: must_fix, suggestion, question, nitpick~~ ✅ v0.8.0
-- ~~File-level status tracking (reviewed/approved/needs changes)~~ ✅ v0.7.0
+- ~~File-level status tracking~~ ✅ v0.7.0
 - ~~Agent reasoning display in context panel~~ ✅ v0.5.0
 - ~~Dark/light mode toggle~~ ✅ v0.9.0
 - ~~Keyboard shortcuts: j/k navigate files~~ ✅ v0.2.12
 - ~~`diffprism setup` — one-command Claude Code integration~~ ✅ v0.11.0
 - ~~`/review` skill for Claude Code~~ ✅ v0.11.0
-- Keyboard shortcuts: n/p changes, c to comment (#41)
-- Change narrative view — group files by story chapter (#43)
-- Create PR from review UI (#23)
 
-### M1 (UI polish)
-- Color readability fix (#50)
-
-### M2: Analysis + Triage — ~50% complete
-- ~~Enhanced deterministic analysis: complexity scoring, test coverage detection, pattern flags~~ ✅ v0.4.0
+**Analysis (M2):**
+- ~~Deterministic analysis: complexity scoring, test coverage detection, pattern flags~~ ✅ v0.4.0
 - ~~Review briefing bar: summary stats, risk indicators, verification status~~ ✅ v0.3.0
+
+**Multi-Agent (M3):**
+- ~~Global server with HTTP review API~~ ✅ v0.15.0 (#88)
+- ~~MCP server as HTTP client — auto-detects global server~~ ✅ v0.16.0 (#89)
+- ~~Multi-session UI — session list, switching, status badges~~ ✅ v0.16.0 (#90)
+- ~~Global setup — `diffprism setup --global`~~ ✅ (#91)
+
+### Track A: Human Review Experience
+
+*Make the review surface the best place to understand and decide on code changes.*
+
+**Near-term (active):**
+- Keyboard shortcuts: n/p changes, c to comment (#41)
+- Color readability fix (#50)
 - Triage view: critical/notable/mechanical grouping + batch approve (#25)
 - Run tests/lint/typecheck from UI (#44)
-- Analysis enhancements: #51-68 (churn ratio, change concentration, net LOC, cross-package detection, type safety flags, error handling detection, security patterns, API surface detection, estimated review time, logic/boilerplate ratio, removed deps, lock file analysis, config file detection, commit structure analysis, renamed files highlighting, hardcoded values, comment tracking, dead code indicators)
+- Change narrative view — group files by story chapter (#43)
+- Create PR from review UI (#23)
+- Analysis enhancements: #51-68 (security patterns, cross-package detection, type safety flags, API surface detection, estimated review time, etc.)
 
-### M3: Multi-Agent & Worktree Support — ~80% complete
-The core vision: developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer. Umbrella issue: #86.
+**Mid-term:**
+- GitHub PR integration (read): fetch PR data, render in DiffPrism with full briefing
+- GitHub PR integration (write): post comments and submit reviews back to GitHub
+- Interactive review: ask an agent about a specific hunk from within the review UI
 
-- ~~Global server with HTTP review API~~ ✅ v0.15.0 (#88)
-- ~~MCP server as HTTP client — auto-detects global server, routes reviews there~~ ✅ v0.16.0 (#89)
-- ~~Multi-session UI — session list, switching, status badges~~ ✅ v0.16.0 (#90)
-- ~~Global setup — `diffprism setup --global`, auto-setup in `diffprism server`~~ ✅ (#91)
+**Long-term:**
+- Review profiles: `.diffprism.yml` per repo with configurable workflows and analysis rules
+- Review templates: different workflows for different change types
+
+### Track B: Agent-Native Review
+
+*Give agents direct access to review primitives so they can participate in review, not just be subjects of it.*
+
+**Near-term (highest priority new work):**
+- Headless `analyze_diff(ref)` MCP tool — returns ReviewBriefing without opening browser
+- Headless `get_diff(ref)` MCP tool — returns structured DiffSet
+- Agent self-review loop — agents check own work (console.logs, test gaps, complexity) before requesting human review
+
+**Mid-term:**
+- `add_annotation(session_id, file, line, comment)` — agent posts findings to a review session
+- `get_review_state(session_id)` — read current state of a review
+- `flag_for_attention(session_id, files, reason)` — mark files that need human eyes
+- Multi-agent review composition — security/performance/convention agents annotate same diff, findings merge into single briefing
+- Bidirectional review — human delegates fixes to agent from review UI, diff updates live
+
+**Long-term:**
+- Review memory — track what humans flag across reviews, surface as agent context
+- Convention-aware self-review — agents check work against learned team conventions
+- `should_review(ref)` — trust-based risk check, returns auto-approve/human-review recommendation
+
+### Track C: Platform Scale
+
+*As agent adoption grows from one developer to teams to orgs, the review surface becomes the control plane.*
+
+**Near-term:**
 - Worktree detection & metadata — identify branch, worktree path, agent context (#45)
-- Per-session live watching — diff updates without new `open_review` calls (optional, future)
+- Review history — persist review decisions per-repo
+- Per-session live watching — diff updates without new `open_review` calls
 
-### M4: GitHub Integration — Read
-- GitHub auth (PAT config)
-- Fetch PR data (diff, comments, CI status, review threads)
-- Normalize to DiffSet
-- CLI: `diffprism review owner/repo#123`
-- MCP: `open_pr_review()`
-
-### M5: GitHub Integration — Write
-- Post inline comments to GitHub
-- Submit review (approve/changes) to GitHub
-- Sync comment threads
-
-### M6: AI-Powered Analysis
-- Claude API for deep diff analysis
-- Intent inference from agent reasoning + code context
-- Convention detection from codebase patterns
-- Risk assessment with explanations
-
-### M7: Convention Intelligence & Team Workflows
-- Review profiles: `.diffprism.yml` per repo/team with configurable workflows
-- Convention learning: track reviewer patterns, codify into automated checks
-- Convention drift detection and enforcement
-- Review templates: different workflows for different change types (security-sensitive, data model, API surface)
+**Mid-term:**
+- Convention intelligence: track reviewer patterns, codify into automated checks, convention drift detection
+- Trust-graduated automation: analysis + convention history + approval patterns → risk engine
 - Approval gates: domain-owner review requirements for sensitive paths
-- Team review dashboard: activity, coverage, bottlenecks
-- Shareable convention configs across projects
+- AI-powered analysis: Claude API for intent inference, risk assessment, inline annotations
 
-### M8: Organization Scale
-- Org-level review policies and approval gates
-- Trust calibration: per-agent trust profiles with graduated autonomy
-- Multi-agent review composition (security/performance/convention agents feeding unified briefing)
-- Approval workflows with domain-owner routing and escalation rules
+**Long-term:**
+- Trust profiles per agent with graduated autonomy
 - Audit trail and compliance reporting
-- Agent effectiveness metrics and convention compliance trends
+- Org-wide visibility: review dashboards, agent effectiveness metrics, convention compliance trends
 - Cross-team convention sharing
 
 ---
@@ -198,16 +217,16 @@ The core vision: developers using git worktrees to run multiple agents in parall
 ## Plan Alignment
 
 DiffPrism has two planning documents that define the roadmap:
-- **`product-plan.md`** — Strategic product vision, market positioning, and directional roadmap
+- **`product-plan.md`** — Strategic product vision, three agent postures, and track-based roadmap
 - **`diffprism-technical-plan.md`** — Technical architecture decisions and implementation approach
 
-**Before starting feature work**, check both plans to confirm the work maps to an active milestone.
+**Before starting feature work**, check both plans to confirm the work maps to an active track.
 
 **Flag misalignment when:**
-- Work targets a feature outside the current active milestones (M1/M2/M3)
-- The plans contradict each other (e.g., different phase ordering, conflicting scope)
+- Work targets a feature outside the current active tracks (A/B/C near-term items)
+- The plans contradict each other (e.g., different track ordering, conflicting scope)
 - CLAUDE.md `## Roadmap` has drifted from the plan files (missing items, wrong status)
-- A request pulls in future-phase work (M5+) without explicit user approval
+- A request pulls in long-term work without explicit user approval
 
 Use **`/align`** for a deeper consistency check across plans, current work, and open issues.
 

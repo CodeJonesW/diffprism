@@ -453,6 +453,107 @@ export async function startMcpServer(): Promise<void> {
     },
   );
 
+  server.tool(
+    "get_diff",
+    "Get a structured diff (DiffSet) for local git changes. Returns file-level and hunk-level change data as JSON without opening a browser. Use this to inspect what changed before deciding whether to open a full review.",
+    {
+      diff_ref: z
+        .string()
+        .describe(
+          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
+        ),
+    },
+    async ({ diff_ref }) => {
+      try {
+        const cwd = process.cwd();
+        const { diffSet } = getDiff(diff_ref, { cwd });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(diffSet, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "analyze_diff",
+    "Analyze local git changes and return a ReviewBriefing with summary, file triage (critical/notable/mechanical), impact detection (affected modules, tests, dependencies, breaking changes), complexity scores, test coverage gaps, and pattern flags (security issues, TODOs, console.logs). Same analysis shown in the DiffPrism briefing bar, but returned as JSON without opening a browser.",
+    {
+      diff_ref: z
+        .string()
+        .describe(
+          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
+        ),
+    },
+    async ({ diff_ref }) => {
+      try {
+        const cwd = process.cwd();
+        const { diffSet } = getDiff(diff_ref, { cwd });
+
+        if (diffSet.files.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  summary: "No changes to analyze.",
+                  triage: { critical: [], notable: [], mechanical: [] },
+                  impact: {
+                    affectedModules: [],
+                    affectedTests: [],
+                    publicApiChanges: false,
+                    breakingChanges: [],
+                    newDependencies: [],
+                  },
+                  verification: { testsPass: null, typeCheck: null, lintClean: null },
+                  fileStats: [],
+                }, null, 2),
+              },
+            ],
+          };
+        }
+
+        const briefing = analyze(diffSet);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(briefing, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

@@ -116,6 +116,43 @@ npx diffprism setup     # registers MCP server in .mcp.json
 
 ---
 
+## 4. Agent Self-Review (headless analysis)
+
+**Best for:** Agents checking their own work before requesting human review. No browser, no UI — just structured analysis data returned as JSON.
+
+### How it works
+
+Two headless MCP tools (`get_diff` and `analyze_diff`) let agents inspect and analyze code changes without opening a browser. The agent runs analysis, fixes issues it finds, and only opens a human review once the changes are clean.
+
+### Setup
+
+Same as any other mode — just run `npx diffprism setup` in your project. The headless tools are registered alongside the existing review tools.
+
+### Flow (self-review loop)
+
+1. Agent writes code
+2. Agent calls `analyze_diff` with `diff_ref: "working-copy"`
+3. ReviewBriefing comes back with patterns, complexity, test coverage gaps
+4. Agent fixes issues: removes console.logs, adds missing tests, addresses security flags
+5. Agent calls `analyze_diff` again to verify fixes
+6. Once clean, agent calls `/review` or `open_review` for human sign-off
+
+### Available headless tools
+
+| Tool | Returns | Use case |
+|------|---------|----------|
+| `get_diff` | `DiffSet` (files, hunks, line changes) | Inspect exactly what changed |
+| `analyze_diff` | `ReviewBriefing` (summary, triage, impact, patterns, complexity, test gaps) | Check for issues before human review |
+
+### Key details
+
+- These tools never open a browser or create a WebSocket — they're pure computation
+- Same analysis engine that powers the briefing bar in the review UI
+- `analyze_diff` catches: leftover console.logs, TODOs/FIXMEs, security anti-patterns (eval, innerHTML, SQL injection), disabled tests, missing test coverage, high complexity
+- Works with any diff ref: `"staged"`, `"unstaged"`, `"working-copy"`, or git ranges
+
+---
+
 ## Mode Priority
 
 When `/review` is invoked, the system checks in order:

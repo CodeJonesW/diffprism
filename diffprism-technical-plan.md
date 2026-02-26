@@ -1,14 +1,20 @@
 # DiffPrism: AI-Powered Code Review Operating System
 
-## Technical Plan — v0.1
+## Technical Plan — v0.2
 
 ---
 
 ## Vision
 
-DiffPrism is a local-first code review tool that gives software engineers a GitHub-quality diff review experience for agent-generated code changes — before they ever become a PR. It works as a standalone CLI tool for any git changes, integrates with Claude Code via MCP for agent-assisted workflows, surfaces AI-prepared review briefings, and provides a rich decision surface that amplifies the human reviewer rather than replacing them.
+DiffPrism is the shared review surface for agents and humans. It gives software engineers a GitHub-quality diff review experience for code changes — before they ever become a PR — and gives agents direct access to review primitives so they can participate in review, not just be subjects of it.
 
-The tool bridges local development and GitHub, serving as both a pre-push review environment for agent work and a superior interface for reviewing team PRs.
+The tool serves three agent postures:
+
+1. **Human validates agent code** — the agent writes code, the human reviews it in a purpose-built browser UI. This is the core product today.
+2. **Agent reviews its own code** — the agent uses DiffPrism's analysis tools headlessly to check its own work (console.logs, test gaps, complexity) before requesting human review. The human gets a pre-cleaned review.
+3. **Human uses agents as reviewers** — specialized agents (security, performance, conventions) analyze code and post structured findings to a review session. The human reviews the unified picture.
+
+The UI is for humans. The tool API is for agents. Both operate on the same review sessions and the same data model.
 
 ---
 
@@ -29,6 +35,10 @@ A diff alone is insufficient. The review surface combines code changes with inte
 ### Respect Attention
 
 No comment spam. Changes are triaged by risk level. Mechanical changes can be batch-approved. The engineer's focus is directed to the 2-3 decisions that actually need human judgment.
+
+### Agents Are Tool-Users, Not Boxed Actors
+
+Don't constrain agents to a single interaction pattern (submit code, wait for verdict). Expose composable primitives — get diff, run analysis, post annotations, read review state — so agents can participate creatively in the review process. The richer the tool surface, the more valuable the platform becomes.
 
 ---
 
@@ -98,7 +108,11 @@ The MCP server is the bridge between Claude Code (or any MCP client) and the rev
 
 #### Exposed MCP Tools
 
+The tool surface is organized by agent posture. Posture 1 (human validates agent) tools are shipped. Posture 2 (agent self-reviews) and Posture 3 (agent as reviewer) tools are the primary expansion target.
+
 ```typescript
+// ── Posture 1: Human validates agent code (shipped) ──────────────
+
 // Open a review for local git changes
 open_review({
   diff_ref: "HEAD~3..HEAD" | "staged" | "unstaged",
@@ -115,28 +129,80 @@ open_review({
   }
 }): ReviewResult | { review_id: string }
 
-// Open a review for a GitHub PR
+// Push reasoning to an existing watch/server session
+update_review_context({
+  title?: string,
+  description?: string,
+  reasoning?: string
+}): void
+
+// Poll for human decision
+get_review_result({
+  wait?: boolean,
+  timeout?: number
+}): ReviewResult | null
+
+// Open a review for a GitHub PR (future — Track A mid-term)
 open_pr_review({
   repo: "owner/repo",
   pr_number: number,
   mode: "blocking" | "async"
 }): ReviewResult | { review_id: string }
 
-// Check status of an active review (used with async mode)
-review_status({
-  review_id: string
-}): ReviewStatus   // "pending" | "in_progress" | ReviewResult
+// ── Posture 2: Agent self-reviews (Track B near-term) ────────────
 
-// Return type — structured feedback back to the agent
+// Get structured diff without opening UI
+get_diff({
+  diff_ref: "staged" | "unstaged" | "working-copy" | string
+}): DiffSet
+
+// Run analysis and get structured briefing without opening UI
+analyze_diff({
+  diff_ref: "staged" | "unstaged" | "working-copy" | string
+}): ReviewBriefing
+
+// Read current state of a review session
+get_review_state({
+  session_id: string
+}): ReviewState  // files, comments, annotations, status
+
+// Mark specific files as needing human attention
+flag_for_attention({
+  session_id: string,
+  files: string[],
+  reason: string
+}): void
+
+// Trust-based risk check (Track B long-term)
+should_review({
+  diff_ref: string
+}): { decision: "auto_approve" | "human_review", reason: string, risk_level: number }
+
+// ── Posture 3: Agent as reviewer (Track B mid-term) ──────────────
+
+// Post agent findings to a review session
+add_annotation({
+  session_id: string,
+  file: string,
+  line: number,
+  body: string,
+  type: "finding" | "suggestion" | "question" | "warning",
+  confidence?: number,       // 0-1 how confident the agent is
+  category?: string          // "security" | "performance" | "convention" | etc.
+}): void
+
+// ── Return types ─────────────────────────────────────────────────
+
 interface ReviewResult {
-  decision: "approved" | "changes_requested" | "approved_with_comments",
+  decision: "approved" | "changes_requested" | "approved_with_comments" | "dismissed",
   comments: Array<{
     file: string,
     line: number,
     body: string,
     type: "must_fix" | "suggestion" | "question" | "nitpick"
   }>,
-  summary?: string           // Free-form feedback from the engineer
+  summary?: string,
+  postReviewAction?: "commit" | "commit_and_pr"
 }
 ```
 
@@ -544,57 +610,47 @@ diffprism/
 
 ## Milestone Plan
 
-### M0: Foundation — COMPLETE
+### Shipped Foundation (M0–M3)
 
-**Goal:** Open a browser-based diff viewer from both CLI and Claude Code via MCP.
-
+**M0: Foundation — COMPLETE**
 - [x] Monorepo scaffold with pnpm workspaces
-- [x] Core pipeline: accepts a diff ref, produces DiffSet, serves UI, collects result
+- [x] Core pipeline: diff ref → DiffSet → serve UI → collect result
 - [x] Git engine: parse `git diff` output into DiffSet
 - [x] Minimal React UI: file list + unified diff view with syntax highlighting
-- [x] WebSocket bridge: server pushes DiffSet to UI
-- [x] Action bar: Approve / Request Changes buttons
-- [x] WebSocket return: UI sends ReviewResult back to server
-- [x] Standalone CLI: `diffprism review` / `diffprism review --staged` / `diffprism review HEAD~3..HEAD`
-- [x] MCP server: thin wrapper that calls core pipeline, exposes `open_review` tool (blocking mode)
-- [x] MCP serve command: `diffprism serve` starts the MCP server for Claude Code
+- [x] WebSocket bridge + action bar + ReviewResult return
+- [x] Standalone CLI: `diffprism review` / `--staged` / `HEAD~3..HEAD`
+- [x] MCP server: `open_review` tool (blocking mode)
 
-**Demo:** Two paths work:
-- `diffprism review --staged` → browser opens with diff → engineer clicks Approve → result prints to stdout
-- Claude Code calls `open_review` → browser opens → engineer clicks Approve → Claude Code receives structured result
-
-### M1: Usable Review Experience — ~80% COMPLETE
-
-**Goal:** An experience that's genuinely better than reading diffs in the terminal.
-
+**M1: Usable Review Experience — ~80% COMPLETE**
 - [x] Split diff view (side-by-side) with toggle *(v0.6.0)*
-- [x] Inline commenting: click any line to add a comment *(v0.8.0)*
-- [x] Comment types: must_fix, suggestion, question, nitpick *(v0.8.0)*
-- [x] File-level status tracking (reviewed, approved, needs changes) *(v0.7.0)*
-- [x] Agent reasoning display in context panel *(v0.5.0)*
-- [x] Dark mode (default) with light mode toggle *(v0.9.0)*
-- [x] Keyboard shortcuts: j/k navigate files *(v0.2.12)*
-- [x] `diffprism setup` command — one-step Claude Code integration *(v0.11.0)*
-- [x] `/review` skill for Claude Code *(v0.11.0)*
-- [ ] Color readability fix (#50)
+- [x] Inline commenting with typed comments *(v0.8.0)*
+- [x] File-level status tracking *(v0.7.0)*
+- [x] Agent reasoning display *(v0.5.0)*
+- [x] Dark/light mode *(v0.9.0)*
+- [x] Keyboard shortcuts: j/k *(v0.2.12)*
+- [x] `diffprism setup` + `/review` skill *(v0.11.0)*
+
+**M2: Analysis + Triage — ~50% COMPLETE**
+- [x] Deterministic analysis engine: file categorization, language detection, complexity scoring, test coverage gaps, pattern flags, dependency detection *(v0.4.0)*
+- [x] Review briefing bar: summary stats, risk indicators *(v0.3.0)*
+
+**M3: Multi-Agent — ~80% COMPLETE**
+- [x] Global server with HTTP review API *(v0.15.0)*
+- [x] MCP server as HTTP client — auto-detects global server *(v0.16.0)*
+- [x] Multi-session UI — session list, switching, status badges *(v0.16.0)*
+- [x] Global setup — `diffprism setup --global` *(v0.17.0)*
+
+### Track A: Human Review Experience
+
+**Goal:** Make the review surface the best place to understand and decide on code changes.
+
+**Near-term (active):**
 - [ ] Keyboard shortcuts: n/p navigate changes, c to comment (#41)
-- [ ] Change narrative view: group files by story chapter (#43)
-- [ ] Create PR from review UI (#23)
-
-### M2: Analysis + Triage — ~50% COMPLETE
-
-**Goal:** The tool starts doing prep work for the reviewer.
-
-- [x] Deterministic analysis engine *(v0.4.0)*:
-  - [x] File categorization (new, modified, deleted, renamed)
-  - [x] Language detection
-  - [x] Line count / complexity scoring (1-10 scale)
-  - [x] Test coverage gap detection (source files without corresponding test changes)
-  - [x] Pattern flags (console.log, TODO/FIXME, debugger, disabled tests)
-  - [x] Import/dependency change detection
-- [x] Review briefing bar: summary stats, risk indicators, verification status *(v0.3.0)*
+- [ ] Color readability fix (#50)
 - [ ] Triage view: critical / notable / mechanical grouping + batch approve (#25)
 - [ ] Run tests/lint/typecheck from UI and display results (#44)
+- [ ] Change narrative view: group files by story chapter (#43)
+- [ ] Create PR from review UI (#23)
 - [ ] Analysis enhancements (backlog — pick as capacity allows):
   - [ ] Security-sensitive pattern detection (#57)
   - [ ] Cross-package changes detection (#54)
@@ -615,49 +671,107 @@ diffprism/
   - [ ] Estimated review time (#59)
   - [ ] Logic vs boilerplate ratio (#60)
 
-### M3: Multi-Agent & Worktree Support — ~80% COMPLETE
+**Mid-term:**
+- [ ] GitHub PR integration — read: auth, fetch PR data, normalize to DiffSet, render with briefing
+- [ ] GitHub PR integration — write: post comments, submit reviews, sync threads back to GitHub
+- [ ] Interactive review: ask agent about a specific hunk from within the review UI
 
-**Goal:** Support developers using git worktrees to run multiple agents in parallel, with DiffPrism as the unified review layer.
+**Long-term:**
+- [ ] Review profiles: `.diffprism.yml` per repo with configurable workflows
+- [ ] Review templates: different workflows for different change types
 
-- [x] Global server with HTTP review API — `diffprism server` on ports 24680/24681 (#88, v0.15.0)
-- [x] MCP server as HTTP client — auto-detects global server, computes diff locally, POSTs payload (#89, v0.16.0)
-- [x] Multi-session UI — session list with status badges, branch info, switching (#90, v0.16.0)
-- [x] Global setup — `diffprism setup --global`, auto-setup in `diffprism server` (#91)
+### Track B: Agent-Native Review
+
+**Goal:** Give agents direct access to review primitives so they can participate in review, not just be subjects of it.
+
+**Near-term (highest priority new work):**
+
+The analysis engine already exists. These tools expose it headlessly so agents can self-review.
+
+- [ ] `get_diff(ref)` MCP tool — returns structured DiffSet without opening browser
+  - Scope: `@diffprism/mcp-server` — new tool handler that calls `getDiff()` from `@diffprism/git`
+  - Returns: `DiffSet` as JSON
+  - Done when: agent can call `get_diff({ diff_ref: "unstaged" })` and receive structured diff data
+
+- [ ] `analyze_diff(ref)` MCP tool — returns ReviewBriefing without opening browser
+  - Scope: `@diffprism/mcp-server` — new tool handler that calls `getDiff()` + `analyze()`
+  - Returns: `ReviewBriefing` as JSON (same data the briefing bar shows)
+  - Done when: agent can call `analyze_diff({ diff_ref: "unstaged" })` and get back file stats, pattern flags, complexity scores, test coverage gaps
+
+- [ ] Agent self-review workflow documentation — update `/review` skill and docs to show self-review pattern:
+  ```
+  Agent writes code
+    → calls analyze_diff("unstaged")
+    → gets: "2 console.logs, no test for new function, complexity 8/10"
+    → fixes those issues
+    → calls analyze_diff("unstaged") again → clean
+    → calls open_review for human
+  ```
+
+**Mid-term:**
+
+- [ ] `add_annotation(session_id, file, line, body, type)` — agent posts findings to a review session
+  - Scope: `@diffprism/mcp-server` + `@diffprism/core` (global server API)
+  - Annotations stored per-session, pushed to UI via WebSocket
+  - UI renders agent annotations as a distinct layer (different styling from human comments)
+  - Done when: an agent can post annotations that appear in the review UI alongside the diff
+
+- [ ] `get_review_state(session_id)` — read current state of a review
+  - Returns: files list, human comments, agent annotations, per-file status
+  - Done when: agent can inspect what a reviewer has flagged
+
+- [ ] `flag_for_attention(session_id, files, reason)` — mark files that need human eyes
+  - UI highlights flagged files in the file browser
+  - Done when: agent can direct human attention to specific files
+
+- [ ] Multi-agent review composition
+  - Multiple agents call `add_annotation` on the same session
+  - Annotations grouped by source agent in the UI briefing
+  - Done when: security + performance agents can both annotate and human sees unified view
+
+- [ ] Bidirectional review — human delegates fix to agent from review UI
+  - "Fix this" button on comments sends context (file, line, comment, surrounding code) back to agent
+  - Agent fixes, diff updates live (extends watch mode polling)
+  - Done when: human can click "fix this" and see the agent's fix appear in the same review session
+
+**Long-term:**
+
+- [ ] Review memory — persist what humans flag across reviews per-repo
+  - Pattern extraction: "reviewer flagged X in auth.ts 3 times → convention candidate"
+  - Surface as agent context when `analyze_diff` runs on related files
+
+- [ ] Convention-aware self-review — `analyze_diff` checks against learned conventions
+  - "Last 3 reviews touching auth.ts: reviewer said 'use retry utility'" → agent checks for this
+
+- [ ] `should_review(ref)` — trust-based risk check
+  - Combines: analysis risk level + convention compliance + historical approval rate
+  - Returns: `{ decision: "auto_approve" | "human_review", reason, risk_level }`
+  - Agents call this before `open_review` to skip low-risk reviews
+
+### Track C: Platform Scale
+
+**Goal:** As agent adoption grows from one developer to teams to orgs, the review surface becomes the control plane.
+
+**Near-term:**
 - [ ] Worktree detection & metadata — identify branch, worktree path, agent context (#45)
-- [ ] Per-session live watching — diff updates without new `open_review` calls (optional)
+- [ ] Review history — persist review decisions per-repo (local SQLite or JSON)
+- [ ] Per-session live watching — diff updates without new `open_review` calls
 
-**Architecture:** Global server is a lightweight session manager + relay. MCP server computes diffs locally (has git access), POSTs full `ReviewInitPayload` to global server. Discovery via `~/.diffprism/server.json` with PID liveness + HTTP ping checks.
+**Mid-term:**
+- [ ] Convention intelligence: track reviewer patterns, codify into named conventions
+  - Convention drift detection: surface when code diverges from team patterns
+  - Pattern library: named, versioned, shareable conventions
+- [ ] Trust-graduated automation: risk engine combining analysis + conventions + history
+  - Configurable thresholds per change type and per agent
+  - Auto-approve mechanical changes, require human review for high-risk
+- [ ] Approval gates: changes to specific paths require domain-owner review
+- [ ] AI-powered analysis: Claude API for deep diff analysis, intent inference, risk assessment
 
-### M4: GitHub Integration — Read — NOT STARTED
-
-**Goal:** Review GitHub PRs in DiffPrism with the full briefing experience.
-
-- [ ] GitHub auth setup (PAT config via `diffprism config github-auth`)
-- [ ] Fetch PR data: diff, metadata, comments, CI status, review threads
-- [ ] Normalize PR data into DiffSet + existing conversation context
-- [ ] Display PR info in UI: CI badges, existing reviews, comment threads
-- [ ] CLI: `diffprism review owner/repo#123`
-- [ ] MCP: `open_pr_review({ repo: "owner/repo", pr_number: 123 })`
-
-### M5: GitHub Integration — Write
-
-**Goal:** DiffPrism becomes your PR review workflow.
-
-- [ ] Post inline comments to GitHub from DiffPrism
-- [ ] Submit review (approve / request changes) to GitHub
-- [ ] Sync comment threads: replies in DiffPrism appear on GitHub
-- [ ] Private AI annotations: never posted to GitHub, only visible locally
-
-### M6: AI-Powered Analysis
-
-**Goal:** The briefing gets smart.
-
-- [ ] Claude API integration for deep diff analysis
-- [ ] Intent inference from agent reasoning + code context
-- [ ] Convention detection from codebase patterns
-- [ ] Risk assessment with explanations
-- [ ] Inline AI annotations with codebase-specific suggestions
-- [ ] Learning from review patterns: track what the engineer consistently flags
+**Long-term:**
+- [ ] Trust profiles per agent: approval rates, change-request patterns, iteration counts
+- [ ] Audit trail: every review decision logged, every auto-approval traceable
+- [ ] Org-wide dashboards: review activity, agent effectiveness, convention compliance
+- [ ] Cross-team convention sharing: patterns discovered by one team adopted org-wide
 
 ---
 
@@ -790,22 +904,22 @@ shared types (core/types.ts)
 
 ---
 
-## Future Vision (Post-MVP)
+## Future Vision
 
-### Codebase Convention Learning
-The tool tracks review patterns over time. When you consistently flag a certain pattern (e.g., "we don't use raw SQL"), it becomes a convention that future analyses check automatically.
+### The Agent Self-Review Loop
+The near-term unlock. Agents use `analyze_diff` to check their own work before requesting human review. The human's review queue arrives pre-filtered: mechanical catches already handled, human attention directed to judgment calls. This single capability transforms the review experience without any UI changes.
 
-### Trust Calibration
-Over time, build a trust profile for agent-generated changes. Mechanical refactors by Claude Code get auto-approved. New business logic gets full review. The thresholds adjust based on the agent's track record.
+### Review as Collaboration, Not Gatekeeping
+With composable tools, review becomes a conversation between agents and humans on the same surface. Agents post findings, humans validate and override, the system learns. The review session is the shared artifact — not a gate the agent passes through, but a workspace where both parties contribute.
 
-### Multi-Agent Review Composition
-Multiple AI agents can contribute to the review briefing — a security-focused agent, a performance-focused agent, a style-focused agent — all feeding into the same unified briefing surface.
+### Convention Intelligence as Agent Context
+Past human review decisions become agent instructions automatically. DiffPrism tracks what reviewers flag, extracts patterns, and feeds them back as context when agents self-review. The agent learns the team's preferences through DiffPrism's memory, not through prompt engineering. Each review makes the next one better.
 
-### Team Conventions Sync
-Export learned conventions as a shareable config so the whole team benefits from review patterns.
+### Trust as a Gradient, Not a Binary
+Trust calibration means different change types get different review depths. Mechanical refactors by trusted agents auto-approve. New business logic gets full human review. Security-sensitive paths require domain-owner sign-off. The human sets the thresholds; the system enforces them. Agents can ask `should_review` before opening a review — the system knows when human judgment is needed.
 
 ### Interactive Simulation
-For UI changes, embed a live preview. For API changes, show example request/response diffs. For data model changes, show migration impact.
+For UI changes, embed a live preview. For API changes, show example request/response diffs. For data model changes, show migration impact. The review surface becomes not just a diff viewer but a verification environment.
 
 ---
 
@@ -817,7 +931,13 @@ For UI changes, embed a live preview. For API changes, show example request/resp
 
 3. **Standalone mode:** Yes. `diffprism review` works without any agent or MCP connection. The core review pipeline is shared between CLI and MCP entry points. Standalone mode prints results to stdout; MCP mode returns them over the protocol.
 
-4. **UI surface:** Browser-first. `diffprism review` opens a localhost tab — zero packaging overhead, fast dev loop, no OS-specific issues. The eventual desktop wrapper path is Tauri (Rust-based, ~3MB binary vs Electron's ~150MB), but only when a real limitation is hit (global shortcuts, native window management, file system watchers). The UI must be designed container-agnostic from day one: no `window.location` hacks, no reliance on browser-specific navigation, single-page app that can be dropped into any shell. This makes a future Tauri wrap a weekend project, not a refactor.
+4. **UI surface:** Browser-first. `diffprism review` opens a localhost tab — zero packaging overhead, fast dev loop, no OS-specific issues. The eventual desktop wrapper path is Tauri (Rust-based, ~3MB binary vs Electron's ~150MB), but only when a real limitation is hit. UI is container-agnostic: no `window.location` hacks, single-page app that can be dropped into any shell.
+
+5. **Three agent postures:** The roadmap is organized around three modes of agent-human interaction: human validates agent (Posture 1, shipped), agent self-reviews (Posture 2, Track B near-term), human uses agent as reviewer (Posture 3, Track B mid-term). The tool surface expands to serve all three.
+
+6. **UI for humans, API for agents:** The browser review UI serves human review. The MCP tool surface serves agent participation. Both operate on the same sessions and data model. Agents should never need to go through the browser to access analysis or review state.
+
+7. **Track-based roadmap:** Three parallel tracks (A: Human Review, B: Agent-Native Review, C: Platform Scale) replace the linear M4-M8 milestone sequence. Tracks develop in parallel and reinforce each other.
 
 ---
 
@@ -827,19 +947,21 @@ For UI changes, embed a live preview. For API changes, show example request/resp
 
 2. **AI analysis cost:** The Claude API calls for deep analysis have a cost per review. Should this be opt-in per review, or always-on with a local model fallback?
 
-3. **Config file location:** `~/.diffprism/config.json` for global config (GitHub auth, preferences). Should there also be per-repo `.diffprism.json` for team conventions?
+3. **Config file location:** `~/.diffprism/config.json` for global config (GitHub auth, preferences). Should there also be per-repo `.diffprism.json` for team conventions? (Becomes more relevant with Track C convention intelligence.)
 
 4. **Distribution:** npm global install (`npm i -g diffprism`)? Homebrew? Binary via `pkg` or `bun build --compile`? Start with npm, consider binary later for zero-dependency installs.
 
-5. **Analysis engine informed by agent conversation:** The agent (Claude Code) has rich context that the analysis engine currently doesn't see — the full conversation history, requirements discussed, tradeoffs weighed, rejected approaches, and the user's intent. Right now `open_review` only passes `reasoning` (a string) and `change_narrative` (structured chapters), which is a lossy compression of that context.
+5. **Headless tool output format:** When agents call `analyze_diff` or `get_diff`, what's the right level of detail? The full `ReviewBriefing` and `DiffSet` types are comprehensive but verbose. Should headless tools return condensed summaries by default with a `verbose` flag for full data? Or always return the full structure and trust the agent to extract what it needs?
 
-   The question is how much of the conversation should flow into the analysis, and in what form:
-   
-   - **Minimal (current):** Agent writes a summary into `reasoning`. Simple, but the agent decides what's relevant and the analysis engine can't ask follow-up questions or cross-reference the conversation against the code.
-   - **Structured context object:** Expand the `open_review` payload to accept richer metadata — requirements, constraints, rejected alternatives, known tradeoffs, related tickets/issues. The agent extracts and structures this from the conversation before calling the tool. More useful for analysis but requires the agent to do good extraction.
-   - **Full conversation transcript:** Pass the entire conversation (or a window of it) to the analysis engine. The engine can then correlate "user said they want retry logic" with "this file adds retry logic" and verify intent alignment. Most powerful for analysis, but raises context window cost, privacy considerations (conversation may contain unrelated content), and latency.
-   - **Hybrid:** The agent passes structured context + the analysis engine can optionally request the full transcript for deeper analysis. This keeps the default fast and cheap while allowing the engine to "pull" more context when it encounters something ambiguous.
-   
-   This also affects the UI — if the analysis engine understands the conversation, the context panel could show not just "agent reasoning" but a mapping of "user requirement → code change that satisfies it," making review a verification exercise rather than a comprehension exercise.
-   
-   Related sub-questions: Should the conversation context be stored with the review session so it's available for future reference? Should the analysis engine be able to flag when code changes don't appear to match the discussed requirements (intent drift detection)?
+6. **Agent annotation persistence:** When an agent posts annotations via `add_annotation`, should those persist across sessions? If a security agent flags a pattern in `auth.ts`, should that annotation reappear next time `auth.ts` is reviewed? This ties into review memory (Track B long-term) but affects the data model now.
+
+7. **Self-review loop integration:** Should the self-review loop be built into the `/review` skill (agent automatically runs `analyze_diff` before `open_review`) or left as a pattern agents discover via documentation? Built-in means consistent behavior; pattern-based means agents can adapt the loop to context.
+
+8. **Analysis engine informed by agent conversation:** The agent has rich context the analysis engine doesn't see — conversation history, requirements, rejected approaches. Right now `open_review` only passes `reasoning` (a string), which is lossy compression. Options:
+   - **Minimal (current):** Agent writes a summary into `reasoning`. Simple but the agent decides what's relevant.
+   - **Structured context:** Expand payload with requirements, constraints, rejected alternatives. More useful for analysis but requires good agent extraction.
+   - **Hybrid:** Agent passes structured context + analysis engine can optionally pull more context for ambiguous cases.
+
+   With headless tools, this becomes more tractable: the agent can call `analyze_diff` with additional context parameters and get back analysis that's aware of intent. The context panel could show "user requirement → code change that satisfies it," making review a verification exercise.
+
+9. **Multi-agent annotation conflict resolution:** When multiple agents annotate the same line, how should the UI present conflicting findings? Stack them? Merge? Let the human dismiss individual sources? This design decision affects both the data model and the UI.
