@@ -48,3 +48,12 @@ export {
   removeServerFile,
   isServerAlive,
 } from "./server-file.js";
+export {
+  readHistory,
+  appendHistory,
+  getRecentHistory,
+  getHistoryStats,
+  getHistoryPath,
+  generateEntryId,
+} from "./review-history.js";
+export type { ReviewHistoryEntry, ReviewHistory } from "./review-history.js";
