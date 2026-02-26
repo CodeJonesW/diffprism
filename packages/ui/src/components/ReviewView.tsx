@@ -4,6 +4,8 @@ import { FileBrowser } from "./FileBrowser";
 import { DiffViewer } from "./DiffViewer";
 import { ActionBar } from "./ActionBar";
 import { HotkeyGuide } from "./HotkeyGuide";
+import { AnnotationPanel } from "./AnnotationPanel";
+import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
 
 interface ReviewViewProps {
@@ -15,14 +17,23 @@ interface ReviewViewProps {
 }
 
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
+  const { annotations, dismissAnnotation, selectFile } = useReviewStore();
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <BriefingBar />
       <ReasoningPanel />
       <div className="flex flex-1 min-h-0">
-        {/* Left sidebar — File Browser */}
-        <div className="w-[280px] flex-shrink-0">
-          <FileBrowser onSubmit={onSubmit} />
+        {/* Left sidebar — File Browser + Annotations */}
+        <div className="w-[280px] flex-shrink-0 flex flex-col">
+          <div className="flex-1 min-h-0">
+            <FileBrowser onSubmit={onSubmit} />
+          </div>
+          <AnnotationPanel
+            annotations={annotations}
+            onDismiss={dismissAnnotation}
+            onNavigate={selectFile}
+          />
         </div>
 
         {/* Main area — Diff Viewer */}

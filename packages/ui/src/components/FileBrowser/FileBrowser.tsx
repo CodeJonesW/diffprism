@@ -14,7 +14,7 @@ import {
   Check,
   GitPullRequest,
 } from "lucide-react";
-import type { DiffFile, FileReviewStatus, ReviewResult, PostReviewAction } from "../../types";
+import type { DiffFile, FileReviewStatus, ReviewResult, PostReviewAction, AnnotatedChange } from "../../types";
 import { getFileKey } from "../../lib/file-key";
 
 function getStatusBadge(status: DiffFile["status"]) {
@@ -86,7 +86,7 @@ interface FileBrowserProps {
 }
 
 export function FileBrowser({ onSubmit }: FileBrowserProps) {
-  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments, navigateHunk } =
+  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments, navigateHunk, setFileStatus, briefing } =
     useReviewStore();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -108,15 +108,52 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
     };
   }, [diffSet, hasGroups]);
 
+  // Triage grouping from briefing data
+  const triageGroups = useMemo(() => {
+    if (!diffSet || !briefing?.triage) return null;
+
+    const { critical, notable, mechanical } = briefing.triage;
+    const hasTriageData = critical.length > 0 || mechanical.length > 0;
+    if (!hasTriageData) return null;
+
+    const criticalPaths = new Set(critical.map((c: AnnotatedChange) => c.file));
+    const mechanicalPaths = new Set(mechanical.map((m: AnnotatedChange) => m.file));
+
+    const criticalFiles: DiffFile[] = [];
+    const notableFiles: DiffFile[] = [];
+    const mechanicalFiles: DiffFile[] = [];
+
+    for (const file of diffSet.files) {
+      if (criticalPaths.has(file.path)) {
+        criticalFiles.push(file);
+      } else if (mechanicalPaths.has(file.path)) {
+        mechanicalFiles.push(file);
+      } else {
+        notableFiles.push(file);
+      }
+    }
+
+    return { criticalFiles, notableFiles, mechanicalFiles };
+  }, [diffSet, briefing]);
+
+  const useTriageView = triageGroups !== null && !hasGroups;
+
   // Flat ordered list for keyboard navigation (respects groups)
   const flatFiles = useMemo(() => {
     if (!diffSet) return [];
+    if (useTriageView && triageGroups) {
+      const result: DiffFile[] = [];
+      if (!collapsedSections["triage-critical"]) result.push(...triageGroups.criticalFiles);
+      if (!collapsedSections["triage-notable"]) result.push(...triageGroups.notableFiles);
+      if (!collapsedSections["triage-mechanical"]) result.push(...triageGroups.mechanicalFiles);
+      return result;
+    }
     if (!hasGroups) return diffSet.files;
     const result: DiffFile[] = [];
     if (!collapsedSections["staged"]) result.push(...stagedFiles);
     if (!collapsedSections["unstaged"]) result.push(...unstagedFiles);
     return result;
-  }, [diffSet, hasGroups, stagedFiles, unstagedFiles, collapsedSections]);
+  }, [diffSet, hasGroups, stagedFiles, unstagedFiles, collapsedSections, useTriageView, triageGroups]);
 
   const navigateFiles = useCallback(
     (direction: "up" | "down") => {
@@ -206,6 +243,13 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
     },
     [fileStatuses, comments, onSubmit],
   );
+
+  const handleBatchApproveMechanical = useCallback(() => {
+    if (!triageGroups) return;
+    for (const file of triageGroups.mechanicalFiles) {
+      setFileStatus(getFileKey(file), "approved");
+    }
+  }, [triageGroups, setFileStatus]);
 
   if (!diffSet) return null;
 
@@ -401,7 +445,41 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
 
       {/* File list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {hasGroups ? (
+        {useTriageView && triageGroups ? (
+          <>
+            {triageGroups.criticalFiles.length > 0 && (
+              <>
+                {renderSectionHeader("Critical", "triage-critical", triageGroups.criticalFiles)}
+                {!collapsedSections["triage-critical"] &&
+                  triageGroups.criticalFiles.map(renderFileRow)}
+              </>
+            )}
+            {triageGroups.notableFiles.length > 0 && (
+              <>
+                {renderSectionHeader("Notable", "triage-notable", triageGroups.notableFiles)}
+                {!collapsedSections["triage-notable"] &&
+                  triageGroups.notableFiles.map(renderFileRow)}
+              </>
+            )}
+            {triageGroups.mechanicalFiles.length > 0 && (
+              <>
+                <div className="flex items-center">
+                  <div className="flex-1">
+                    {renderSectionHeader("Mechanical", "triage-mechanical", triageGroups.mechanicalFiles)}
+                  </div>
+                  <button
+                    onClick={handleBatchApproveMechanical}
+                    className="mr-3 text-[10px] font-medium text-green-600 dark:text-green-400 hover:text-green-500 cursor-pointer px-1.5 py-0.5 rounded border border-green-600/30 dark:border-green-400/30 hover:bg-green-500/10"
+                  >
+                    Approve all
+                  </button>
+                </div>
+                {!collapsedSections["triage-mechanical"] &&
+                  triageGroups.mechanicalFiles.map(renderFileRow)}
+              </>
+            )}
+          </>
+        ) : hasGroups ? (
           <>
             {stagedFiles.length > 0 && (
               <>

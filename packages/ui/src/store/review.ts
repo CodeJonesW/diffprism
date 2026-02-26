@@ -9,6 +9,7 @@ import type {
   DiffUpdatePayload,
   ContextUpdatePayload,
   SessionSummary,
+  Annotation,
 } from "../types";
 import { getFileKey } from "../lib/file-key";
 
@@ -45,6 +46,9 @@ export interface ReviewState {
   // Compare ref (dynamic ref selector)
   compareRef: string | null;
 
+  // Annotations
+  annotations: Annotation[];
+
   // Server mode (multi-session)
   showHotkeyGuide: boolean;
   isServerMode: boolean;
@@ -76,6 +80,8 @@ export interface ReviewState {
   setHunkCount: (count: number) => void;
   setFocusedHunkIndex: (index: number | null) => void;
   setCompareRef: (ref: string | null) => void;
+  addAnnotation: (annotation: Annotation) => void;
+  dismissAnnotation: (annotationId: string) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -99,6 +105,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   focusedHunkIndex: null,
   hunkCount: 0,
   compareRef: null,
+  annotations: [],
   showHotkeyGuide: false,
   isServerMode: false,
   sessions: [],
@@ -124,6 +131,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       selectedFile: firstFile,
       fileStatuses,
       comments: [],
+      annotations: [],
       activeCommentKey: null,
       focusedHunkIndex: null,
       hunkCount: 0,
@@ -330,6 +338,18 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     set({ compareRef: ref });
   },
 
+  addAnnotation: (annotation: Annotation) => {
+    set((state) => ({ annotations: [...state.annotations, annotation] }));
+  },
+
+  dismissAnnotation: (annotationId: string) => {
+    set((state) => ({
+      annotations: state.annotations.map((a) =>
+        a.id === annotationId ? { ...a, dismissed: true } : a,
+      ),
+    }));
+  },
+
   selectSession: (sessionId: string) => {
     set({ activeSessionId: sessionId });
   },
@@ -344,6 +364,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       selectedFile: null,
       fileStatuses: {},
       comments: [],
+      annotations: [],
       activeCommentKey: null,
       focusedHunkIndex: null,
       hunkCount: 0,
