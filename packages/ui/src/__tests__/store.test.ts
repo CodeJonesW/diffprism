@@ -67,6 +67,7 @@ describe("review store", () => {
       isWatchMode: false,
       watchSubmitted: false,
       hasUnreviewedChanges: true,
+      compareRef: null,
       isServerMode: false,
       sessions: [],
       activeSessionId: null,
@@ -246,6 +247,38 @@ describe("review store", () => {
       useReviewStore.getState().toggleTheme(); // light → dark
       expect(useReviewStore.getState().theme).toBe("dark");
       expect(localStorage.getItem("diffprism-theme")).toBe("dark");
+    });
+  });
+
+  describe("compareRef", () => {
+    it("setCompareRef sets the compare ref", () => {
+      useReviewStore.getState().setCompareRef("main");
+      expect(useReviewStore.getState().compareRef).toBe("main");
+    });
+
+    it("setCompareRef can be set to null", () => {
+      useReviewStore.getState().setCompareRef("main");
+      useReviewStore.getState().setCompareRef(null);
+      expect(useReviewStore.getState().compareRef).toBeNull();
+    });
+
+    it("initReview resets compareRef to null", () => {
+      useReviewStore.getState().setCompareRef("main");
+      useReviewStore.getState().initReview(makeInitPayload());
+      expect(useReviewStore.getState().compareRef).toBeNull();
+    });
+
+    it("clearReview resets compareRef to null", () => {
+      useReviewStore.getState().setCompareRef("feature-branch");
+      useReviewStore.getState().clearReview();
+      expect(useReviewStore.getState().compareRef).toBeNull();
+    });
+
+    it("removeSession resets compareRef when active session is removed", () => {
+      useReviewStore.getState().initReview(makeInitPayload());
+      useReviewStore.getState().setCompareRef("main");
+      useReviewStore.getState().removeSession("review-123");
+      expect(useReviewStore.getState().compareRef).toBeNull();
     });
   });
 

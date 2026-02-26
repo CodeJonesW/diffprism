@@ -46,6 +46,19 @@ vi.mock("@diffprism/git", () => ({
     rawDiff: "",
   }),
   getCurrentBranch: vi.fn().mockReturnValue("main"),
+  listBranches: vi.fn().mockReturnValue({
+    local: ["main", "feature-branch"],
+    remote: ["origin/main", "origin/develop"],
+  }),
+  listCommits: vi.fn().mockReturnValue([
+    {
+      hash: "abc123full",
+      shortHash: "abc123",
+      subject: "Initial commit",
+      author: "Test Author",
+      date: "2025-01-15T10:30:00Z",
+    },
+  ]),
 }));
 
 // Mock @diffprism/analysis — watcher uses analyze
@@ -68,6 +81,7 @@ vi.mock("@diffprism/analysis", () => ({
 // ─── Import after mocks ───
 
 const { startGlobalServer } = await import("../global-server.js");
+const git = await import("@diffprism/git");
 
 // ─── Helpers ───
 
@@ -869,6 +883,148 @@ describe("global-server", () => {
       const listResponse = await fetch(`${baseUrl}/api/reviews`);
       const listData = (await listResponse.json()) as { sessions: SessionSummary[] };
       expect(listData.sessions).toHaveLength(2);
+    });
+  });
+
+  describe("git refs endpoint", () => {
+    it("returns branches and commits for a session via GET /api/reviews/:id/refs", async () => {
+      // Re-establish mock return values (vi.restoreAllMocks clears them between tests)
+      vi.mocked(git.listBranches).mockReturnValue({
+        local: ["main", "feature-branch"],
+        remote: ["origin/main", "origin/develop"],
+      });
+      vi.mocked(git.listCommits).mockReturnValue([
+        {
+          hash: "abc123full",
+          shortHash: "abc123",
+          subject: "Initial commit",
+          author: "Test Author",
+          date: "2025-01-15T10:30:00Z",
+        },
+      ]);
+      vi.mocked(git.getCurrentBranch).mockReturnValue("main");
+
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/refs`);
+      expect(response.status).toBe(200);
+
+      const data = (await response.json()) as {
+        branches: { local: string[]; remote: string[] };
+        commits: Array<{ hash: string; shortHash: string; subject: string }>;
+        currentBranch: string;
+      };
+      expect(data.branches.local).toContain("main");
+      expect(data.branches.remote).toContain("origin/main");
+      expect(data.commits).toHaveLength(1);
+      expect(data.currentBranch).toBe("main");
+    });
+
+    it("returns 404 for refs of non-existent session", async () => {
+      handle = await startGlobalServer({ silent: true });
+
+      const response = await fetch(
+        `http://localhost:${handle.httpPort}/api/reviews/nonexistent/refs`,
+      );
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe("compare endpoint", () => {
+    it("recomputes diff for a new ref via POST /api/reviews/:id/compare", async () => {
+      // Re-establish mock return values (vi.restoreAllMocks clears them between tests)
+      vi.mocked(git.getDiff).mockReturnValue({
+        diffSet: {
+          baseRef: "HEAD",
+          headRef: "main",
+          files: [
+            {
+              path: "src/index.ts",
+              status: "modified",
+              hunks: [],
+              language: "typescript",
+              binary: false,
+              additions: 5,
+              deletions: 2,
+            },
+          ],
+        },
+        rawDiff: "diff --git a/src/index.ts b/src/index.ts\n",
+      });
+
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+          diffRef: "working-copy",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: "main" }),
+      });
+
+      expect(response.ok).toBe(true);
+      const data = (await response.json()) as { ok: boolean; fileCount: number };
+      expect(data.ok).toBe(true);
+      expect(data.fileCount).toBe(1);
+    });
+
+    it("returns 404 for compare on non-existent session", async () => {
+      handle = await startGlobalServer({ silent: true });
+
+      const response = await fetch(
+        `http://localhost:${handle.httpPort}/api/reviews/nonexistent/compare`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ref: "main" }),
+        },
+      );
+      expect(response.status).toBe(404);
+    });
+
+    it("returns 400 when ref is missing from body", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      expect(response.status).toBe(400);
     });
   });
 

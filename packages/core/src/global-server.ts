@@ -4,7 +4,7 @@ import getPort from "get-port";
 import open from "open";
 import { WebSocketServer, WebSocket } from "ws";
 
-import { getDiff } from "@diffprism/git";
+import { getDiff, listBranches, listCommits, getCurrentBranch } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import type {
@@ -538,6 +538,87 @@ async function handleApiRequest(
     return true;
   }
 
+  // GET /api/reviews/:id/refs — list branches and commits for a session's project
+  const getRefsParams = matchRoute(method, url, "GET", "/api/reviews/:id/refs");
+  if (getRefsParams) {
+    const session = sessions.get(getRefsParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    try {
+      const branches = listBranches({ cwd: session.projectPath });
+      const commits = listCommits({ cwd: session.projectPath });
+      const currentBranch = getCurrentBranch({ cwd: session.projectPath });
+
+      jsonResponse(res, 200, { branches, commits, currentBranch });
+    } catch {
+      jsonResponse(res, 500, { error: "Failed to list git refs" });
+    }
+    return true;
+  }
+
+  // POST /api/reviews/:id/compare — recompute diff against a different ref
+  const postCompareParams = matchRoute(method, url, "POST", "/api/reviews/:id/compare");
+  if (postCompareParams) {
+    const session = sessions.get(postCompareParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    try {
+      const body = await readBody(req);
+      const { ref } = JSON.parse(body) as { ref: string };
+
+      if (!ref) {
+        jsonResponse(res, 400, { error: "Missing ref in request body" });
+        return true;
+      }
+
+      const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(ref, {
+        cwd: session.projectPath,
+      });
+      const newBriefing = analyze(newDiffSet);
+      const changedFiles = detectChangedFiles(session.lastDiffSet ?? null, newDiffSet);
+
+      // Update session state
+      session.payload = {
+        ...session.payload,
+        diffSet: newDiffSet,
+        rawDiff: newRawDiff,
+        briefing: newBriefing,
+      };
+      session.lastDiffHash = hashDiff(newRawDiff);
+      session.lastDiffSet = newDiffSet;
+
+      // Update diffRef and restart watcher with new ref
+      stopSessionWatcher(session.id);
+      session.diffRef = ref;
+      if (hasConnectedClients()) {
+        startSessionWatcher(session.id);
+      }
+
+      // Push diff:update to connected UI clients
+      sendToSessionClients(session.id, {
+        type: "diff:update",
+        payload: {
+          diffSet: newDiffSet,
+          rawDiff: newRawDiff,
+          briefing: newBriefing,
+          changedFiles,
+          timestamp: Date.now(),
+        },
+      });
+
+      jsonResponse(res, 200, { ok: true, fileCount: newDiffSet.files.length });
+    } catch {
+      jsonResponse(res, 400, { error: "Failed to compute diff for the given ref" });
+    }
+    return true;
+  }
+
   jsonResponse(res, 404, { error: "Not found" });
   return true;
 }
@@ -736,7 +817,7 @@ export async function startGlobalServer(
   }
 
   // Open browser to UI
-  const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&serverMode=true`;
+  const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&httpPort=${httpPort}&serverMode=true`;
   await open(uiUrl);
 
   // Re-open browser when a review arrives and no UI clients are connected
