@@ -102,7 +102,7 @@ export function listBranches(options?: { cwd?: string }): BranchList {
   const cwd = options?.cwd ?? process.cwd();
   try {
     const output = execSync(
-      "git branch -a --format=%(refname:short) --sort=-committerdate",
+      "git branch -a --format='%(refname:short)' --sort=-committerdate",
       { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
 
@@ -142,7 +142,7 @@ export function listCommits(options?: { cwd?: string; limit?: number }): CommitI
   const limit = options?.limit ?? 50;
   try {
     const output = execSync(
-      `git log --format=%H<<>>%h<<>>%s<<>>%an<<>>%aI -n ${limit}`,
+      `git log --format='%H<<>>%h<<>>%s<<>>%an<<>>%aI' -n ${limit}`,
       { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
 
