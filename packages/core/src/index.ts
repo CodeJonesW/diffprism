@@ -21,6 +21,7 @@ export type {
   WatchHandle,
   DiffUpdatePayload,
   ContextUpdatePayload,
+  DiffErrorPayload,
   WatchFileInfo,
   FileReviewStatus,
   ReviewResultFile,
@@ -36,6 +37,8 @@ export type {
 
 export { startReview } from "./pipeline.js";
 export { startWatch } from "./watch.js";
+export { createDiffPoller } from "./diff-poller.js";
+export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
 export { readWatchFile, readReviewResult, consumeReviewResult } from "./watch-file.js";
 export { startGlobalServer } from "./global-server.js";

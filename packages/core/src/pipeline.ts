@@ -2,12 +2,22 @@ import http from "node:http";
 import getPort from "get-port";
 import open from "open";
 
-import { getDiff, getCurrentBranch } from "@diffprism/git";
+import { getDiff, getCurrentBranch, listBranches, listCommits } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
-import type { ReviewResult, ReviewOptions, ReviewInitPayload } from "./types.js";
-import { createWsBridge } from "./ws-bridge.js";
+import type {
+  ReviewResult,
+  ReviewOptions,
+  ReviewInitPayload,
+  ReviewMetadata,
+  ContextUpdatePayload,
+  DiffUpdatePayload,
+} from "./types.js";
+import { createWatchBridge } from "./watch-bridge.js";
+import { createDiffPoller } from "./diff-poller.js";
+import type { DiffPoller } from "./diff-poller.js";
 import { createSession, updateSession } from "./review-manager.js";
+import { writeWatchFile, removeWatchFile } from "./watch-file.js";
 import {
   resolveUiDist,
   resolveUiRoot,
@@ -43,16 +53,89 @@ export async function startReview(
   const session = createSession(options);
   updateSession(session.id, { status: "in_progress" });
 
+  // Track mutable metadata
+  const metadata: ReviewMetadata = {
+    title,
+    description,
+    reasoning,
+    currentBranch,
+  };
+
+  // Poller reference — set after bridge creation, used in callbacks
+  let poller: DiffPoller | null = null;
+
   // 4. Get ports
-  const [wsPort, httpPort] = await Promise.all([
+  const [bridgePort, httpPort] = await Promise.all([
     getPort(),
     getPort(),
   ]);
 
-  // 5. Start WebSocket bridge
-  const bridge = createWsBridge(wsPort);
+  // Shared handler for ref changes (used by both WS and HTTP paths)
+  function handleDiffRefChange(newRef: string): void {
+    const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(newRef, { cwd });
+    const newBriefing = analyze(newDiffSet);
 
-  // 6. Start UI server (dev mode uses Vite dev server with HMR, otherwise static files)
+    bridge.sendDiffUpdate({
+      diffSet: newDiffSet,
+      rawDiff: newRawDiff,
+      briefing: newBriefing,
+      changedFiles: newDiffSet.files.map((f) => f.path),
+      timestamp: Date.now(),
+    });
+
+    bridge.storeInitPayload({
+      reviewId: session.id,
+      diffSet: newDiffSet,
+      rawDiff: newRawDiff,
+      briefing: newBriefing,
+      metadata,
+      watchMode: true,
+    });
+
+    poller?.setDiffRef(newRef);
+  }
+
+  // 5. Create WatchBridge (HTTP + WS) with ref selection support
+  const bridge = await createWatchBridge(bridgePort, {
+    onRefreshRequest: () => {
+      poller?.refresh();
+    },
+    onContextUpdate: (payload: ContextUpdatePayload) => {
+      if (payload.reasoning !== undefined) metadata.reasoning = payload.reasoning;
+      if (payload.title !== undefined) metadata.title = payload.title;
+      if (payload.description !== undefined) metadata.description = payload.description;
+    },
+    onDiffRefChange: (newRef: string) => {
+      try {
+        handleDiffRefChange(newRef);
+      } catch (err) {
+        bridge.sendDiffError({
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    },
+    onRefsRequest: async () => {
+      try {
+        const resolvedCwd = cwd ?? process.cwd();
+        const branches = listBranches({ cwd: resolvedCwd });
+        const commits = listCommits({ cwd: resolvedCwd });
+        const branch = getCurrentBranch({ cwd: resolvedCwd });
+        return { branches, commits, currentBranch: branch };
+      } catch {
+        return null;
+      }
+    },
+    onCompareRequest: async (ref: string) => {
+      try {
+        handleDiffRefChange(ref);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  });
+
+  // 6. Start UI server
   let httpServer: http.Server | null = null;
   let viteServer: { close: () => Promise<void> } | null = null;
 
@@ -65,8 +148,18 @@ export async function startReview(
       httpServer = await createStaticServer(uiDist, httpPort);
     }
 
-    // 7. Build the URL and open browser
-    const url = `http://localhost:${httpPort}?wsPort=${wsPort}&reviewId=${session.id}`;
+    // 7. Write discovery file (allows MCP context updates)
+    writeWatchFile(cwd, {
+      wsPort: bridgePort,
+      uiPort: httpPort,
+      pid: process.pid,
+      cwd: cwd ?? process.cwd(),
+      diffRef,
+      startedAt: Date.now(),
+    });
+
+    // 8. Build the URL and open browser
+    const url = `http://localhost:${httpPort}?wsPort=${bridgePort}&httpPort=${bridgePort}&reviewId=${session.id}`;
 
     if (!silent) {
       console.log(`\nDiffPrism Review: ${title ?? briefing.summary}`);
@@ -75,27 +168,58 @@ export async function startReview(
 
     await open(url);
 
-    // 8. Send init payload
+    // 9. Send init payload with watchMode enabled for live updates
     const initPayload: ReviewInitPayload = {
       reviewId: session.id,
       diffSet,
       rawDiff,
       briefing,
-      metadata: { title, description, reasoning, currentBranch },
+      metadata,
+      watchMode: true,
     };
 
     bridge.sendInit(initPayload);
 
-    // 9. Wait for result
+    // 10. Start diff poller for live updates
+    poller = createDiffPoller({
+      diffRef,
+      cwd: cwd ?? process.cwd(),
+      pollInterval: 1000,
+      onDiffChanged: (updatePayload: DiffUpdatePayload) => {
+        // Update stored init payload for reconnects
+        bridge.storeInitPayload({
+          reviewId: session.id,
+          diffSet: updatePayload.diffSet,
+          rawDiff: updatePayload.rawDiff,
+          briefing: updatePayload.briefing,
+          metadata,
+          watchMode: true,
+        });
+
+        bridge.sendDiffUpdate(updatePayload);
+
+        if (!silent && updatePayload.changedFiles.length > 0) {
+          console.log(
+            `[${new Date().toLocaleTimeString()}] Diff updated: ${updatePayload.changedFiles.length} file(s) changed`,
+          );
+        }
+      },
+    });
+    poller.start();
+
+    // 11. Wait for result
     const result = await bridge.waitForResult();
 
-    // 10. Update session
+    // 12. Stop poller and update session
+    poller.stop();
     updateSession(session.id, { status: "completed", result });
 
     return result;
   } finally {
-    // 11. Cleanup
-    bridge.close();
+    // 13. Cleanup
+    poller?.stop();
+    await bridge.close();
+    removeWatchFile(cwd);
     if (viteServer) {
       await viteServer.close();
     }
