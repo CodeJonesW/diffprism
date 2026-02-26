@@ -86,7 +86,7 @@ interface FileBrowserProps {
 }
 
 export function FileBrowser({ onSubmit }: FileBrowserProps) {
-  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments } =
+  const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments, navigateHunk } =
     useReviewStore();
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -163,12 +163,21 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
       } else if (e.key === "?") {
         e.preventDefault();
         toggleHotkeyGuide();
+      } else if (e.key === "n") {
+        e.preventDefault();
+        navigateHunk("next");
+      } else if (e.key === "p") {
+        e.preventDefault();
+        navigateHunk("prev");
+      } else if (e.key === "c") {
+        e.preventDefault();
+        document.dispatchEvent(new CustomEvent("diffprism:open-comment"));
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide]);
+  }, [navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide, navigateHunk]);
 
   // Close menu on click outside
   useEffect(() => {

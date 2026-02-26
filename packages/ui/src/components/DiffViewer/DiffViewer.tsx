@@ -1,4 +1,4 @@
-import { useMemo, useCallback, type ReactNode } from "react";
+import { useMemo, useCallback, useEffect, useRef, type ReactNode } from "react";
 import {
   parseDiff,
   Diff,
@@ -174,6 +174,8 @@ export function DiffViewer() {
     deleteComment,
     setActiveCommentKey,
     toggleHotkeyGuide,
+    focusedHunkIndex,
+    setHunkCount,
   } = useReviewStore();
 
   const selectedDiffFile = useMemo(() => {
@@ -367,6 +369,43 @@ export function DiffViewer() {
     setActiveCommentKey,
   ]);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Sync hunk count to the store whenever the parsed file changes
+  useEffect(() => {
+    setHunkCount(parsedFiles[0]?.hunks.length ?? 0);
+  }, [parsedFiles, setHunkCount]);
+
+  // Scroll to focused hunk and apply visual highlight
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || focusedHunkIndex === null) return;
+
+    const hunkElements = container.querySelectorAll("tbody.diff-hunk");
+    hunkElements.forEach((el) => el.classList.remove("diff-hunk-focused"));
+
+    if (hunkElements[focusedHunkIndex]) {
+      hunkElements[focusedHunkIndex].scrollIntoView({ behavior: "smooth", block: "center" });
+      hunkElements[focusedHunkIndex].classList.add("diff-hunk-focused");
+    }
+  }, [focusedHunkIndex]);
+
+  // Listen for "c" key via custom event — open comment on first change in focused hunk
+  useEffect(() => {
+    function handleOpenComment() {
+      if (focusedHunkIndex === null || parsedFiles.length === 0 || !selectedFile) return;
+      const hunk = parsedFiles[0].hunks[focusedHunkIndex];
+      if (!hunk || hunk.changes.length === 0) return;
+
+      const firstChange = hunk.changes[0];
+      const key = getChangeKey(firstChange);
+      setActiveCommentKey(key);
+    }
+
+    document.addEventListener("diffprism:open-comment", handleOpenComment);
+    return () => document.removeEventListener("diffprism:open-comment", handleOpenComment);
+  }, [focusedHunkIndex, parsedFiles, selectedFile, setActiveCommentKey]);
+
   // No file selected state
   if (!selectedFile || !diffSet) {
     return (
@@ -428,7 +467,7 @@ export function DiffViewer() {
         onViewModeChange={setViewMode}
         onToggleHotkeyGuide={toggleHotkeyGuide}
       />
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <Diff
           viewType={viewMode}
           diffType={diffData.type}

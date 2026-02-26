@@ -68,6 +68,8 @@ describe("review store", () => {
       watchSubmitted: false,
       hasUnreviewedChanges: true,
       compareRef: null,
+      focusedHunkIndex: null,
+      hunkCount: 0,
       isServerMode: false,
       sessions: [],
       activeSessionId: null,
@@ -279,6 +281,90 @@ describe("review store", () => {
       useReviewStore.getState().setCompareRef("main");
       useReviewStore.getState().removeSession("review-123");
       expect(useReviewStore.getState().compareRef).toBeNull();
+    });
+  });
+
+  describe("hunk navigation", () => {
+    it("setHunkCount sets count and resets focusedHunkIndex", () => {
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().setHunkCount(5);
+      expect(useReviewStore.getState().hunkCount).toBe(5);
+      expect(useReviewStore.getState().focusedHunkIndex).toBeNull();
+    });
+
+    it("setFocusedHunkIndex sets the index directly", () => {
+      useReviewStore.getState().setHunkCount(5);
+      useReviewStore.getState().setFocusedHunkIndex(3);
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(3);
+    });
+
+    it("navigateHunk next from null goes to 0", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().navigateHunk("next");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(0);
+    });
+
+    it("navigateHunk prev from null goes to last", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().navigateHunk("prev");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(2);
+    });
+
+    it("navigateHunk next increments", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().setFocusedHunkIndex(0);
+      useReviewStore.getState().navigateHunk("next");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(1);
+    });
+
+    it("navigateHunk prev decrements", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().navigateHunk("prev");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(1);
+    });
+
+    it("navigateHunk next clamps at last hunk", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().navigateHunk("next");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(2);
+    });
+
+    it("navigateHunk prev clamps at first hunk", () => {
+      useReviewStore.getState().setHunkCount(3);
+      useReviewStore.getState().setFocusedHunkIndex(0);
+      useReviewStore.getState().navigateHunk("prev");
+      expect(useReviewStore.getState().focusedHunkIndex).toBe(0);
+    });
+
+    it("navigateHunk is a no-op when hunkCount is 0", () => {
+      useReviewStore.getState().navigateHunk("next");
+      expect(useReviewStore.getState().focusedHunkIndex).toBeNull();
+    });
+
+    it("selectFile resets hunk state", () => {
+      useReviewStore.getState().setHunkCount(5);
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().selectFile("other.ts");
+      expect(useReviewStore.getState().focusedHunkIndex).toBeNull();
+      expect(useReviewStore.getState().hunkCount).toBe(0);
+    });
+
+    it("initReview resets hunk state", () => {
+      useReviewStore.getState().setHunkCount(5);
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().initReview(makeInitPayload());
+      expect(useReviewStore.getState().focusedHunkIndex).toBeNull();
+      expect(useReviewStore.getState().hunkCount).toBe(0);
+    });
+
+    it("clearReview resets hunk state", () => {
+      useReviewStore.getState().setHunkCount(5);
+      useReviewStore.getState().setFocusedHunkIndex(2);
+      useReviewStore.getState().clearReview();
+      expect(useReviewStore.getState().focusedHunkIndex).toBeNull();
+      expect(useReviewStore.getState().hunkCount).toBe(0);
     });
   });
 

@@ -38,6 +38,10 @@ export interface ReviewState {
   watchSubmitted: boolean;
   hasUnreviewedChanges: boolean;
 
+  // Hunk navigation
+  focusedHunkIndex: number | null;
+  hunkCount: number;
+
   // Compare ref (dynamic ref selector)
   compareRef: string | null;
 
@@ -68,6 +72,9 @@ export interface ReviewState {
   addSession: (session: SessionSummary) => void;
   updateSession: (session: SessionSummary) => void;
   removeSession: (sessionId: string) => void;
+  navigateHunk: (direction: "next" | "prev") => void;
+  setHunkCount: (count: number) => void;
+  setFocusedHunkIndex: (index: number | null) => void;
   setCompareRef: (ref: string | null) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
@@ -89,6 +96,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
+  focusedHunkIndex: null,
+  hunkCount: 0,
   compareRef: null,
   showHotkeyGuide: false,
   isServerMode: false,
@@ -116,6 +125,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses,
       comments: [],
       activeCommentKey: null,
+      focusedHunkIndex: null,
+      hunkCount: 0,
       compareRef: null,
       isWatchMode: payload.watchMode ?? false,
       watchSubmitted: false,
@@ -125,7 +136,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   selectFile: (path: string) => {
-    set({ selectedFile: path });
+    set({ selectedFile: path, focusedHunkIndex: null, hunkCount: 0 });
   },
 
   setConnectionStatus: (status: ReviewState["connectionStatus"]) => {
@@ -214,6 +225,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       briefing: payload.briefing,
       fileStatuses,
       selectedFile,
+      focusedHunkIndex: null,
+      hunkCount: 0,
       hasUnreviewedChanges: true,
     });
   },
@@ -281,6 +294,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
           fileStatuses: {},
           comments: [],
           activeCommentKey: null,
+          focusedHunkIndex: null,
+          hunkCount: 0,
           compareRef: null,
           activeSessionId: null,
           watchSubmitted: false,
@@ -289,6 +304,26 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       }
       return { sessions };
     });
+  },
+
+  navigateHunk: (direction: "next" | "prev") => {
+    const { focusedHunkIndex, hunkCount } = get();
+    if (hunkCount === 0) return;
+    if (focusedHunkIndex === null) {
+      set({ focusedHunkIndex: direction === "next" ? 0 : hunkCount - 1 });
+    } else if (direction === "next") {
+      set({ focusedHunkIndex: Math.min(focusedHunkIndex + 1, hunkCount - 1) });
+    } else {
+      set({ focusedHunkIndex: Math.max(focusedHunkIndex - 1, 0) });
+    }
+  },
+
+  setHunkCount: (count: number) => {
+    set({ hunkCount: count, focusedHunkIndex: null });
+  },
+
+  setFocusedHunkIndex: (index: number | null) => {
+    set({ focusedHunkIndex: index });
   },
 
   setCompareRef: (ref: string | null) => {
@@ -310,6 +345,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses: {},
       comments: [],
       activeCommentKey: null,
+      focusedHunkIndex: null,
+      hunkCount: 0,
       compareRef: null,
       activeSessionId: null,
       watchSubmitted: false,
