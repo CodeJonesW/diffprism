@@ -19,6 +19,10 @@ import type {
   ServerMessage,
   ClientMessage,
   DiffSet,
+  Annotation,
+  AnnotationType,
+  AnnotationCategory,
+  AnnotationSource,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import {
@@ -50,6 +54,7 @@ interface Session {
   lastDiffHash?: string;
   lastDiffSet?: DiffSet;
   hasNewChanges: boolean;
+  annotations: Annotation[];
 }
 
 const sessions = new Map<string, Session>();
@@ -341,6 +346,7 @@ async function handleApiRequest(
         existingSession.lastDiffHash = diffRef ? hashDiff(payload.rawDiff) : undefined;
         existingSession.lastDiffSet = diffRef ? payload.diffSet : undefined;
         existingSession.hasNewChanges = false;
+        existingSession.annotations = [];
 
         // Restart watcher if needed
         if (diffRef && hasConnectedClients()) {
@@ -382,6 +388,7 @@ async function handleApiRequest(
           lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
           lastDiffSet: diffRef ? payload.diffSet : undefined,
           hasNewChanges: false,
+          annotations: [],
         };
 
         sessions.set(sessionId, session);
@@ -505,6 +512,88 @@ async function handleApiRequest(
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }
+    return true;
+  }
+
+  // POST /api/reviews/:id/annotations — add an annotation to a session
+  const postAnnotationParams = matchRoute(method, url, "POST", "/api/reviews/:id/annotations");
+  if (postAnnotationParams) {
+    const session = sessions.get(postAnnotationParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    try {
+      const body = await readBody(req);
+      const { file, line, body: annotationBody, type, confidence, category, source } = JSON.parse(body) as {
+        file: string;
+        line: number;
+        body: string;
+        type: AnnotationType;
+        confidence?: number;
+        category?: AnnotationCategory;
+        source: AnnotationSource;
+      };
+
+      const annotation: Annotation = {
+        id: randomUUID(),
+        sessionId: session.id,
+        file,
+        line,
+        body: annotationBody,
+        type,
+        confidence: confidence ?? 1,
+        category: category ?? "other",
+        source,
+        createdAt: Date.now(),
+      };
+
+      session.annotations.push(annotation);
+
+      // Broadcast to UI clients viewing this session
+      sendToSessionClients(session.id, {
+        type: "annotation:added",
+        payload: annotation,
+      });
+
+      jsonResponse(res, 200, { annotationId: annotation.id });
+    } catch {
+      jsonResponse(res, 400, { error: "Invalid request body" });
+    }
+    return true;
+  }
+
+  // GET /api/reviews/:id/annotations — list annotations for a session
+  const getAnnotationsParams = matchRoute(method, url, "GET", "/api/reviews/:id/annotations");
+  if (getAnnotationsParams) {
+    const session = sessions.get(getAnnotationsParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    jsonResponse(res, 200, { annotations: session.annotations });
+    return true;
+  }
+
+  // POST /api/reviews/:id/annotations/:annotationId/dismiss — dismiss an annotation
+  const dismissAnnotationParams = matchRoute(method, url, "POST", "/api/reviews/:id/annotations/:annotationId/dismiss");
+  if (dismissAnnotationParams) {
+    const session = sessions.get(dismissAnnotationParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    const annotation = session.annotations.find((a) => a.id === dismissAnnotationParams.annotationId);
+    if (!annotation) {
+      jsonResponse(res, 404, { error: "Annotation not found" });
+      return true;
+    }
+
+    annotation.dismissed = true;
+    jsonResponse(res, 200, { ok: true });
     return true;
   }
 
