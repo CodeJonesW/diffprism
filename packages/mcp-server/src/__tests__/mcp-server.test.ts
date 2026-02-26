@@ -17,9 +17,11 @@ vi.mock("@diffprism/core", () => ({
 
 const mockGetDiff = vi.fn();
 const mockGetCurrentBranch = vi.fn();
+const mockDetectWorktree = vi.fn();
 vi.mock("@diffprism/git", () => ({
   getDiff: (...args: unknown[]) => mockGetDiff(...args),
   getCurrentBranch: (...args: unknown[]) => mockGetCurrentBranch(...args),
+  detectWorktree: (...args: unknown[]) => mockDetectWorktree(...args),
 }));
 
 const mockAnalyze = vi.fn();
@@ -86,16 +88,20 @@ describe("mcp-server", () => {
     vi.clearAllMocks();
     // Default: no global server running
     mockIsServerAlive.mockResolvedValue(null);
+    // Default: not in a worktree
+    mockDetectWorktree.mockReturnValue({ isWorktree: false });
   });
 
   it("registers tools", async () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(3);
+    expect(mockToolFn).toHaveBeenCalledTimes(5);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
+    expect(mockToolFn.mock.calls[3][0]).toBe("get_diff");
+    expect(mockToolFn.mock.calls[4][0]).toBe("analyze_diff");
   });
 
   it("connects the stdio transport", async () => {
