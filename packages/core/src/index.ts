@@ -33,6 +33,10 @@ export type {
   CommitInfo,
   BranchList,
   GitRefsPayload,
+  AnnotationType,
+  AnnotationCategory,
+  AnnotationSource,
+  Annotation,
 } from "./types.js";
 
 export { startReview } from "./pipeline.js";

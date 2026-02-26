@@ -11,6 +11,7 @@ import type {
   ContextUpdatePayload,
   ServerMessage,
   SessionSummary,
+  Annotation,
 } from "../types.js";
 
 // ─── Mocks ───
@@ -1025,6 +1026,232 @@ describe("global-server", () => {
         body: JSON.stringify({}),
       });
       expect(response.status).toBe(400);
+    });
+  });
+
+  describe("annotations", () => {
+    it("posts an annotation to a session", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Post annotation
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: "src/index.ts",
+          line: 42,
+          body: "This function has no error handling",
+          type: "finding",
+          confidence: 0.9,
+          category: "correctness",
+          source: { agent: "security-reviewer", tool: "static-analysis" },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const data = (await response.json()) as { annotationId: string };
+      expect(data.annotationId).toBeDefined();
+      expect(typeof data.annotationId).toBe("string");
+    });
+
+    it("retrieves annotations for a session", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Post two annotations
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: "src/index.ts",
+          line: 10,
+          body: "Missing null check",
+          type: "finding",
+          source: { agent: "correctness-agent" },
+        }),
+      });
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file: "src/utils.ts",
+          line: 25,
+          body: "Consider using a Map instead of Object",
+          type: "suggestion",
+          category: "performance",
+          source: { agent: "perf-agent" },
+        }),
+      });
+
+      // Get annotations
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`);
+      expect(response.status).toBe(200);
+
+      const data = (await response.json()) as {
+        annotations: Array<{
+          id: string;
+          sessionId: string;
+          file: string;
+          line: number;
+          body: string;
+          type: string;
+          confidence: number;
+          category: string;
+          source: { agent: string };
+          createdAt: number;
+        }>;
+      };
+
+      expect(data.annotations).toHaveLength(2);
+      expect(data.annotations[0].file).toBe("src/index.ts");
+      expect(data.annotations[0].body).toBe("Missing null check");
+      expect(data.annotations[0].type).toBe("finding");
+      expect(data.annotations[0].confidence).toBe(1); // default
+      expect(data.annotations[0].category).toBe("other"); // default
+      expect(data.annotations[0].source.agent).toBe("correctness-agent");
+      expect(data.annotations[0].sessionId).toBe(sessionId);
+      expect(data.annotations[0].createdAt).toBeTypeOf("number");
+
+      expect(data.annotations[1].file).toBe("src/utils.ts");
+      expect(data.annotations[1].category).toBe("performance");
+    });
+
+    it("returns 404 when posting annotation to non-existent session", async () => {
+      handle = await startGlobalServer({ silent: true });
+
+      const response = await fetch(
+        `http://localhost:${handle.httpPort}/api/reviews/nonexistent/annotations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file: "src/index.ts",
+            line: 1,
+            body: "test",
+            type: "finding",
+            source: { agent: "test-agent" },
+          }),
+        },
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it("returns 404 when getting annotations for non-existent session", async () => {
+      handle = await startGlobalServer({ silent: true });
+
+      const response = await fetch(
+        `http://localhost:${handle.httpPort}/api/reviews/nonexistent/annotations`,
+      );
+
+      expect(response.status).toBe(404);
+    });
+
+    it("dismisses an annotation", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Post annotation
+      const annotationResponse = await fetch(
+        `${baseUrl}/api/reviews/${sessionId}/annotations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file: "src/index.ts",
+            line: 5,
+            body: "Nitpick: variable naming",
+            type: "suggestion",
+            category: "convention",
+            source: { agent: "style-agent" },
+          }),
+        },
+      );
+      const { annotationId } = (await annotationResponse.json()) as { annotationId: string };
+
+      // Dismiss annotation
+      const dismissResponse = await fetch(
+        `${baseUrl}/api/reviews/${sessionId}/annotations/${annotationId}/dismiss`,
+        { method: "POST" },
+      );
+      expect(dismissResponse.status).toBe(200);
+
+      // Verify dismissed flag
+      const getResponse = await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`);
+      const data = (await getResponse.json()) as {
+        annotations: Array<{ id: string; dismissed?: boolean }>;
+      };
+      const dismissed = data.annotations.find((a) => a.id === annotationId);
+      expect(dismissed).toBeDefined();
+      expect(dismissed!.dismissed).toBe(true);
+    });
+
+    it("returns 404 when dismissing non-existent annotation", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      // Create session
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload(),
+          projectPath: "/test/project",
+        }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      // Try to dismiss non-existent annotation
+      const response = await fetch(
+        `${baseUrl}/api/reviews/${sessionId}/annotations/nonexistent-id/dismiss`,
+        { method: "POST" },
+      );
+      expect(response.status).toBe(404);
+    });
+
+    it("returns 404 when dismissing annotation on non-existent session", async () => {
+      handle = await startGlobalServer({ silent: true });
+
+      const response = await fetch(
+        `http://localhost:${handle.httpPort}/api/reviews/nonexistent/annotations/some-id/dismiss`,
+        { method: "POST" },
+      );
+      expect(response.status).toBe(404);
     });
   });
 
