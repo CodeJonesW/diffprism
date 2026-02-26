@@ -19,6 +19,7 @@ export type {
   ReviewBriefing,
   ReviewInitPayload,
   ReviewMetadata,
+  WorktreeMetadata,
   ServerMessage,
   ClientMessage,
   ReviewOptions,

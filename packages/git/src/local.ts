@@ -167,6 +167,81 @@ export function listCommits(options?: { cwd?: string; limit?: number }): CommitI
   }
 }
 
+// ─── Worktree detection ───
+
+export interface WorktreeInfo {
+  isWorktree: boolean;
+  worktreePath?: string; // absolute path to worktree root
+  mainWorktreePath?: string; // path to the main worktree (the original clone)
+  branch?: string; // branch checked out in this worktree
+}
+
+/**
+ * Detect whether the current directory is inside a git worktree.
+ *
+ * Uses `git rev-parse --git-dir` and `git rev-parse --git-common-dir` to
+ * determine if we're in a linked worktree (they differ in a worktree).
+ * Also resolves the worktree path and current branch.
+ *
+ * @param options.cwd - Working directory. Defaults to process.cwd().
+ * @returns WorktreeInfo with isWorktree=false on failure or non-worktree.
+ */
+export function detectWorktree(options?: { cwd?: string }): WorktreeInfo {
+  const cwd = options?.cwd ?? process.cwd();
+
+  try {
+    const gitDir = execSync("git rev-parse --git-dir", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    const gitCommonDir = execSync("git rev-parse --git-common-dir", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    // Resolve to absolute paths for reliable comparison
+    const resolvedGitDir = path.resolve(cwd, gitDir);
+    const resolvedCommonDir = path.resolve(cwd, gitCommonDir);
+
+    // If they differ, we're in a linked worktree
+    const isWorktree = resolvedGitDir !== resolvedCommonDir;
+
+    if (!isWorktree) {
+      return { isWorktree: false };
+    }
+
+    // Get the worktree root path
+    const worktreePath = execSync("git rev-parse --show-toplevel", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    // The main worktree path is the parent of the common git dir
+    // (common dir is the .git directory of the main worktree)
+    const mainWorktreePath = path.dirname(resolvedCommonDir);
+
+    // Get the current branch
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    return {
+      isWorktree: true,
+      worktreePath,
+      mainWorktreePath,
+      branch: branch === "HEAD" ? undefined : branch,
+    };
+  } catch {
+    return { isWorktree: false };
+  }
+}
+
 /**
  * Find untracked files and generate unified diff output for each one,
  * so they appear as "added" files in the parsed DiffSet.

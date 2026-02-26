@@ -192,11 +192,18 @@ export interface ReviewInitPayload {
   watchMode?: boolean;
 }
 
+export interface WorktreeMetadata {
+  isWorktree: boolean;
+  worktreePath?: string;
+  mainWorktreePath?: string;
+}
+
 export interface ReviewMetadata {
   title?: string;
   description?: string;
   reasoning?: string;
   currentBranch?: string;
+  worktree?: WorktreeMetadata;
 }
 
 export interface DiffErrorPayload {
