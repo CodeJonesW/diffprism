@@ -64,6 +64,51 @@ export interface ReviewResult {
   postReviewAction?: PostReviewAction;
 }
 
+// ─── Annotation Types ───
+
+export type AnnotationType = "finding" | "suggestion" | "question" | "warning";
+
+export type AnnotationCategory =
+  | "security"
+  | "performance"
+  | "convention"
+  | "correctness"
+  | "complexity"
+  | "test-coverage"
+  | "documentation"
+  | "other";
+
+export interface AnnotationSource {
+  agent: string; // agent identifier (e.g., "security-reviewer", "convention-checker")
+  tool?: string; // MCP tool that created it (e.g., "add_annotation")
+}
+
+export interface Annotation {
+  id: string;
+  sessionId: string;
+  file: string;
+  line: number;
+  body: string;
+  type: AnnotationType;
+  confidence: number; // 0-1
+  category: AnnotationCategory;
+  source: AnnotationSource;
+  createdAt: number; // Unix timestamp ms
+  dismissed?: boolean;
+}
+
+export interface SessionState {
+  sessionId: string;
+  status: GlobalSessionStatus;
+  files: Array<{
+    path: string;
+    reviewStatus: FileReviewStatus;
+  }>;
+  comments: ReviewComment[];
+  annotations: Annotation[];
+  decision?: ReviewDecision;
+}
+
 // ─── Analysis / Briefing Types ───
 
 export interface AnnotatedChange {
@@ -218,7 +263,9 @@ export type ServerMessage =
   | { type: "session:list"; payload: SessionSummary[] }
   | { type: "session:added"; payload: SessionSummary }
   | { type: "session:updated"; payload: SessionSummary }
-  | { type: "session:removed"; payload: { sessionId: string } };
+  | { type: "session:removed"; payload: { sessionId: string } }
+  | { type: "annotation:added"; payload: Annotation }
+  | { type: "annotation:dismissed"; payload: { annotationId: string } };
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }
