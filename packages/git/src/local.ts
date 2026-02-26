@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import type { CommitInfo, BranchList } from "@diffprism/core";
 
 /**
  * Shell out to `git diff` and return the raw unified diff text.
@@ -88,6 +89,81 @@ export function getCurrentBranch(options?: { cwd?: string }): string {
     }).trim();
   } catch {
     return "unknown";
+  }
+}
+
+/**
+ * List git branches sorted by most-recent committer date.
+ *
+ * @param options.cwd - Working directory.  Defaults to process.cwd().
+ * @returns `{ local, remote }` arrays of branch names. Empty arrays on failure.
+ */
+export function listBranches(options?: { cwd?: string }): BranchList {
+  const cwd = options?.cwd ?? process.cwd();
+  try {
+    const output = execSync(
+      "git branch -a --format=%(refname:short) --sort=-committerdate",
+      { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+
+    if (!output) return { local: [], remote: [] };
+
+    const local: string[] = [];
+    const remote: string[] = [];
+
+    for (const line of output.split("\n")) {
+      const name = line.trim();
+      if (!name) continue;
+      // Skip HEAD pointer entries like "origin/HEAD"
+      if (name.endsWith("/HEAD")) continue;
+      if (name.includes("/")) {
+        // Remote branch — strip the remote prefix (e.g. "origin/main" → "main")
+        remote.push(name);
+      } else {
+        local.push(name);
+      }
+    }
+
+    return { local, remote };
+  } catch {
+    return { local: [], remote: [] };
+  }
+}
+
+/**
+ * List recent git commits.
+ *
+ * @param options.cwd - Working directory.  Defaults to process.cwd().
+ * @param options.limit - Maximum number of commits to return. Defaults to 50.
+ * @returns Array of CommitInfo objects. Empty array on failure.
+ */
+export function listCommits(options?: { cwd?: string; limit?: number }): CommitInfo[] {
+  const cwd = options?.cwd ?? process.cwd();
+  const limit = options?.limit ?? 50;
+  try {
+    const output = execSync(
+      `git log --format=%H<<>>%h<<>>%s<<>>%an<<>>%aI -n ${limit}`,
+      { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+
+    if (!output) return [];
+
+    const commits: CommitInfo[] = [];
+    for (const line of output.split("\n")) {
+      const parts = line.split("<<>>");
+      if (parts.length < 5) continue;
+      commits.push({
+        hash: parts[0],
+        shortHash: parts[1],
+        subject: parts[2],
+        author: parts[3],
+        date: parts[4],
+      });
+    }
+
+    return commits;
+  } catch {
+    return [];
   }
 }
 

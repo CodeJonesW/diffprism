@@ -13,6 +13,7 @@ import {
   GitBranch,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
+import { RefSelector } from "../RefSelector";
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
@@ -59,12 +60,14 @@ export function BriefingBar() {
             </span>
           )}
 
-          {metadata?.currentBranch && (
+          {isServerMode ? (
+            <RefSelector />
+          ) : metadata?.currentBranch ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 font-mono">
               <GitBranch className="w-3 h-3" />
               {metadata.currentBranch}
             </span>
-          )}
+          ) : null}
 
           {moduleCount > 0 && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400 border border-blue-300 dark:border-blue-500/30">

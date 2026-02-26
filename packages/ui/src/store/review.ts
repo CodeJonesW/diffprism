@@ -38,6 +38,9 @@ export interface ReviewState {
   watchSubmitted: boolean;
   hasUnreviewedChanges: boolean;
 
+  // Compare ref (dynamic ref selector)
+  compareRef: string | null;
+
   // Server mode (multi-session)
   showHotkeyGuide: boolean;
   isServerMode: boolean;
@@ -65,6 +68,7 @@ export interface ReviewState {
   addSession: (session: SessionSummary) => void;
   updateSession: (session: SessionSummary) => void;
   removeSession: (sessionId: string) => void;
+  setCompareRef: (ref: string | null) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -85,6 +89,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
+  compareRef: null,
   showHotkeyGuide: false,
   isServerMode: false,
   sessions: [],
@@ -111,6 +116,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses,
       comments: [],
       activeCommentKey: null,
+      compareRef: null,
       isWatchMode: payload.watchMode ?? false,
       watchSubmitted: false,
       hasUnreviewedChanges: true,
@@ -275,6 +281,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
           fileStatuses: {},
           comments: [],
           activeCommentKey: null,
+          compareRef: null,
           activeSessionId: null,
           watchSubmitted: false,
           hasUnreviewedChanges: true,
@@ -282,6 +289,10 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       }
       return { sessions };
     });
+  },
+
+  setCompareRef: (ref: string | null) => {
+    set({ compareRef: ref });
   },
 
   selectSession: (sessionId: string) => {
@@ -299,6 +310,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses: {},
       comments: [],
       activeCommentKey: null,
+      compareRef: null,
       activeSessionId: null,
       watchSubmitted: false,
       hasUnreviewedChanges: true,

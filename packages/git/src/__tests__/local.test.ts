@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getGitDiff } from "../local.js";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { getGitDiff, listBranches, listCommits } from "../local.js";
 
 // Mock child_process and fs
 vi.mock("node:child_process", () => ({
@@ -196,5 +196,121 @@ describe("getGitDiff", () => {
         expect(opts?.cwd).toBe("/tmp/my-repo");
       }
     });
+  });
+});
+
+describe("listBranches", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("separates local and remote branches", () => {
+    mockExecSync.mockReturnValue("main\nfeature-x\norigin/main\norigin/develop\n");
+
+    const result = listBranches();
+
+    expect(result.local).toEqual(["main", "feature-x"]);
+    expect(result.remote).toEqual(["origin/main", "origin/develop"]);
+  });
+
+  it("skips HEAD pointer entries", () => {
+    mockExecSync.mockReturnValue("main\norigin/HEAD\norigin/main\n");
+
+    const result = listBranches();
+
+    expect(result.local).toEqual(["main"]);
+    expect(result.remote).toEqual(["origin/main"]);
+  });
+
+  it("returns empty arrays on failure", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("not a git repo");
+    });
+
+    const result = listBranches();
+
+    expect(result.local).toEqual([]);
+    expect(result.remote).toEqual([]);
+  });
+
+  it("returns empty arrays for empty output", () => {
+    mockExecSync.mockReturnValue("");
+
+    const result = listBranches();
+
+    expect(result.local).toEqual([]);
+    expect(result.remote).toEqual([]);
+  });
+
+  it("passes cwd option to execSync", () => {
+    mockExecSync.mockReturnValue("main\n");
+
+    listBranches({ cwd: "/my/repo" });
+
+    const opts = mockExecSync.mock.calls[0][1] as { cwd?: string };
+    expect(opts.cwd).toBe("/my/repo");
+  });
+});
+
+describe("listCommits", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("parses commit log output", () => {
+    mockExecSync.mockReturnValue(
+      "abc123full<<>>abc123<<>>Initial commit<<>>John Doe<<>>2025-01-15T10:30:00Z\n" +
+      "def456full<<>>def456<<>>Add feature<<>>Jane Doe<<>>2025-01-14T09:00:00Z\n",
+    );
+
+    const result = listCommits();
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toEqual({
+      hash: "abc123full",
+      shortHash: "abc123",
+      subject: "Initial commit",
+      author: "John Doe",
+      date: "2025-01-15T10:30:00Z",
+    });
+    expect(result[1].shortHash).toBe("def456");
+  });
+
+  it("returns empty array on failure", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("not a git repo");
+    });
+
+    const result = listCommits();
+
+    expect(result).toEqual([]);
+  });
+
+  it("returns empty array for empty output", () => {
+    mockExecSync.mockReturnValue("");
+
+    const result = listCommits();
+
+    expect(result).toEqual([]);
+  });
+
+  it("uses custom limit", () => {
+    mockExecSync.mockReturnValue("");
+
+    listCommits({ limit: 10 });
+
+    const cmd = String(mockExecSync.mock.calls[0][0]);
+    expect(cmd).toContain("-n 10");
+  });
+
+  it("skips malformed lines", () => {
+    mockExecSync.mockReturnValue(
+      "abc123full<<>>abc123<<>>Good commit<<>>Author<<>>2025-01-15T10:30:00Z\nbad line\n",
+    );
+
+    const result = listCommits();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].shortHash).toBe("abc123");
   });
 });

@@ -169,6 +169,27 @@ export interface ContextUpdatePayload {
   description?: string;
 }
 
+// ─── Git Refs Types ───
+
+export interface CommitInfo {
+  hash: string;
+  shortHash: string;
+  subject: string;
+  author: string;
+  date: string; // ISO 8601
+}
+
+export interface BranchList {
+  local: string[];
+  remote: string[];
+}
+
+export interface GitRefsPayload {
+  branches: BranchList;
+  commits: CommitInfo[];
+  currentBranch: string;
+}
+
 export type GlobalSessionStatus = "pending" | "in_review" | "submitted";
 
 export interface SessionSummary {

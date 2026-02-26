@@ -29,6 +29,9 @@ export type {
   SessionSummary,
   GlobalServerOptions,
   GlobalServerHandle,
+  CommitInfo,
+  BranchList,
+  GitRefsPayload,
 } from "./types.js";
 
 export { startReview } from "./pipeline.js";
