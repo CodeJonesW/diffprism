@@ -2,7 +2,7 @@ import http from "node:http";
 import getPort from "get-port";
 import open from "open";
 
-import { getDiff, getCurrentBranch, listBranches, listCommits } from "@diffprism/git";
+import { getDiff, getCurrentBranch, listBranches, listCommits, detectWorktree } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import type {
@@ -53,12 +53,22 @@ export async function startReview(
   const session = createSession(options);
   updateSession(session.id, { status: "in_progress" });
 
+  // Detect worktree info
+  const worktreeInfo = detectWorktree({ cwd });
+
   // Track mutable metadata
   const metadata: ReviewMetadata = {
     title,
     description,
     reasoning,
     currentBranch,
+    worktree: worktreeInfo.isWorktree
+      ? {
+          isWorktree: true,
+          worktreePath: worktreeInfo.worktreePath,
+          mainWorktreePath: worktreeInfo.mainWorktreePath,
+        }
+      : undefined,
   };
 
   // Poller reference — set after bridge creation, used in callbacks

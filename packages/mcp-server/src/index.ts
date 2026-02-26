@@ -16,7 +16,7 @@ import type {
   ReviewInitPayload,
   ReviewResult,
 } from "@diffprism/core";
-import { getDiff, getCurrentBranch } from "@diffprism/git";
+import { getDiff, getCurrentBranch, detectWorktree } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 declare const DIFFPRISM_VERSION: string;
@@ -56,7 +56,10 @@ async function reviewViaGlobalServer(
 
   const briefing = analyze(diffSet);
 
-  // 2. Build the payload
+  // 2. Detect worktree info
+  const worktreeInfo = detectWorktree({ cwd });
+
+  // 3. Build the payload
   const payload: ReviewInitPayload = {
     reviewId: "", // Server assigns the real ID
     diffSet,
@@ -67,10 +70,17 @@ async function reviewViaGlobalServer(
       description: options.description,
       reasoning: options.reasoning,
       currentBranch,
+      worktree: worktreeInfo.isWorktree
+        ? {
+            isWorktree: true,
+            worktreePath: worktreeInfo.worktreePath,
+            mainWorktreePath: worktreeInfo.mainWorktreePath,
+          }
+        : undefined,
     },
   };
 
-  // 3. POST to global server
+  // 4. POST to global server
   const createResponse = await fetch(
     `http://localhost:${serverInfo.httpPort}/api/reviews`,
     {
@@ -90,7 +100,7 @@ async function reviewViaGlobalServer(
   lastGlobalSessionId = sessionId;
   lastGlobalServerInfo = serverInfo;
 
-  // 4. Poll for result
+  // 5. Poll for result
   const pollIntervalMs = 2000;
   const maxWaitMs = 600 * 1000; // 10 minutes
   const start = Date.now();
