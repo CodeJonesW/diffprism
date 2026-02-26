@@ -37,15 +37,24 @@ When using the global server, users get **native desktop notifications** when a 
 ### New: Dismiss Reviews (v0.22.0)
 A **Dismiss** button lets users close a review without approving or requesting changes — useful when the agent is still working, the review was triggered by mistake, or no feedback is needed. Dismiss unblocks MCP polling so the agent isn't left hanging.
 
+### New: Dynamic Ref Selector (v0.26.0)
+In global server mode, a **RefSelector** popover in the briefing bar lets users switch what they're comparing against — branches or specific commits from the git log. Diffs are recomputed on the fly via new server endpoints. Users can compare against `main`, a feature branch, or any commit without creating a new review session.
+
+### New: Hunk Navigation Shortcuts (v0.27.0)
+**`n`/`p` navigate between diff hunks** within a file, with the focused hunk auto-scrolled into view and highlighted with an accent outline. **`c` opens an inline comment** on the focused hunk. This matches standard code review UX (GitHub, Gerrit) and complements the existing `j`/`k` file navigation.
+
+### New: Session Deduplication (v0.24.2)
+When `open_review` is triggered multiple times from the same project directory, the global server now **updates the existing session in place** instead of creating duplicates. This prevents stale session accumulation in the dashboard.
+
 ### Other New Features
 - **Split (side-by-side) diff view** — Toggle between unified and split views
 - **Dark/light mode toggle** — Was dark-only, now has a toggle with theme persistence
-- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status, `?` opens hotkey guide
+- **Keyboard shortcuts** — `j`/`k` navigate files, `n`/`p` navigate hunks, `c` comment on hunk, `s` cycles file status, `?` opens hotkey guide
 - **File-level status tracking** — Mark each file as reviewed/approved/needs_changes
 - **Agent reasoning panel** — Collapsible panel showing why the agent made changes
 - **Global setup** — `diffprism setup --global` configures at `~/.claude/` paths, no git repo required. Auto-runs on `diffprism server` start.
 - **Teardown command** — `diffprism teardown` cleanly reverses all setup changes (MCP config, hooks, skill, gitignore)
-- **v0.24.1 is current version**
+- **v0.27.0 is current version**
 
 ## Current Landing Page Structure
 
@@ -81,7 +90,8 @@ The Why page (`/why`) and Blog page (`/blog`) exist as separate routes.
 - Add **Multi-session dashboard** as a feature card — session list with status badges, branch info, change stats, click to switch between reviews, desktop notifications when reviews arrive
 - Add **Split diff view** as a feature or mention within the existing diff viewer card
 - Update existing cards if needed (e.g., the Watch Mode card could mention it's one of three modes)
-- Consider adding **Keyboard navigation** as a feature card (j/k files, s status, ? help)
+- Consider adding **Keyboard navigation** as a feature card (j/k files, n/p hunks, c comment, s status, ? help)
+- Add or mention **Dynamic ref selector** — compare against branches or commits without creating a new review, diffs recomputed on the fly
 - Add or mention **Quick actions** — Approve & Commit or Approve, Commit & PR directly from the review UI, closing the review→commit loop
 - Add or mention **Dismiss** — clean exit for reviews that aren't needed, prevents agents from hanging
 
@@ -125,11 +135,12 @@ diffprism teardown            # Clean removal
 - Review briefing bar (complexity scoring, test coverage gaps, pattern flags, dependency changes, affected modules)
 - Agent reasoning display panel
 - Dark/light mode toggle
-- Keyboard shortcuts (j/k files, s status, ? hotkey guide)
+- Keyboard shortcuts (j/k files, n/p hunks, c comment on hunk, s status, ? hotkey guide)
 - Four review decisions: approve, request changes, approve with comments, dismiss
 - Quick action menu: Approve & Commit, Approve Commit & PR (executes post-review action without extra confirmation)
 - Structured JSON results returned to agent (includes optional `postReviewAction` field)
-- Multi-session dashboard with status badges, branch info, file counts, desktop notifications for new sessions
+- Multi-session dashboard with status badges, branch info, file counts, desktop notifications for new sessions, session deduplication by project path
+- Dynamic ref selector — compare against branches or commits on the fly in global server mode
 - MCP tools: open_review, update_review_context, get_review_result
 - CLI: review, watch, serve, setup, server, teardown, start
 - Zero-config: `npx diffprism setup` handles everything
