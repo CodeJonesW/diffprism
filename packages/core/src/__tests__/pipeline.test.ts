@@ -8,6 +8,7 @@ const mockGetCurrentBranch = vi.fn();
 vi.mock("@diffprism/git", () => ({
   getDiff: (...args: unknown[]) => mockGetDiff(...args),
   getCurrentBranch: (...args: unknown[]) => mockGetCurrentBranch(...args),
+  detectWorktree: () => ({ isWorktree: false }),
 }));
 
 const mockAnalyze = vi.fn();

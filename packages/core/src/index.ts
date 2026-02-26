@@ -6,6 +6,11 @@ export type {
   ReviewDecision,
   ReviewComment,
   ReviewResult,
+  AnnotationType,
+  AnnotationCategory,
+  AnnotationSource,
+  Annotation,
+  SessionState,
   AnnotatedChange,
   ComplexityScore,
   TestCoverageGap,
@@ -14,6 +19,7 @@ export type {
   ReviewBriefing,
   ReviewInitPayload,
   ReviewMetadata,
+  WorktreeMetadata,
   ServerMessage,
   ClientMessage,
   ReviewOptions,
@@ -48,3 +54,12 @@ export {
   removeServerFile,
   isServerAlive,
 } from "./server-file.js";
+export {
+  readHistory,
+  appendHistory,
+  getRecentHistory,
+  getHistoryStats,
+  getHistoryPath,
+  generateEntryId,
+} from "./review-history.js";
+export type { ReviewHistoryEntry, ReviewHistory } from "./review-history.js";

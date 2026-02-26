@@ -32,19 +32,336 @@ function makeDiffSet(files: DiffFile[]): DiffSet {
 }
 
 describe("categorizeFiles", () => {
-  it("puts all files in notable for M0", () => {
-    const files = [makeFile(), makeFile({ path: "src/utils.ts" })];
-    const result = categorizeFiles(files);
-
-    expect(result.critical).toHaveLength(0);
-    expect(result.mechanical).toHaveLength(0);
-    expect(result.notable).toHaveLength(2);
-    expect(result.notable[0].file).toBe("src/index.ts");
-  });
-
   it("handles empty file list", () => {
     const result = categorizeFiles([]);
+    expect(result.critical).toHaveLength(0);
     expect(result.notable).toHaveLength(0);
+    expect(result.mechanical).toHaveLength(0);
+  });
+
+  it("marks a file with security patterns as critical", () => {
+    const files = [
+      makeFile({
+        path: "src/handler.ts",
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  const result = eval(userInput);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].file).toBe("src/handler.ts");
+    expect(result.critical[0].reason).toContain("security patterns");
+    expect(result.critical[0].reason).toContain("eval");
+    expect(result.notable).toHaveLength(0);
+    expect(result.mechanical).toHaveLength(0);
+  });
+
+  it("marks a high-complexity file as critical", () => {
+    // Create a file with enough complexity to score >= 8
+    // Large diff (3) + many hunks (2) + many branches (2+) = 7+
+    const hunks = Array.from({ length: 6 }, (_, i) => ({
+      oldStart: i * 30,
+      oldLines: 10,
+      newStart: i * 30,
+      newLines: 20,
+      changes: Array.from({ length: 10 }, (_, j) => ({
+        type: "add" as const,
+        lineNumber: i * 30 + j + 1,
+        content: "  if (x) { return y && z || w; }",
+      })),
+    }));
+
+    const files = [
+      makeFile({
+        path: "src/complex.ts",
+        additions: 200,
+        deletions: 50,
+        hunks,
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].file).toBe("src/complex.ts");
+    expect(result.critical[0].reason).toContain("complexity");
+    expect(result.notable).toHaveLength(0);
+    expect(result.mechanical).toHaveLength(0);
+  });
+
+  it("marks API surface files as critical", () => {
+    const files = [
+      makeFile({
+        path: "src/api/users.ts",
+        additions: 5,
+        deletions: 2,
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].reason).toContain("API surface");
+  });
+
+  it("marks routes files as critical", () => {
+    const files = [
+      makeFile({
+        path: "src/routes/auth.ts",
+        additions: 5,
+        deletions: 2,
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].reason).toContain("API surface");
+  });
+
+  it("marks index.ts with many additions as critical (API surface)", () => {
+    const files = [
+      makeFile({
+        path: "packages/core/src/index.ts",
+        additions: 15,
+        deletions: 2,
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].reason).toContain("API surface");
+  });
+
+  it("marks a pure rename as mechanical", () => {
+    const files = [
+      makeFile({
+        path: "src/new-name.ts",
+        oldPath: "src/old-name.ts",
+        status: "renamed",
+        additions: 0,
+        deletions: 0,
+        hunks: [],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.mechanical).toHaveLength(1);
+    expect(result.mechanical[0].file).toBe("src/new-name.ts");
+    expect(result.mechanical[0].reason).toContain("pure rename");
+    expect(result.critical).toHaveLength(0);
+    expect(result.notable).toHaveLength(0);
+  });
+
+  it("marks config files as mechanical", () => {
+    const configs = [
+      "vite.config.ts",
+      ".eslintrc.json",
+      ".prettierrc",
+      "tsconfig.json",
+      "tsconfig.build.json",
+      ".gitignore",
+      "pnpm-lock.lock",
+    ];
+    for (const configPath of configs) {
+      const files = [
+        makeFile({
+          path: configPath,
+          additions: 3,
+          deletions: 1,
+        }),
+      ];
+      const result = categorizeFiles(files);
+      expect(result.mechanical).toHaveLength(1);
+      expect(result.mechanical[0].reason).toContain("config file");
+    }
+  });
+
+  it("marks formatting-only changes as mechanical", () => {
+    const files = [
+      makeFile({
+        path: "src/utils.ts",
+        additions: 2,
+        deletions: 2,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 2, newStart: 1, newLines: 2,
+            changes: [
+              { type: "delete", lineNumber: 1, content: "const x=1;" },
+              { type: "add", lineNumber: 1, content: "const x = 1;" },
+              { type: "delete", lineNumber: 2, content: "const y=2;" },
+              { type: "add", lineNumber: 2, content: "const y = 2;" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.mechanical).toHaveLength(1);
+    expect(result.mechanical[0].reason).toContain("formatting");
+  });
+
+  it("marks import-only changes as mechanical", () => {
+    const files = [
+      makeFile({
+        path: "src/component.ts",
+        additions: 1,
+        deletions: 1,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 1, newStart: 1, newLines: 1,
+            changes: [
+              { type: "delete", lineNumber: 1, content: 'import { foo } from "./foo.js";' },
+              { type: "add", lineNumber: 1, content: 'import { foo, bar } from "./foo.js";' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.mechanical).toHaveLength(1);
+    expect(result.mechanical[0].reason).toContain("import");
+  });
+
+  it("marks a normal source file as notable", () => {
+    const files = [
+      makeFile({
+        path: "src/handler.ts",
+        additions: 10,
+        deletions: 5,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 5, newStart: 1, newLines: 10,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  const result = computeValue();" },
+              { type: "add", lineNumber: 2, content: "  return result;" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.notable).toHaveLength(1);
+    expect(result.notable[0].file).toBe("src/handler.ts");
+    expect(result.notable[0].reason).toContain("Notable");
+    expect(result.critical).toHaveLength(0);
+    expect(result.mechanical).toHaveLength(0);
+  });
+
+  it("critical wins over mechanical (config file with security patterns)", () => {
+    const files = [
+      makeFile({
+        path: "webpack.config.js",
+        additions: 5,
+        deletions: 2,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 1, content: '  const secret = "hardcoded_api_key_123";' },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].reason).toContain("security patterns");
+    expect(result.mechanical).toHaveLength(0);
+    expect(result.notable).toHaveLength(0);
+  });
+
+  it("combines multiple critical reasons", () => {
+    // A file in api/ with security patterns
+    const files = [
+      makeFile({
+        path: "src/api/auth.ts",
+        additions: 5,
+        deletions: 2,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  eval(userInput);" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].reason).toContain("security patterns");
+    expect(result.critical[0].reason).toContain("API surface");
+  });
+
+  it("correctly triages a mix of files", () => {
+    const files = [
+      // Critical: has eval
+      makeFile({
+        path: "src/dangerous.ts",
+        additions: 5,
+        deletions: 0,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 0, newStart: 1, newLines: 1,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  eval(code);" },
+            ],
+          },
+        ],
+      }),
+      // Mechanical: config file
+      makeFile({
+        path: "tsconfig.json",
+        additions: 1,
+        deletions: 1,
+      }),
+      // Mechanical: pure rename
+      makeFile({
+        path: "src/renamed.ts",
+        oldPath: "src/original.ts",
+        status: "renamed",
+        additions: 0,
+        deletions: 0,
+        hunks: [],
+      }),
+      // Notable: normal file
+      makeFile({
+        path: "src/handler.ts",
+        additions: 10,
+        deletions: 3,
+        hunks: [
+          {
+            oldStart: 1, oldLines: 3, newStart: 1, newLines: 10,
+            changes: [
+              { type: "add", lineNumber: 1, content: "  return processData();" },
+            ],
+          },
+        ],
+      }),
+    ];
+    const result = categorizeFiles(files);
+
+    expect(result.critical).toHaveLength(1);
+    expect(result.critical[0].file).toBe("src/dangerous.ts");
+
+    expect(result.mechanical).toHaveLength(2);
+    expect(result.mechanical.map((m) => m.file).sort()).toEqual([
+      "src/renamed.ts",
+      "tsconfig.json",
+    ]);
+
+    expect(result.notable).toHaveLength(1);
+    expect(result.notable[0].file).toBe("src/handler.ts");
   });
 });
 
@@ -585,15 +902,16 @@ describe("detectSecurityPatterns", () => {
 describe("analyze", () => {
   it("produces a complete ReviewBriefing", () => {
     const diffSet = makeDiffSet([
-      makeFile({ path: "src/index.ts", additions: 10, deletions: 2 }),
-      makeFile({ path: "src/index.test.ts", status: "added", additions: 30, deletions: 0 }),
+      makeFile({ path: "src/handler.ts", additions: 10, deletions: 2 }),
+      makeFile({ path: "src/handler.test.ts", status: "added", additions: 30, deletions: 0 }),
     ]);
     const briefing = analyze(diffSet);
 
     expect(briefing.summary).toContain("2 files changed");
+    // Both files are notable: handler.ts is a normal source file, handler.test.ts is a test file
     expect(briefing.triage.notable).toHaveLength(2);
     expect(briefing.impact.affectedModules).toEqual(["src"]);
-    expect(briefing.impact.affectedTests).toEqual(["src/index.test.ts"]);
+    expect(briefing.impact.affectedTests).toEqual(["src/handler.test.ts"]);
     expect(briefing.verification.testsPass).toBeNull();
     expect(briefing.fileStats).toHaveLength(2);
 

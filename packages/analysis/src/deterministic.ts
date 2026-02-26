@@ -15,22 +15,208 @@ export interface FileTriage {
   mechanical: AnnotatedChange[];
 }
 
+// Config file patterns for mechanical categorization
+const MECHANICAL_CONFIG_PATTERNS = [
+  /\.config\./,
+  /\.eslintrc/,
+  /\.prettierrc/,
+  /tsconfig.*\.json$/,
+  /\.gitignore$/,
+  /\.lock$/,
+];
+
+// API surface path patterns
+const API_SURFACE_PATTERNS = [
+  /\/api\//,
+  /\/routes\//,
+];
+
+/**
+ * Check whether all changed lines in a file differ only by whitespace.
+ */
+function isFormattingOnly(file: DiffFile): boolean {
+  if (file.hunks.length === 0) return false;
+
+  for (const hunk of file.hunks) {
+    // For each hunk, check that all additions and deletions pair up exactly
+    // when whitespace is stripped. This detects formatting-only changes.
+    const adds = hunk.changes
+      .filter((c) => c.type === "add")
+      .map((c) => c.content.replace(/\s/g, ""));
+    const deletes = hunk.changes
+      .filter((c) => c.type === "delete")
+      .map((c) => c.content.replace(/\s/g, ""));
+
+    // If there are only adds with no deletes (or vice versa), it's not formatting-only
+    if (adds.length === 0 || deletes.length === 0) return false;
+
+    // Every add should have a matching delete (whitespace-normalized)
+    const deleteBag = [...deletes];
+    for (const add of adds) {
+      const idx = deleteBag.indexOf(add);
+      if (idx === -1) return false;
+      deleteBag.splice(idx, 1);
+    }
+    // All deletes should be consumed
+    if (deleteBag.length > 0) return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check whether all added/deleted lines are import or require statements.
+ */
+function isImportOnly(file: DiffFile): boolean {
+  if (file.hunks.length === 0) return false;
+
+  const importPattern = /^\s*(import\s|export\s.*from\s|const\s+\w+\s*=\s*require\(|require\()/;
+
+  for (const hunk of file.hunks) {
+    for (const change of hunk.changes) {
+      if (change.type === "context") continue;
+      const trimmed = change.content.trim();
+      // Skip empty lines
+      if (trimmed === "") continue;
+      if (!importPattern.test(trimmed)) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Check whether a file path matches common config file patterns.
+ */
+function isMechanicalConfigFile(path: string): boolean {
+  return MECHANICAL_CONFIG_PATTERNS.some((re) => re.test(path));
+}
+
+/**
+ * Check whether a file looks like a public API surface with significant additions.
+ */
+function isApiSurface(file: DiffFile): boolean {
+  // Path-based: contains api/ or routes/
+  if (API_SURFACE_PATTERNS.some((re) => re.test(file.path))) return true;
+
+  // index.ts/index.js with many additions (re-export barrel or entry point)
+  const basename = file.path.slice(file.path.lastIndexOf("/") + 1);
+  if ((basename === "index.ts" || basename === "index.js") && file.additions >= 10) {
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * Categorize files into critical / notable / mechanical buckets.
- * M0: all files go into "notable"; critical and mechanical are empty.
+ *
+ * Critical: security patterns, high complexity (>= 8), or public API surface.
+ * Mechanical: pure renames, formatting-only, config files, import-only changes.
+ * Notable: everything else.
  */
 export function categorizeFiles(files: DiffFile[]): FileTriage {
-  const notable: AnnotatedChange[] = files.map((f) => ({
-    file: f.path,
-    description: `${f.status} (${f.language || "unknown"}) +${f.additions} -${f.deletions}`,
-    reason: "Uncategorized in M0 — placed in notable by default",
-  }));
+  const critical: AnnotatedChange[] = [];
+  const notable: AnnotatedChange[] = [];
+  const mechanical: AnnotatedChange[] = [];
 
-  return {
-    critical: [],
-    notable,
-    mechanical: [],
-  };
+  // Pre-compute security patterns and complexity scores for all files
+  const securityFlags = detectSecurityPatterns(files);
+  const complexityScores = computeComplexityScores(files);
+
+  // Build lookup maps
+  const securityByFile = new Map<string, PatternFlag[]>();
+  for (const flag of securityFlags) {
+    const existing = securityByFile.get(flag.file) || [];
+    existing.push(flag);
+    securityByFile.set(flag.file, existing);
+  }
+
+  const complexityByFile = new Map<string, ComplexityScore>();
+  for (const score of complexityScores) {
+    complexityByFile.set(score.path, score);
+  }
+
+  for (const file of files) {
+    const description = `${file.status} (${file.language || "unknown"}) +${file.additions} -${file.deletions}`;
+    const fileSecurityFlags = securityByFile.get(file.path);
+    const fileComplexity = complexityByFile.get(file.path);
+
+    // ── Critical checks ──
+    const criticalReasons: string[] = [];
+
+    if (fileSecurityFlags && fileSecurityFlags.length > 0) {
+      const patterns = fileSecurityFlags.map((f) => f.pattern);
+      const unique = [...new Set(patterns)];
+      criticalReasons.push(`security patterns detected: ${unique.join(", ")}`);
+    }
+
+    if (fileComplexity && fileComplexity.score >= 8) {
+      criticalReasons.push(`high complexity score (${fileComplexity.score}/10)`);
+    }
+
+    if (isApiSurface(file)) {
+      criticalReasons.push("modifies public API surface");
+    }
+
+    if (criticalReasons.length > 0) {
+      critical.push({
+        file: file.path,
+        description,
+        reason: `Critical: ${criticalReasons.join("; ")}`,
+      });
+      continue;
+    }
+
+    // ── Mechanical checks ──
+    const isPureRename =
+      file.status === "renamed" && file.additions === 0 && file.deletions === 0;
+
+    if (isPureRename) {
+      mechanical.push({
+        file: file.path,
+        description,
+        reason: "Mechanical: pure rename with no content changes",
+      });
+      continue;
+    }
+
+    if (isFormattingOnly(file)) {
+      mechanical.push({
+        file: file.path,
+        description,
+        reason: "Mechanical: formatting/whitespace-only changes",
+      });
+      continue;
+    }
+
+    if (isMechanicalConfigFile(file.path)) {
+      mechanical.push({
+        file: file.path,
+        description,
+        reason: "Mechanical: config file change",
+      });
+      continue;
+    }
+
+    if (file.hunks.length > 0 && isImportOnly(file)) {
+      mechanical.push({
+        file: file.path,
+        description,
+        reason: "Mechanical: import/require-only changes",
+      });
+      continue;
+    }
+
+    // ── Notable (default) ──
+    notable.push({
+      file: file.path,
+      description,
+      reason: "Notable: requires review",
+    });
+  }
+
+  return { critical, notable, mechanical };
 }
 
 // ─── File Stats ───
