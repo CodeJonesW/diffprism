@@ -86,9 +86,45 @@ Use this pattern:
 
 You can also check for feedback without blocking by calling \`get_review_result\` without \`wait\` at natural breakpoints (between tasks, before committing, etc.).
 
+## Self-Review: Headless Analysis Tools
+
+DiffPrism provides two headless tools that return analysis data as JSON without opening a browser. Use these to check your own work before requesting human review.
+
+### Available Headless Tools
+
+- **\`mcp__diffprism__get_diff\`** — Returns a structured \`DiffSet\` (files, hunks, additions/deletions) for a given diff ref. Use this to inspect exactly what changed.
+- **\`mcp__diffprism__analyze_diff\`** — Returns a \`ReviewBriefing\` with summary, file triage, impact detection, complexity scores, test coverage gaps, and pattern flags (security issues, TODOs, console.logs left in, etc.).
+
+Both accept a \`diff_ref\` parameter: \`"staged"\`, \`"unstaged"\`, \`"working-copy"\`, or a git range like \`"HEAD~3..HEAD"\`.
+
+### Self-Review Loop
+
+When you've finished writing code and before requesting human review, use this pattern:
+
+1. **Analyze your changes:** Call \`mcp__diffprism__analyze_diff\` with \`diff_ref: "working-copy"\`
+2. **Check the briefing for issues:**
+   - \`patterns\` — Look for console.logs, TODOs, security flags, disabled tests
+   - \`testCoverage\` — Check if changed source files have corresponding test changes
+   - \`complexity\` — Review high-complexity scores
+   - \`impact.newDependencies\` — Verify any new deps are intentional
+   - \`impact.breakingChanges\` — Confirm breaking changes are expected
+3. **Fix any issues found** — Remove debug statements, add missing tests, address security flags
+4. **Re-analyze** — Run \`analyze_diff\` again to confirm the issues are resolved
+5. **Open for human review** — Once clean, use \`/review\` or \`open_review\` for final human sign-off
+
+This loop catches common issues (leftover console.logs, missing tests, security anti-patterns) before the human reviewer sees them, making reviews faster and more focused.
+
+### When to Use Headless Tools
+
+- **After completing a coding task** — Self-check before requesting review
+- **During implementation** — Periodically check for patterns and issues as you work
+- **Before committing** — Quick sanity check on what's about to be committed
+- **Do NOT use these as a replacement for human review** — They complement, not replace, \`/review\`
+
 ## Behavior Rules
 
 - **IMPORTANT: Do NOT open reviews automatically.** Only open a review when the user explicitly invokes \`/review\` or directly asks for a review.
 - Do NOT open reviews before commits, after code changes, or at any other time unless the user requests it.
+- Headless tools (\`get_diff\`, \`analyze_diff\`) can be used proactively during development without explicit user request — they don't open a browser or interrupt the user.
 - Power users can create \`diffprism.config.json\` manually to customize defaults (diff scope, reasoning).
 `;

@@ -37,15 +37,24 @@ When using the global server, users get **native desktop notifications** when a 
 ### New: Dismiss Reviews (v0.22.0)
 A **Dismiss** button lets users close a review without approving or requesting changes — useful when the agent is still working, the review was triggered by mistake, or no feedback is needed. Dismiss unblocks MCP polling so the agent isn't left hanging.
 
+### New: Headless Agent Tools — Agent Self-Review (v0.29.0)
+Two new MCP tools let agents **analyze their own code changes** without opening a browser:
+- **`get_diff`** — Returns a structured `DiffSet` (files, hunks, line-level changes) as JSON. Agents can inspect exactly what changed.
+- **`analyze_diff`** — Returns a `ReviewBriefing` with summary, file triage, impact detection (affected modules, tests, dependencies, breaking changes), complexity scores, test coverage gaps, and pattern flags (security issues, console.logs, TODOs, disabled tests).
+
+This enables the **agent self-review loop**: agent writes code → calls `analyze_diff` → fixes issues it finds (removes debug statements, adds missing tests, addresses security flags) → re-analyzes until clean → then opens a human review via `/review`. The human reviewer sees cleaner diffs because the agent already caught the obvious issues.
+
+This is DiffPrism's first step toward **Posture 2: Agent as Self-Reviewer** — agents that proactively check their own work using the same analysis engine that powers the briefing bar in the review UI.
+
 ### Other New Features
 - **Split (side-by-side) diff view** — Toggle between unified and split views
 - **Dark/light mode toggle** — Was dark-only, now has a toggle with theme persistence
-- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status, `?` opens hotkey guide
+- **Keyboard shortcuts** — `j`/`k` navigate files, `n`/`p` navigate hunks, `c` to comment, `s` cycles file status, `?` opens hotkey guide
 - **File-level status tracking** — Mark each file as reviewed/approved/needs_changes
 - **Agent reasoning panel** — Collapsible panel showing why the agent made changes
 - **Global setup** — `diffprism setup --global` configures at `~/.claude/` paths, no git repo required. Auto-runs on `diffprism server` start.
 - **Teardown command** — `diffprism teardown` cleanly reverses all setup changes (MCP config, hooks, skill, gitignore)
-- **v0.24.1 is current version**
+- **v0.29.0 is current version**
 
 ## Current Landing Page Structure
 
@@ -64,9 +73,9 @@ The Why page (`/why`) and Blog page (`/blog`) exist as separate routes.
 
 ### Hero Section
 - Remove "Watch Mode" from the badge — it's no longer the only new thing
-- Update the badge to something like "Open source · Local-first · Multi-agent"
+- Update the badge to something like "Open source · Local-first · Agent-native"
 - Keep the headline: "Code review for agent-generated changes" (still accurate)
-- Update the subheading to communicate the broader value prop — not just watch mode, but the full story: review agent changes in a browser UI before they become PRs, whether that's one agent or many running in parallel
+- Update the subheading to communicate the broader value prop — not just watch mode, but the full story: review agent changes in a browser UI before they become PRs, whether that's one agent or many running in parallel. Consider weaving in the self-review angle: agents that check their own work before asking you to review.
 
 ### Watch Mode Section → Modes / Multi-Agent Section
 - The current Watch Mode comparison section should evolve to showcase all three modes, with the **Global Server** as the most prominent new capability
@@ -79,9 +88,10 @@ The Why page (`/why`) and Blog page (`/blog`) exist as separate routes.
 
 ### Features Grid
 - Add **Multi-session dashboard** as a feature card — session list with status badges, branch info, change stats, click to switch between reviews, desktop notifications when reviews arrive
+- Add **Agent self-review** as a feature card — agents analyze their own changes before requesting human review using headless MCP tools (`get_diff`, `analyze_diff`). Catches console.logs, security issues, missing tests, high complexity automatically. The self-review loop means cleaner diffs when you open the browser.
 - Add **Split diff view** as a feature or mention within the existing diff viewer card
 - Update existing cards if needed (e.g., the Watch Mode card could mention it's one of three modes)
-- Consider adding **Keyboard navigation** as a feature card (j/k files, s status, ? help)
+- Consider adding **Keyboard navigation** as a feature card (j/k files, n/p hunks, c comment, s status, ? help)
 - Add or mention **Quick actions** — Approve & Commit or Approve, Commit & PR directly from the review UI, closing the review→commit loop
 - Add or mention **Dismiss** — clean exit for reviews that aren't needed, prevents agents from hanging
 
@@ -94,13 +104,20 @@ The Why page (`/why`) and Blog page (`/blog`) exist as separate routes.
 ### CTA
 - Update from "Ready to try Watch Mode?" to something broader — "Ready to review agent code?" or "Ready to try DiffPrism?"
 
-## Current Install Commands (unchanged)
+## Current Install Commands
 ```bash
 npx diffprism setup           # One-command setup for Claude Code
 diffprism watch --staged      # Watch mode
 diffprism server              # Global multi-session server
 diffprism review              # One-shot review
 diffprism teardown            # Clean removal
+```
+
+Agent self-review (via MCP — no CLI needed):
+```
+Agent calls analyze_diff("working-copy") → gets ReviewBriefing JSON
+Agent fixes flagged issues → calls analyze_diff again → clean
+Agent calls open_review for human sign-off
 ```
 
 ## Tone & Style Guidelines
@@ -130,7 +147,8 @@ diffprism teardown            # Clean removal
 - Quick action menu: Approve & Commit, Approve Commit & PR (executes post-review action without extra confirmation)
 - Structured JSON results returned to agent (includes optional `postReviewAction` field)
 - Multi-session dashboard with status badges, branch info, file counts, desktop notifications for new sessions
-- MCP tools: open_review, update_review_context, get_review_result
+- Headless agent tools: `get_diff` (structured diff data) and `analyze_diff` (full review briefing with patterns, complexity, test gaps) — enables agent self-review loop
+- MCP tools: open_review, update_review_context, get_review_result, get_diff, analyze_diff
 - CLI: review, watch, serve, setup, server, teardown, start
 - Zero-config: `npx diffprism setup` handles everything
 - Global setup: `diffprism setup --global` for no-repo-required config

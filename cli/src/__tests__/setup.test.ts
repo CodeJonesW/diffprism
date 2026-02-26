@@ -375,6 +375,8 @@ describe("setup command", () => {
                 "mcp__diffprism__open_review",
                 "mcp__diffprism__update_review_context",
                 "mcp__diffprism__get_review_result",
+                "mcp__diffprism__get_diff",
+                "mcp__diffprism__analyze_diff",
               ],
             },
             hooks: {
@@ -403,6 +405,8 @@ describe("setup command", () => {
         "mcp__diffprism__open_review",
         "mcp__diffprism__update_review_context",
         "mcp__diffprism__get_review_result",
+        "mcp__diffprism__get_diff",
+        "mcp__diffprism__analyze_diff",
       ]);
     });
   });
@@ -751,6 +755,8 @@ describe("setup command", () => {
                 "mcp__diffprism__open_review",
                 "mcp__diffprism__update_review_context",
                 "mcp__diffprism__get_review_result",
+                "mcp__diffprism__get_diff",
+                "mcp__diffprism__analyze_diff",
               ],
             },
           });

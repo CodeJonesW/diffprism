@@ -98,6 +98,8 @@ function setupClaudeSettings(
     "mcp__diffprism__open_review",
     "mcp__diffprism__update_review_context",
     "mcp__diffprism__get_review_result",
+    "mcp__diffprism__get_diff",
+    "mcp__diffprism__analyze_diff",
   ];
 
   const allPresent = toolNames.every((t) => allow.includes(t));
@@ -412,6 +414,8 @@ export function isGlobalSetupDone(): boolean {
     "mcp__diffprism__open_review",
     "mcp__diffprism__update_review_context",
     "mcp__diffprism__get_review_result",
+    "mcp__diffprism__get_diff",
+    "mcp__diffprism__analyze_diff",
   ];
 
   return toolNames.every((t) => allow.includes(t));
