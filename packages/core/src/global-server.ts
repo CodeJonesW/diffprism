@@ -765,6 +765,14 @@ export async function startGlobalServer(
           payload: session.payload,
         };
         ws.send(JSON.stringify(msg));
+
+        // Send any existing annotations
+        for (const annotation of session.annotations) {
+          ws.send(JSON.stringify({
+            type: "annotation:added",
+            payload: annotation,
+          } satisfies ServerMessage));
+        }
       }
     } else {
       // No specific session requested — send full session list (server mode UI)
@@ -787,6 +795,14 @@ export async function startGlobalServer(
             type: "review:init",
             payload: session.payload,
           } satisfies ServerMessage));
+
+          // Send any existing annotations
+          for (const annotation of session.annotations) {
+            ws.send(JSON.stringify({
+              type: "annotation:added",
+              payload: annotation,
+            } satisfies ServerMessage));
+          }
         }
       }
     }
@@ -820,6 +836,14 @@ export async function startGlobalServer(
               type: "review:init",
               payload: session.payload,
             } satisfies ServerMessage));
+
+            // Send any existing annotations
+            for (const annotation of session.annotations) {
+              ws.send(JSON.stringify({
+                type: "annotation:added",
+                payload: annotation,
+              } satisfies ServerMessage));
+            }
           }
         } else if (msg.type === "session:close") {
           const closedId = msg.payload.sessionId;

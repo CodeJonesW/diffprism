@@ -38,6 +38,15 @@ async function reviewViaGlobalServer(
     description?: string;
     reasoning?: string;
     cwd?: string;
+    annotations?: Array<{
+      file: string;
+      line: number;
+      body: string;
+      type: "finding" | "suggestion" | "question" | "warning";
+      confidence?: number;
+      category?: string;
+      source_agent?: string;
+    }>;
   },
 ): Promise<ReviewResult> {
   const cwd = options.cwd ?? process.cwd();
@@ -100,7 +109,32 @@ async function reviewViaGlobalServer(
   lastGlobalSessionId = sessionId;
   lastGlobalServerInfo = serverInfo;
 
-  // 5. Poll for result
+  // 5. POST initial annotations if provided
+  if (options.annotations?.length) {
+    for (const ann of options.annotations) {
+      await fetch(
+        `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file: ann.file,
+            line: ann.line,
+            body: ann.body,
+            type: ann.type,
+            confidence: ann.confidence ?? 1,
+            category: ann.category ?? "other",
+            source: {
+              agent: ann.source_agent ?? "unknown",
+              tool: "open_review",
+            },
+          }),
+        },
+      );
+    }
+  }
+
+  // 6. Poll for result
   const pollIntervalMs = 2000;
   const maxWaitMs = 600 * 1000; // 10 minutes
   const start = Date.now();
@@ -151,8 +185,44 @@ export async function startMcpServer(): Promise<void> {
         .string()
         .optional()
         .describe("Agent reasoning about why these changes were made"),
+      annotations: z
+        .array(
+          z.object({
+            file: z.string().describe("File path within the diff to annotate"),
+            line: z.number().describe("Line number to annotate"),
+            body: z.string().describe("The annotation text"),
+            type: z
+              .enum(["finding", "suggestion", "question", "warning"])
+              .describe("Type of annotation"),
+            confidence: z
+              .number()
+              .min(0)
+              .max(1)
+              .optional()
+              .describe("Confidence in the finding (0-1, defaults to 1)"),
+            category: z
+              .enum([
+                "security",
+                "performance",
+                "convention",
+                "correctness",
+                "complexity",
+                "test-coverage",
+                "documentation",
+                "other",
+              ])
+              .optional()
+              .describe("Category of the finding (defaults to 'other')"),
+            source_agent: z
+              .string()
+              .optional()
+              .describe("Agent identifier (e.g., 'security-reviewer')"),
+          }),
+        )
+        .optional()
+        .describe("Initial annotations to attach to the review"),
     },
-    async ({ diff_ref, title, description, reasoning }) => {
+    async ({ diff_ref, title, description, reasoning, annotations }) => {
       try {
         // Check for a running global server
         const serverInfo = await isServerAlive();
@@ -164,6 +234,7 @@ export async function startMcpServer(): Promise<void> {
             description,
             reasoning,
             cwd: process.cwd(),
+            annotations,
           });
 
           return {
