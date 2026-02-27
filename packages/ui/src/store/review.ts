@@ -348,6 +348,19 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         a.id === annotationId ? { ...a, dismissed: true } : a,
       ),
     }));
+
+    // Persist dismissal to server (fire-and-forget)
+    const params = new URLSearchParams(window.location.search);
+    const httpPort = params.get("httpPort");
+    const sessionId = get().reviewId;
+    if (httpPort && sessionId) {
+      fetch(
+        `http://localhost:${httpPort}/api/reviews/${sessionId}/annotations/${annotationId}/dismiss`,
+        { method: "POST" },
+      ).catch(() => {
+        // Ignore network errors — local state is already updated
+      });
+    }
   },
 
   selectSession: (sessionId: string) => {

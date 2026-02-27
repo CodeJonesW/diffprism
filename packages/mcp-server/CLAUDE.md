@@ -11,7 +11,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 ### `open_review`
 - **Params:** `diff_ref` (required), `title`, `description`, `reasoning` (all optional)
 - **Behavior:** Detects running global server via `isServerAlive()`. If found, computes diff locally with `getDiff()` + `analyze()`, POSTs to `/api/reviews`, then polls `/api/reviews/:id/result`. If no global server, falls back to `startReview()` with `silent: true` (ephemeral browser tab).
-- **Returns:** `ReviewResult` as JSON text content
+- **Returns:** `ReviewResult` as JSON text content. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action via quick actions in the FileBrowser.
 
 ### `update_review_context`
 - Routes to global server session if `lastGlobalSessionId` exists, otherwise falls back to watch file.
