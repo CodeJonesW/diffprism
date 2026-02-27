@@ -62,6 +62,7 @@ export interface ReviewResult {
   fileStatuses?: Record<string, FileReviewStatus>;
   summary?: string;
   postReviewAction?: PostReviewAction;
+  postToGithub?: boolean;
 }
 
 // ─── Annotation Types ───
@@ -199,12 +200,24 @@ export interface WorktreeMetadata {
   mainWorktreePath?: string;
 }
 
+export interface GitHubPrMetadata {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  author: string;
+  url: string;
+  baseBranch: string;
+  headBranch: string;
+}
+
 export interface ReviewMetadata {
   title?: string;
   description?: string;
   reasoning?: string;
   currentBranch?: string;
   worktree?: WorktreeMetadata;
+  githubPr?: GitHubPrMetadata;
 }
 
 export interface DiffUpdatePayload {

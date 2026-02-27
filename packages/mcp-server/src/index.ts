@@ -18,6 +18,15 @@ import type {
 } from "@diffprism/core";
 import { getDiff, getCurrentBranch, detectWorktree } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
+import {
+  resolveGitHubToken,
+  parsePrRef,
+  createGitHubClient,
+  fetchPullRequest,
+  fetchPullRequestDiff,
+  normalizePr,
+  submitGitHubReview,
+} from "@diffprism/github";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -876,6 +885,171 @@ export async function startMcpServer(): Promise<void> {
             {
               type: "text" as const,
               text: JSON.stringify({ flagged, sessionId }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "review_pr",
+    "Open a browser-based code review for a GitHub pull request. Fetches the PR diff, runs DiffPrism analysis, and opens the review UI. Blocks until the engineer submits their review decision. Optionally posts the review back to GitHub.",
+    {
+      pr: z
+        .string()
+        .describe(
+          'GitHub PR reference: "owner/repo#123" or "https://github.com/owner/repo/pull/123"',
+        ),
+      title: z.string().optional().describe("Override review title"),
+      reasoning: z
+        .string()
+        .optional()
+        .describe("Agent reasoning about the PR changes"),
+      post_to_github: z
+        .boolean()
+        .optional()
+        .describe("Post the review back to GitHub after submission (default: false)"),
+    },
+    async ({ pr, title, reasoning, post_to_github }) => {
+      try {
+        // 1. Resolve GitHub token
+        const token = resolveGitHubToken();
+
+        // 2. Parse PR ref
+        const { owner, repo, number } = parsePrRef(pr);
+
+        // 3. Fetch PR data
+        const client = createGitHubClient(token);
+        const [prMetadata, rawDiff] = await Promise.all([
+          fetchPullRequest(client, owner, repo, number),
+          fetchPullRequestDiff(client, owner, repo, number),
+        ]);
+
+        if (!rawDiff.trim()) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({
+                  decision: "approved",
+                  comments: [],
+                  summary: "PR has no changes to review.",
+                }, null, 2),
+              },
+            ],
+          };
+        }
+
+        // 4. Normalize to DiffPrism types
+        const { payload } = normalizePr(rawDiff, prMetadata, { title, reasoning });
+
+        // 5. Route to global server or fall back to in-process
+        const serverInfo = await isServerAlive();
+
+        let result: ReviewResult;
+
+        if (serverInfo) {
+          // POST to global server
+          const createResponse = await fetch(
+            `http://localhost:${serverInfo.httpPort}/api/reviews`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                payload,
+                projectPath: `github:${owner}/${repo}`,
+                diffRef: `PR #${number}`,
+              }),
+            },
+          );
+
+          if (!createResponse.ok) {
+            throw new Error(`Global server returned ${createResponse.status}`);
+          }
+
+          const { sessionId } = (await createResponse.json()) as { sessionId: string };
+          lastGlobalSessionId = sessionId;
+          lastGlobalServerInfo = serverInfo;
+
+          // Poll for result
+          const pollIntervalMs = 2000;
+          const maxWaitMs = 600 * 1000;
+          const start = Date.now();
+
+          while (Date.now() - start < maxWaitMs) {
+            const resultResponse = await fetch(
+              `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
+            );
+
+            if (resultResponse.ok) {
+              const data = (await resultResponse.json()) as {
+                result: ReviewResult | null;
+                status: string;
+              };
+              if (data.result) {
+                result = data.result;
+                break;
+              }
+            }
+
+            await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          }
+
+          result ??= { decision: "dismissed", comments: [], summary: "Review timed out." };
+        } else {
+          // In-process review with injected payload
+          const isDev = fs.existsSync(
+            path.join(process.cwd(), "packages", "ui", "src", "App.tsx"),
+          );
+
+          result = await startReview({
+            diffRef: `PR #${number}`,
+            title: payload.metadata.title,
+            description: payload.metadata.description,
+            reasoning: payload.metadata.reasoning,
+            cwd: process.cwd(),
+            silent: true,
+            dev: isDev,
+            injectedPayload: payload,
+          });
+        }
+
+        // 6. Optionally post review back to GitHub
+        if (post_to_github && result.decision !== "dismissed") {
+          const posted = await submitGitHubReview(client, owner, repo, number, result);
+          if (posted) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify({
+                    ...result,
+                    githubReviewId: posted.reviewId,
+                    githubReviewUrl: `${prMetadata.url}#pullrequestreview-${posted.reviewId}`,
+                  }, null, 2),
+                },
+              ],
+            };
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(result, null, 2),
             },
           ],
         };

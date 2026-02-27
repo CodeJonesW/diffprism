@@ -103,6 +103,7 @@ function setupClaudeSettings(
     "mcp__diffprism__add_annotation",
     "mcp__diffprism__get_review_state",
     "mcp__diffprism__flag_for_attention",
+    "mcp__diffprism__review_pr",
   ];
 
   const allPresent = toolNames.every((t) => allow.includes(t));
@@ -422,6 +423,7 @@ export function isGlobalSetupDone(): boolean {
     "mcp__diffprism__add_annotation",
     "mcp__diffprism__get_review_state",
     "mcp__diffprism__flag_for_attention",
+    "mcp__diffprism__review_pr",
   ];
 
   return toolNames.every((t) => allow.includes(t));
