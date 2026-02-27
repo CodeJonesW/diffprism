@@ -297,7 +297,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
             {basename(file.path)}
           </div>
           {dir && (
-            <div className="text-xs text-text-secondary/70 dark:text-text-secondary/90 truncate">
+            <div className="text-xs text-text-secondary truncate">
               {dir}
             </div>
           )}
