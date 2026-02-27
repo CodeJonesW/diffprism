@@ -7,8 +7,8 @@ import { SessionList } from "./components/SessionList";
 import type { ReviewResult } from "./types";
 
 export default function App() {
-  const { permission: notificationPermission, enabled: notificationsEnabled, toggle: toggleNotifications, notifyNewSession } = useNotifications({ onSessionSelect: handleSelectSession });
-  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket({ onSessionAdded: notifyNewSession });
+  const { permission: notificationPermission, enabled: notificationsEnabled, toggle: toggleNotifications, notifyNewSession, notifySessionUpdated, notifyDiffUpdated, notifyAnnotationAdded } = useNotifications({ onSessionSelect: handleSelectSession });
+  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket({ onSessionAdded: notifyNewSession, onSessionUpdated: notifySessionUpdated, onDiffUpdated: notifyDiffUpdated, onAnnotationAdded: notifyAnnotationAdded });
   const {
     diffSet,
     metadata,

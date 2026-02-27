@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { SessionSummary } from "../types.js";
+import type { SessionSummary, Annotation } from "../types.js";
 
 export type NotificationPermission = "default" | "granted" | "denied";
 
@@ -30,6 +30,9 @@ interface UseNotificationsReturn {
   enabled: boolean;
   toggle: () => void;
   notifyNewSession: (session: SessionSummary) => void;
+  notifySessionUpdated: (session: SessionSummary) => void;
+  notifyDiffUpdated: (fileCount: number) => void;
+  notifyAnnotationAdded: (annotation: Annotation) => void;
 }
 
 export function useNotifications(options?: UseNotificationsOptions): UseNotificationsReturn {
@@ -73,8 +76,8 @@ export function useNotifications(options?: UseNotificationsOptions): UseNotifica
     setStoredPreference(next);
   }, [hasNotificationApi, permission, enabled, requestPermission]);
 
-  const notifyNewSession = useCallback(
-    async (session: SessionSummary) => {
+  const sendNotification = useCallback(
+    async (title: string, body: string, tag?: string, onClick?: () => void) => {
       if (!hasNotificationApi) return;
       if (document.visibilityState !== "hidden") return;
       if (!enabled) return;
@@ -85,28 +88,72 @@ export function useNotifications(options?: UseNotificationsOptions): UseNotifica
       }
       if (currentPermission !== "granted") return;
 
-      const title = session.title || "New Review Ready";
-      const parts: string[] = [];
-      if (session.branch) parts.push(session.branch);
-      parts.push(
-        `${session.fileCount} file${session.fileCount !== 1 ? "s" : ""}, +${session.additions} -${session.deletions}`,
-      );
-      const body = parts.join(" · ");
-
       const notification = new Notification(title, {
         body,
         icon: "/favicon.svg",
-        tag: session.id,
+        tag,
       });
 
       notification.onclick = () => {
         window.focus();
-        onSessionSelectRef.current?.(session.id);
+        onClick?.();
         notification.close();
       };
     },
     [hasNotificationApi, enabled, permission, requestPermission],
   );
 
-  return { permission, enabled, toggle, notifyNewSession };
+  const notifyNewSession = useCallback(
+    async (session: SessionSummary) => {
+      const title = session.title || "New Review Ready";
+      const parts: string[] = [];
+      if (session.branch) parts.push(session.branch);
+      parts.push(
+        `${session.fileCount} file${session.fileCount !== 1 ? "s" : ""}, +${session.additions} -${session.deletions}`,
+      );
+
+      await sendNotification(title, parts.join(" · "), session.id, () => {
+        onSessionSelectRef.current?.(session.id);
+      });
+    },
+    [sendNotification],
+  );
+
+  const notifySessionUpdated = useCallback(
+    async (session: SessionSummary) => {
+      if (session.status !== "submitted") return;
+
+      await sendNotification(
+        "Review Submitted",
+        session.title || `${session.fileCount} files reviewed`,
+        `submitted-${session.id}`,
+        () => { onSessionSelectRef.current?.(session.id); },
+      );
+    },
+    [sendNotification],
+  );
+
+  const notifyDiffUpdated = useCallback(
+    async (fileCount: number) => {
+      await sendNotification(
+        "Diff Updated",
+        `${fileCount} file${fileCount !== 1 ? "s" : ""} changed`,
+        "diff-update",
+      );
+    },
+    [sendNotification],
+  );
+
+  const notifyAnnotationAdded = useCallback(
+    async (annotation: Annotation) => {
+      await sendNotification(
+        `Annotation from ${annotation.source.agent}`,
+        `${annotation.file}:${annotation.line} — ${annotation.body.slice(0, 100)}`,
+        `annotation-${annotation.id}`,
+      );
+    },
+    [sendNotification],
+  );
+
+  return { permission, enabled, toggle, notifyNewSession, notifySessionUpdated, notifyDiffUpdated, notifyAnnotationAdded };
 }

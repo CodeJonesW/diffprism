@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   AlertTriangle,
   Lightbulb,
@@ -23,6 +23,40 @@ interface AnnotationPanelProps {
   annotations: Annotation[];
   onDismiss: (annotationId: string) => void;
   onNavigate: (file: string) => void;
+}
+
+function AnnotationBody({ body }: { body: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = body.length > 120 || body.includes("\n");
+
+  const toggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpanded((v) => !v);
+  }, []);
+
+  if (!isLong) {
+    return <p className="text-xs text-text-primary">{body}</p>;
+  }
+
+  if (expanded) {
+    return (
+      <div>
+        <p className="text-xs text-text-primary whitespace-pre-wrap">{body}</p>
+        <button onClick={toggle} className="text-[10px] text-accent hover:underline mt-0.5 cursor-pointer">
+          Show less
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-text-primary truncate">{body}</p>
+      <button onClick={toggle} className="text-[10px] text-accent hover:underline mt-0.5 cursor-pointer">
+        Show more
+      </button>
+    </div>
+  );
 }
 
 export function AnnotationPanel({
@@ -112,9 +146,7 @@ export function AnnotationPanel({
                         {annotation.category}
                       </span>
                     </div>
-                    <p className="text-xs text-text-primary truncate">
-                      {annotation.body}
-                    </p>
+                    <AnnotationBody body={annotation.body} />
                   </div>
 
                   {!annotation.dismissed && (
