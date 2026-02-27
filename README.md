@@ -1,209 +1,80 @@
 # DiffPrism
 
-Local-first code review tool for agent-generated code changes. Opens a browser-based diff viewer from the CLI or Claude Code (via MCP).
+Browser-based code review for agent-generated changes. Review what your AI wrote before it ships.
 
-DiffPrism gives you a visual review step for AI-written code — stage your changes, run the tool, and a browser window opens with a full-featured diff viewer. Review inline, leave comments, and your decision is returned as structured JSON.
+## Try It Now
+
+Make sure you have uncommitted changes in a git repo, then:
+
+```bash
+npx diffprism review
+```
+
+A browser window opens with a full diff viewer. Review the changes, leave inline comments, and click **Approve** or **Request Changes**. Your decision is returned as JSON.
+
+That's the core loop. Everything below is about wiring this into your agent workflow so it happens automatically.
+
+## Setup for Claude Code
+
+```bash
+npx diffprism setup     # run from your project root, then restart Claude Code
+```
+
+This registers DiffPrism as an MCP tool and installs the `/review` skill.
+
+**After restarting Claude Code, you have two ways to trigger a review:**
+
+1. **Type `/review`** — Claude opens your current changes in DiffPrism's browser UI, waits for your decision, and acts on it (e.g., commits if you approve).
+
+2. **Ask Claude to review** — Say "review my changes" or "open a review" and Claude will call the tool.
+
+The review blocks Claude until you submit your decision in the browser. If you request changes, Claude reads your comments and fixes them. If you approve via the quick action menu, Claude commits or opens a PR automatically.
+
+### Try it right now
+
+1. Ask Claude to make a small change (e.g., "add a hello world function")
+2. Type `/review`
+3. A browser tab opens with the diff — review it and click Approve
+
+## Use from the CLI
+
+```bash
+diffprism review                    # Review all changes (staged + unstaged)
+diffprism review --staged           # Staged changes only
+diffprism review HEAD~3             # Last 3 commits
+diffprism review main..feature      # Branch diff
+```
+
+## Multi-Agent Reviews
+
+Running multiple Claude Code sessions (e.g., in git worktrees)? All reviews appear in one browser tab.
+
+The server starts automatically on first use — no manual setup needed. Each review shows up as a session with status badges, branch info, and change stats. Click to switch between reviews. Desktop notifications alert you when new reviews arrive.
+
+```bash
+diffprism server status             # Check if server is running
+diffprism server stop               # Stop the background server
+```
 
 ## Features
 
-- **Syntax-highlighted diffs** — unified or split (side-by-side) view with toggle
-- **Inline line-level commenting** — click any line to add comments typed as `must_fix`, `suggestion`, `question`, or `nitpick`
-- **File-level review status** — mark each file as reviewed, approved, or needs changes
-- **Review briefing bar** — summary stats, complexity scoring, test coverage gaps, pattern flags, and dependency tracking
+- **Syntax-highlighted diffs** — unified or split (side-by-side) view
+- **Inline commenting** — click any line to add `must_fix`, `suggestion`, `question`, or `nitpick` comments
+- **Review briefing** — complexity scores, test coverage gaps, pattern flags, dependency tracking
 - **Agent reasoning panel** — see why the AI made each change
-- **Dark/light mode** — toggle with theme persistence
-- **Keyboard shortcuts** — `j`/`k` navigate files, `s` cycles file status, `Cmd/Ctrl+Enter` saves comments, `?` toggles hotkey guide
-- **Four review decisions** — approve, request changes, approve with comments, or dismiss
-- **Quick actions** — Approve & Commit or Approve, Commit & PR directly from the review UI via the ⋮ menu; the agent executes the action automatically
-- **Branch display** — current git branch shown in the review header
-- **Global server mode** — `diffprism server` runs a persistent multi-session review server, multiple agents post reviews to one browser tab
-- **Multi-session UI** — session list with live status badges, branch info, file counts, and change stats; stale sessions auto-expire
-- **Desktop notifications** — native browser notifications when new review sessions arrive while the tab is backgrounded (global server mode)
-- **One-command setup & teardown** — `diffprism setup` configures Claude Code integration, `diffprism teardown` cleanly reverses it
+- **Quick actions** — Approve & Commit or Approve, Commit & PR from the review UI
+- **Multi-session dashboard** — review multiple agents from one browser tab
+- **Desktop notifications** — get alerted when a new review arrives
+- **GitHub PR review** — review any GitHub PR in DiffPrism's UI
+- **Keyboard shortcuts** — `j`/`k` files, `n`/`p` hunks, `c` comment, `s` status, `?` help
+- **Dark/light mode** — toggle with persistence
 
-## Quick Start
-
-### Use with Claude Code (recommended)
-
-Run this from your project root:
+## Uninstall
 
 ```bash
-npx diffprism setup
+npx diffprism teardown              # Remove from current project
+npx diffprism teardown --global     # Remove global config
 ```
-
-This single command configures everything:
-- Adds `.diffprism` to `.gitignore`
-- Creates `.mcp.json` with the DiffPrism MCP server config
-- Creates `.claude/settings.json` with auto-approve permissions for all 3 MCP tools
-- Installs a Stop hook for watch mode cleanup
-- Installs the `/review` skill so you can type `/review` in Claude Code at any time
-
-After running, restart Claude Code. The first time you use `/review`, Claude will ask your preferences and save them to `diffprism.config.json`.
-
-To remove DiffPrism from a project:
-
-```bash
-npx diffprism teardown
-```
-
-This reverses all changes made by `setup`: removes DiffPrism entries from `.mcp.json`, permissions, hooks, the skill file, `.gitignore`, and the `.diffprism/` directory. Non-DiffPrism entries are preserved.
-
-See the [full setup guide](docs/claude-setup.md) for manual configuration, Claude Desktop config, troubleshooting, and advanced options.
-
-### Use from the CLI
-
-```bash
-# Install globally (or use npx)
-npm install -g diffprism
-
-# Review all changes (staged + unstaged, default)
-diffprism review
-
-# Review staged changes only
-diffprism review --staged
-
-# Review unstaged changes only
-diffprism review --unstaged
-
-# Review a specific ref range
-diffprism review HEAD~3
-diffprism review main..feature-branch
-
-# Add a title to the review
-diffprism review --staged --title "Add auth middleware"
-```
-
-A browser window opens with the diff viewer. Review the changes and click **Approve**, **Request Changes**, **Approve with Comments**, or **Dismiss**. Use the ⋮ menu for quick actions like Approve & Commit.
-
-### Quick Start (setup + watch in one command)
-
-```bash
-# Configure Claude Code integration and start watching in one step
-diffprism start
-
-# With flags
-diffprism start --staged --title "Working on auth"
-```
-
-This runs `diffprism setup` (silently, if already configured) then starts watch mode. Ideal for first-time use or when switching projects.
-
-### Watch Mode (live-updating)
-
-Keep a persistent browser tab that auto-refreshes as files change — ideal for reviewing while an agent is working:
-
-```bash
-# Watch staged changes, auto-refresh on every change
-diffprism watch --staged
-
-# Watch all changes with custom poll interval
-diffprism watch --interval 2000
-
-# Watch unstaged changes
-diffprism watch --unstaged
-```
-
-When `diffprism watch` is running:
-- The browser tab stays open and updates diffs + analysis within 1-2s of file changes
-- Submit a review and it stays open, waiting for the next change
-- File review statuses are preserved for unchanged files
-- Claude Code's `/review` skill automatically detects the watch session and pushes reasoning without blocking
-
-Stop the watcher with `Ctrl+C`.
-
-### Global Server Mode (multi-session)
-
-Run a persistent server that accepts reviews from multiple Claude Code sessions and displays them in one browser tab:
-
-```bash
-# Start the global server (auto-runs global setup if needed)
-diffprism server
-
-# Check status and list active sessions
-diffprism server status
-
-# Stop the server
-diffprism server stop
-```
-
-When the global server is running, MCP tools automatically detect it and route reviews there instead of opening ephemeral browser tabs. Each review appears as a session in the multi-session UI — click to switch between them. Session status badges update live, and submitted sessions auto-expire after 5 minutes.
-
-**Global setup** (optional, `diffprism server` runs this automatically):
-
-```bash
-# Configure skill + permissions globally (no git repo required)
-diffprism setup --global
-
-# Remove global configuration
-diffprism teardown --global
-```
-
-Per-project MCP registration (`.mcp.json`) is still needed via `diffprism setup` in each project.
-
-## MCP Tool Reference
-
-The MCP server exposes three tools:
-
-### `open_review`
-
-Opens a browser-based code review. Blocks until the engineer submits their decision.
-
-| Parameter     | Required | Description                                                       |
-|---------------|----------|-------------------------------------------------------------------|
-| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, `"working-copy"` (staged+unstaged grouped), or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
-| `title`       | No       | Title displayed in the review UI                                  |
-| `description` | No       | Description of the changes                                        |
-| `reasoning`   | No       | Agent reasoning about why the changes were made (shown in the reasoning panel) |
-
-### `update_review_context`
-
-Pushes reasoning/context to a running DiffPrism session (watch mode or global server). Non-blocking — returns immediately.
-
-| Parameter     | Required | Description                                    |
-|---------------|----------|------------------------------------------------|
-| `reasoning`   | No       | Agent reasoning about the current changes      |
-| `title`       | No       | Updated title for the review                   |
-| `description` | No       | Updated description of the changes             |
-
-### `get_review_result`
-
-Fetches the most recent review result from a DiffPrism session (watch mode or global server). The result is marked as consumed after retrieval so it won't be returned again.
-
-| Parameter | Required | Description                                                       |
-|-----------|----------|-------------------------------------------------------------------|
-| `wait`    | No       | If `true`, poll until a result is available (blocks up to timeout) |
-| `timeout` | No       | Max wait time in seconds when `wait=true` (default: 300, max: 600) |
-
-**Returns (all tools):** A `ReviewResult` JSON object:
-
-```json
-{
-  "decision": "approved",
-  "comments": [
-    {
-      "file": "src/index.ts",
-      "line": 42,
-      "body": "Consider adding a null check here",
-      "type": "suggestion"
-    }
-  ],
-  "summary": "Looks good, one minor suggestion."
-}
-```
-
-| Field | Description |
-|-------|-------------|
-| `decision` | `approved`, `changes_requested`, `approved_with_comments`, or `dismissed` |
-| `comments` | Array of inline comments with file, line, body, and type (`must_fix`, `suggestion`, `question`, `nitpick`) |
-| `summary` | Optional reviewer summary |
-| `postReviewAction` | Optional: `"commit"` or `"commit_and_pr"` — set when user selects a quick action from the ⋮ menu |
-
-## How It Works
-
-1. **Extract** — runs `git diff` and parses the output into a structured `DiffSet`
-2. **Analyze** — generates a `ReviewBriefing`: file stats, complexity scores, test gap detection, pattern flags, dependency changes
-3. **Serve** — starts a Vite dev server (React UI) and WebSocket bridge on random ports
-4. **Review** — opens a browser to the diff viewer, waits for your decision
-5. **Return** — cleans up servers and returns the `ReviewResult`
 
 ## Development
 
@@ -211,31 +82,29 @@ Fetches the most recent review result from a DiffPrism session (watch mode or gl
 git clone https://github.com/CodeJonesW/diffprism.git
 cd diffprism
 pnpm install
-pnpm test                                       # Run all tests (Vitest)
-pnpm run build                                  # Build all packages
-pnpm cli review --staged                        # Run CLI from source
-npx tsc --noEmit -p packages/core/tsconfig.json # Type-check a package
+pnpm test
+pnpm run build
+pnpm cli review --staged            # Run CLI from source
 ```
 
 ### Project Structure
 
 ```
-packages/core       — Shared types, pipeline orchestrator, WebSocket bridge, global server
-packages/git        — Git diff extraction + unified diff parser
-packages/analysis   — Deterministic review briefing (complexity, test gaps, patterns)
-packages/ui         — React 19 + Vite 6 + Tailwind + Zustand diff viewer + session list
-packages/mcp-server — MCP tool server, auto-routes to global server when available
-cli/                — Commander CLI (review, start, watch, setup, teardown, server commands)
+packages/core       — Server, types, server-client utilities
+packages/git        — Git diff extraction + parser
+packages/analysis   — Deterministic review briefing
+packages/ui         — React 19 + Vite 6 + Tailwind + Zustand
+packages/mcp-server — MCP tool server (9 tools)
+packages/github     — GitHub PR fetching + review submission
+cli/                — Commander CLI
 ```
 
 ### Requirements
 
 - Node.js >= 20
-- pnpm (for development)
 - Git
 
 ## Documentation
 
-- [Claude Code / Claude Desktop Setup Guide](docs/claude-setup.md) — detailed MCP configuration, auto-approval, and troubleshooting
-- [Workflows Guide](docs/workflows.md) — ephemeral, watch, and global server modes explained
-- [UX Design Notes](docs/ux-design-notes.md) — design decisions, CLI defaults rationale, and multi-agent workflow thinking
+- [Claude Code Setup Guide](docs/usage/claude-setup.md) — detailed configuration and troubleshooting
+- [Dev Testing Guide](docs/usage/dev-testing.md) — running from source
