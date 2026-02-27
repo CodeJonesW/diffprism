@@ -2,13 +2,7 @@ import { useState } from "react";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import type { ReviewComment } from "../../types";
 import { InlineCommentForm } from "./InlineCommentForm";
-
-const TYPE_STYLES: Record<ReviewComment["type"], string> = {
-  must_fix: "bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border-red-300 dark:border-red-500/30",
-  suggestion: "bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30",
-  question: "bg-blue-100 dark:bg-blue-600/20 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-500/30",
-  nitpick: "bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border-gray-300 dark:border-gray-500/30",
-};
+import { COMMENT_TYPE_STYLES } from "../../lib/semantic-colors";
 
 const TYPE_LABELS: Record<ReviewComment["type"], string> = {
   must_fix: "Must Fix",
@@ -67,7 +61,7 @@ export function InlineCommentThread({
           >
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${TYPE_STYLES[comment.type]}`}
+                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${COMMENT_TYPE_STYLES[comment.type]}`}
               >
                 {TYPE_LABELS[comment.type]}
               </span>
@@ -84,7 +78,7 @@ export function InlineCommentThread({
               </button>
               <button
                 onClick={() => onDelete(index)}
-                className="opacity-0 group-hover/comment:opacity-100 p-0.5 text-text-secondary hover:text-red-700 dark:hover:text-red-400 transition-all cursor-pointer"
+                className="opacity-0 group-hover/comment:opacity-100 p-0.5 text-text-secondary hover:text-danger transition-all cursor-pointer"
                 title="Delete comment"
               >
                 <Trash2 className="w-3 h-3" />

@@ -70,7 +70,7 @@
   - Add tests for categorization logic
   - Verify: `analyze()` returns non-empty critical/mechanical arrays for appropriate diffs
 
-- [ ] **2.2 Triage view in UI**
+- [x] **2.2 Triage view in UI** *(shipped v0.31.0, PR #130)*
   - Group files by critical/notable/mechanical in the file browser
   - Visual indicators (color/icon) per triage level
   - "Batch approve mechanical" button in action bar
@@ -98,19 +98,19 @@
   - Files: `packages/core/src/global-server.ts`
   - Add tests in `packages/core/src/__tests__/global-server.test.ts`
 
-- [ ] **3.3 `add_annotation` MCP tool**
+- [x] **3.3 `add_annotation` MCP tool** *(shipped v0.31.0, PR #130)*
   - New tool handler in `packages/mcp-server/src/index.ts`
   - POSTs to global server annotation API
   - Parameters: session_id, file, line, body, type, confidence?, category?
   - Files: `packages/mcp-server/src/index.ts`
 
-- [ ] **3.4 `get_review_state` MCP tool**
+- [x] **3.4 `get_review_state` MCP tool** *(shipped v0.31.0, PR #130)*
   - New tool handler in `packages/mcp-server/src/index.ts`
   - GETs session state from global server
   - Returns: files, comments, annotations, status
   - Files: `packages/mcp-server/src/index.ts`
 
-- [ ] **3.5 Render agent annotations in UI**
+- [x] **3.5 Render agent annotations in UI** *(shipped v0.31.0, PR #130)*
   - Distinct visual layer from human comments (different styling/color, dismissible)
   - Annotations grouped by source agent in briefing panel
   - Files: `packages/ui/src/components/DiffViewer/`, `packages/ui/src/store/review.ts`, `packages/ui/src/types.ts`
@@ -118,20 +118,6 @@
 **Phase 3 done when:** An agent can post annotations to a review session and they appear in the UI alongside the diff. A second agent can annotate the same session. Human sees unified view.
 
 ---
-
-## Phase 4: Verification & Narrative (Track A — Review depth)
-
-- [ ] **4.1 Run tests/lint/typecheck from UI**
-  - Backend: new WS command or API endpoint to execute verification commands in the repo
-  - Results populate `verification` fields in `ReviewBriefing` (currently all `null`)
-  - UI: verification badges become interactive — click to run, show pass/fail
-  - Security: commands must be sandboxed to the repo directory
-  - Files: `packages/core/`, `packages/ui/`
-
-- [ ] **4.2 Change narrative view**
-  - Accept `change_narrative` chapters in `open_review` payload
-  - UI: toggle between alphabetical and chapter-based file grouping in file browser
-  - Files: `packages/ui/src/components/FileBrowser/`, `packages/core/src/types.ts`
 
 **Phase 4 done when:** User can run tests from the review UI and see results. Files can be grouped by narrative chapter.
 
@@ -150,13 +136,19 @@
   - Foundation for convention learning later
   - Files: new module in `packages/core/`
 
-- [ ] **5.3 `flag_for_attention` MCP tool**
+- [x] **5.3 `flag_for_attention` MCP tool** *(shipped v0.31.0, PR #130)*
   - Agent marks specific files for human attention with a reason
   - UI highlights flagged files in file browser with the reason
   - Depends on: Phase 3 annotation infrastructure
   - Files: `packages/mcp-server/src/index.ts`, `packages/core/src/global-server.ts`, `packages/ui/`
 
-**Phase 5 done when:** Worktree info shows in session metadata. Review decisions are persisted locally. Agents can flag files for human attention.
+- [ ] **5.4 Per-session live watching**
+  - File system watcher detects changes in the repo and auto-recomputes diff
+  - Push `diff:update` via WebSocket without requiring a new `open_review` call
+  - Support for watch mode in global server sessions
+  - Files: `packages/core/src/global-server.ts`, `packages/core/src/ws-bridge.ts`, `packages/ui/src/hooks/useWebSocket.ts`
+
+**Phase 5 done when:** Worktree info shows in session metadata. Review decisions are persisted locally. Agents can flag files for human attention. Live watching auto-updates diffs.
 
 ---
 
@@ -203,4 +195,5 @@ Record what was accomplished each session to maintain context.
 | 2026-02-26 | Planning | Analyzed product plan, technical plan, and CLAUDE.md. Created this task tracker. Identified Phase 1 (headless tools) as immediate priority. |
 | 2026-02-26 | Phase 1 | Shipped headless `get_diff` + `analyze_diff` MCP tools, updated setup/teardown, skill docs, workflows. PR #128 → v0.29.0. |
 | 2026-02-26 | Phase 2-5 parallel | 5 worktree agents: real file triage (2.1), annotation types (3.1), annotation API (3.2), worktree detection (5.1), review history (5.2). Merged + fixed CI. PR #129 → v0.30.0. |
-| 2026-02-26 | Phase 3-5 parallel | Launching 5 agents: add_annotation MCP (3.3), get_review_state MCP (3.4), triage UI (2.2), annotation rendering (3.5), flag_for_attention (5.3). |
+| 2026-02-26 | Phase 3-5 parallel | Shipped 5 tasks in v0.31.0 (PR #130): add_annotation MCP (3.3), get_review_state MCP (3.4), triage UI (2.2), annotation rendering (3.5), flag_for_attention (5.3). |
+| 2026-02-26 | Phase 4-5 parallel | Launching 3 agents: run verification from UI (4.1), change narrative view (4.2), per-session live watching (5.4). |

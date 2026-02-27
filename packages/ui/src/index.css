@@ -52,6 +52,7 @@
   /* Inline comment button */
   --color-comment-btn-bg: #167a5c;
   --color-comment-indicator: #4f3fba;
+  --color-annotation-indicator: #c07820;
 
   /* Scrollbar */
   --color-scrollbar-track: #e5e9f2;
@@ -67,6 +68,14 @@
   --color-token-keyword: #6e45c9;
   --color-token-function: #2870c9;
   --color-token-variable: #b06e18;
+
+  /* Semantic status colors */
+  --color-success: #0e7a5c;
+  --color-danger: #c93c33;
+  --color-warning: #b06e18;
+  --color-info: #2870c9;
+  --color-neutral: #6b7a8f;
+  --color-perf: #c07820;
 
   /* Semantic colors for Tailwind */
   --color-added: rgba(30, 160, 120, 0.40);
@@ -119,6 +128,7 @@
   /* Inline comment button */
   --color-comment-btn-bg: #2db98c;
   --color-comment-indicator: #7c6bf0;
+  --color-annotation-indicator: #e0a050;
 
   /* Scrollbar */
   --color-scrollbar-track: #0b0f1a;
@@ -134,6 +144,14 @@
   --color-token-keyword: #b08df0;
   --color-token-function: #6aabf7;
   --color-token-variable: #e0a050;
+
+  /* Semantic status colors */
+  --color-success: #42c9a2;
+  --color-danger: #f07a6e;
+  --color-warning: #e0a050;
+  --color-info: #6aabf7;
+  --color-neutral: #5f6f8a;
+  --color-perf: #e89040;
 
   /* Semantic colors for Tailwind */
   --color-added: rgba(45, 185, 140, 0.40);
@@ -399,6 +417,19 @@
   height: 6px;
   border-radius: 50%;
   background-color: var(--color-comment-indicator);
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Amber dot for lines with agent annotations */
+.diff-annotation-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-annotation-indicator);
   position: absolute;
   left: 4px;
   top: 50%;

@@ -34,6 +34,8 @@ import {
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { createDiffPoller } from "./diff-poller.js";
 import type { DiffPoller } from "./diff-poller.js";
+import { appendHistory, generateEntryId, getRecentHistory } from "./review-history.js";
+import type { ReviewHistoryEntry } from "./review-history.js";
 
 // ─── TTL constants ───
 
@@ -270,6 +272,28 @@ function broadcastSessionList(): void {
   broadcastToAll({ type: "session:list", payload: summaries });
 }
 
+function recordReviewHistory(session: Session, result: ReviewResult): void {
+  try {
+    const { payload } = session;
+    const entry: ReviewHistoryEntry = {
+      id: generateEntryId(),
+      timestamp: Date.now(),
+      diffRef: session.diffRef ?? "unknown",
+      decision: result.decision,
+      filesReviewed: payload.diffSet.files.length,
+      additions: payload.diffSet.files.reduce((sum, f) => sum + f.additions, 0),
+      deletions: payload.diffSet.files.reduce((sum, f) => sum + f.deletions, 0),
+      commentCount: result.comments.length,
+      branch: payload.metadata.currentBranch,
+      title: payload.metadata.title,
+      summary: result.summary ?? payload.briefing.summary,
+    };
+    appendHistory(session.projectPath, entry);
+  } catch {
+    // History recording is best-effort — don't fail the review
+  }
+}
+
 // ─── API route handler ───
 
 async function handleApiRequest(
@@ -448,6 +472,7 @@ async function handleApiRequest(
       const result = JSON.parse(body) as ReviewResult;
       session.result = result;
       session.status = "submitted";
+      recordReviewHistory(session, result);
       if (result.decision === "dismissed") {
         broadcastSessionRemoved(postResultParams.id);
       } else {
@@ -593,6 +618,13 @@ async function handleApiRequest(
     }
 
     annotation.dismissed = true;
+
+    // Broadcast to UI clients viewing this session
+    sendToSessionClients(dismissAnnotationParams.id, {
+      type: "annotation:dismissed",
+      payload: { annotationId: dismissAnnotationParams.annotationId },
+    });
+
     jsonResponse(res, 200, { ok: true });
     return true;
   }
@@ -689,6 +721,48 @@ async function handleApiRequest(
       jsonResponse(res, 400, { error: "Failed to compute diff for the given ref" });
     }
     return true;
+  }
+
+  // GET /api/reviews/:id/history — return review history for the session's project path
+  const getSessionHistoryParams = matchRoute(method, url, "GET", "/api/reviews/:id/history");
+  if (getSessionHistoryParams) {
+    const session = sessions.get(getSessionHistoryParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    // Skip history for non-filesystem paths (e.g. github: prefixed paths)
+    if (session.projectPath.startsWith("github:")) {
+      jsonResponse(res, 200, { history: [] });
+      return true;
+    }
+
+    const history = getRecentHistory(session.projectPath);
+    jsonResponse(res, 200, { history });
+    return true;
+  }
+
+  // GET /api/history?project=<path> — return history for any project path (URL-encoded)
+  if (method === "GET" && req.url) {
+    const parsedUrl = new URL(req.url, "http://localhost");
+    if (parsedUrl.pathname === "/api/history") {
+      const projectPath = parsedUrl.searchParams.get("project");
+      if (!projectPath) {
+        jsonResponse(res, 400, { error: "Missing required query parameter: project" });
+        return true;
+      }
+
+      // Skip history for non-filesystem paths (e.g. github: prefixed paths)
+      if (projectPath.startsWith("github:")) {
+        jsonResponse(res, 200, { history: [] });
+        return true;
+      }
+
+      const history = getRecentHistory(projectPath);
+      jsonResponse(res, 200, { history });
+      return true;
+    }
   }
 
   jsonResponse(res, 404, { error: "Not found" });
@@ -817,6 +891,7 @@ export async function startGlobalServer(
             if (session) {
               session.result = msg.payload;
               session.status = "submitted";
+              recordReviewHistory(session, msg.payload);
               if (msg.payload.decision === "dismissed") {
                 broadcastSessionRemoved(sid);
               } else {

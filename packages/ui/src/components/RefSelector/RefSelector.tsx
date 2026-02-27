@@ -89,7 +89,7 @@ export function RefSelector() {
     // Non-server mode — show static badge
     if (!metadata?.currentBranch) return null;
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 font-mono">
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral/15 text-neutral border border-neutral/30 font-mono">
         <GitBranch className="w-3 h-3" />
         {metadata.currentBranch}
       </span>
@@ -116,7 +116,7 @@ export function RefSelector() {
       <button
         onClick={() => (isOpen ? setIsOpen(false) : handleOpen())}
         disabled={comparing}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 dark:bg-gray-600/20 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-500/30 font-mono hover:bg-gray-200 dark:hover:bg-gray-500/30 transition-colors cursor-pointer disabled:opacity-50"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral/15 text-neutral border border-neutral/30 font-mono hover:bg-neutral/25 transition-colors cursor-pointer disabled:opacity-50"
         title="Compare against a different ref"
       >
         {comparing ? (

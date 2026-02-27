@@ -16,58 +16,44 @@ import {
 } from "lucide-react";
 import type { DiffFile, FileReviewStatus, ReviewResult, PostReviewAction, AnnotatedChange } from "../../types";
 import { getFileKey } from "../../lib/file-key";
+import { FILE_STATUS_BADGE_STYLES, FILE_STATUS_ICON_COLORS, FILE_REVIEW_ICON_COLORS } from "../../lib/semantic-colors";
+
+const STATUS_LABELS: Record<string, string> = {
+  added: "A",
+  modified: "M",
+  deleted: "D",
+  renamed: "R",
+};
 
 function getStatusBadge(status: DiffFile["status"]) {
-  switch (status) {
-    case "added":
-      return {
-        label: "A",
-        className: "bg-green-100 dark:bg-green-600/20 text-green-700 dark:text-green-400 border-green-300 dark:border-green-500/30",
-      };
-    case "modified":
-      return {
-        label: "M",
-        className: "bg-yellow-100 dark:bg-yellow-600/20 text-yellow-700 dark:text-yellow-400 border-yellow-300 dark:border-yellow-500/30",
-      };
-    case "deleted":
-      return {
-        label: "D",
-        className: "bg-red-100 dark:bg-red-600/20 text-red-700 dark:text-red-400 border-red-300 dark:border-red-500/30",
-      };
-    case "renamed":
-      return {
-        label: "R",
-        className: "bg-purple-100 dark:bg-purple-600/20 text-purple-700 dark:text-purple-400 border-purple-300 dark:border-purple-500/30",
-      };
-  }
+  return {
+    label: STATUS_LABELS[status],
+    className: FILE_STATUS_BADGE_STYLES[status],
+  };
 }
+
+const STATUS_ICONS: Record<string, typeof FilePlus> = {
+  added: FilePlus,
+  deleted: FileMinus,
+  modified: FilePenLine,
+  renamed: FileCode,
+};
 
 function getStatusIcon(status: DiffFile["status"]) {
-  const iconClass = "w-4 h-4 flex-shrink-0";
-  switch (status) {
-    case "added":
-      return <FilePlus className={`${iconClass} text-green-700 dark:text-green-400`} />;
-    case "deleted":
-      return <FileMinus className={`${iconClass} text-red-700 dark:text-red-400`} />;
-    case "modified":
-      return <FilePenLine className={`${iconClass} text-yellow-700 dark:text-yellow-400`} />;
-    case "renamed":
-      return <FileCode className={`${iconClass} text-purple-700 dark:text-purple-400`} />;
-  }
+  const Icon = STATUS_ICONS[status] ?? FileCode;
+  return <Icon className={`w-4 h-4 flex-shrink-0 ${FILE_STATUS_ICON_COLORS[status]}`} />;
 }
 
+const REVIEW_ICONS: Record<string, typeof Eye> = {
+  reviewed: Eye,
+  approved: CheckCircle,
+  needs_changes: AlertCircle,
+};
+
 function getReviewStatusIcon(status: FileReviewStatus) {
-  const iconClass = "w-3.5 h-3.5 flex-shrink-0";
-  switch (status) {
-    case "unreviewed":
-      return null;
-    case "reviewed":
-      return <Eye className={`${iconClass} text-blue-700 dark:text-blue-400`} />;
-    case "approved":
-      return <CheckCircle className={`${iconClass} text-green-700 dark:text-green-400`} />;
-    case "needs_changes":
-      return <AlertCircle className={`${iconClass} text-yellow-700 dark:text-yellow-400`} />;
-  }
+  const Icon = REVIEW_ICONS[status];
+  if (!Icon) return null;
+  return <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${FILE_REVIEW_ICON_COLORS[status]}`} />;
 }
 
 function basename(path: string): string {
@@ -331,12 +317,12 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
             );
           })()}
           {file.additions > 0 && (
-            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+            <span className="text-success text-xs font-mono">
               +{file.additions}
             </span>
           )}
           {file.deletions > 0 && (
-            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+            <span className="text-danger text-xs font-mono">
               -{file.deletions}
             </span>
           )}
@@ -378,12 +364,12 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
         </span>
         <div className="flex items-center gap-2 ml-auto flex-shrink-0">
           {additions > 0 && (
-            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+            <span className="text-success text-xs font-mono">
               +{additions}
             </span>
           )}
           {deletions > 0 && (
-            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+            <span className="text-danger text-xs font-mono">
               -{deletions}
             </span>
           )}
@@ -412,14 +398,14 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
                   onClick={() => handleQuickAction("commit")}
                   className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-text-primary/10 flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <Check className="w-4 h-4 text-green-700 dark:text-green-400" />
+                  <Check className="w-4 h-4 text-success" />
                   Approve & Commit
                 </button>
                 <button
                   onClick={() => handleQuickAction("commit_and_pr")}
                   className="w-full text-left px-3 py-2 text-sm text-text-primary hover:bg-text-primary/10 flex items-center gap-2 cursor-pointer transition-colors"
                 >
-                  <GitPullRequest className="w-4 h-4 text-blue-700 dark:text-blue-400" />
+                  <GitPullRequest className="w-4 h-4 text-info" />
                   Approve, Commit & PR
                 </button>
               </div>
@@ -431,12 +417,12 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
             {diffSet.files.length} file{diffSet.files.length !== 1 ? "s" : ""}
           </span>
           {totalAdditions > 0 && (
-            <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+            <span className="text-success text-xs font-mono">
               +{totalAdditions}
             </span>
           )}
           {totalDeletions > 0 && (
-            <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+            <span className="text-danger text-xs font-mono">
               -{totalDeletions}
             </span>
           )}
@@ -469,7 +455,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
                   </div>
                   <button
                     onClick={handleBatchApproveMechanical}
-                    className="mr-3 text-[10px] font-medium text-green-600 dark:text-green-400 hover:text-green-500 cursor-pointer px-1.5 py-0.5 rounded border border-green-600/30 dark:border-green-400/30 hover:bg-green-500/10"
+                    className="mr-3 text-[10px] font-medium text-success hover:text-success/80 cursor-pointer px-1.5 py-0.5 rounded border border-success/30 hover:bg-success/10"
                   >
                     Approve all
                   </button>

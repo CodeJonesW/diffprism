@@ -178,7 +178,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "open_review",
-    "Open a browser-based code review for local git changes. Blocks until the engineer submits their review decision.",
+    "Open a browser-based code review for local git changes. Blocks until the engineer submits their review decision. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
     {
       diff_ref: z
         .string()
@@ -976,7 +976,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "review_pr",
-    "Open a browser-based code review for a GitHub pull request. Fetches the PR diff, runs DiffPrism analysis, and opens the review UI. Blocks until the engineer submits their review decision. Optionally posts the review back to GitHub.",
+    "Open a browser-based code review for a GitHub pull request. Fetches the PR diff, runs DiffPrism analysis, and opens the review UI. Blocks until the engineer submits their review decision. Optionally posts the review back to GitHub. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
     {
       pr: z
         .string()
@@ -1098,7 +1098,7 @@ export async function startMcpServer(): Promise<void> {
         }
 
         // 6. Optionally post review back to GitHub
-        if (post_to_github && result.decision !== "dismissed") {
+        if ((post_to_github || result.postToGithub) && result.decision !== "dismissed") {
           const posted = await submitGitHubReview(client, owner, repo, number, result);
           if (posted) {
             return {

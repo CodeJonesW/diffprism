@@ -13,6 +13,8 @@ import type {
   ContextUpdatePayload,
   DiffUpdatePayload,
 } from "./types.js";
+import { appendHistory, generateEntryId } from "./review-history.js";
+import type { ReviewHistoryEntry } from "./review-history.js";
 import { createWatchBridge } from "./watch-bridge.js";
 import { createDiffPoller } from "./diff-poller.js";
 import type { DiffPoller } from "./diff-poller.js";
@@ -258,6 +260,27 @@ export async function startReview(
     // 12. Stop poller and update session
     poller?.stop();
     updateSession(session.id, { status: "completed", result });
+
+    // 13. Record in review history
+    try {
+      const projectDir = cwd ?? process.cwd();
+      const entry: ReviewHistoryEntry = {
+        id: generateEntryId(),
+        timestamp: Date.now(),
+        diffRef,
+        decision: result.decision,
+        filesReviewed: diffSet.files.length,
+        additions: diffSet.files.reduce((sum, f) => sum + f.additions, 0),
+        deletions: diffSet.files.reduce((sum, f) => sum + f.deletions, 0),
+        commentCount: result.comments.length,
+        branch: metadata.currentBranch,
+        title: metadata.title,
+        summary: result.summary ?? briefing.summary,
+      };
+      appendHistory(projectDir, entry);
+    } catch {
+      // History recording is best-effort — don't fail the review
+    }
 
     return result;
   } finally {

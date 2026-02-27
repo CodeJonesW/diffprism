@@ -13,9 +13,10 @@ import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } f
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2, HelpCircle } from "lucide-react";
-import { InlineCommentForm, InlineCommentThread } from "../InlineComment";
+import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread } from "../InlineComment";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
+import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -176,6 +177,8 @@ export function DiffViewer() {
     toggleHotkeyGuide,
     focusedHunkIndex,
     setHunkCount,
+    annotations,
+    dismissAnnotation,
   } = useReviewStore();
 
   const selectedDiffFile = useMemo(() => {
@@ -257,6 +260,27 @@ export function DiffViewer() {
       .filter((c) => c.comment.file === selectedFile);
   }, [comments, selectedFile]);
 
+  // Annotations for the currently selected file (non-dismissed only)
+  // Annotations use raw paths (e.g. "src/foo.ts") while selectedFile may have
+  // a stage prefix (e.g. "unstaged:src/foo.ts"), so compare via display path.
+  const fileAnnotations = useMemo(() => {
+    if (!selectedFile) return [];
+    const displayPath = getDisplayPath(selectedFile);
+    return annotations.filter(
+      (a) => a.file === displayPath && !a.dismissed,
+    );
+  }, [annotations, selectedFile]);
+
+  // Annotations grouped by line number
+  const annotationsByLine = useMemo(() => {
+    const map = new Map<number, typeof fileAnnotations>();
+    for (const a of fileAnnotations) {
+      if (!map.has(a.line)) map.set(a.line, []);
+      map.get(a.line)!.push(a);
+    }
+    return map;
+  }, [fileAnnotations]);
+
   // Gutter click handler — toggle comment form for the clicked line
   const gutterEvents: EventMap = useMemo(
     () => ({
@@ -269,14 +293,14 @@ export function DiffViewer() {
     [activeCommentKey, setActiveCommentKey],
   );
 
-  // Custom gutter renderer — show "+" on hover, blue dot for commented lines
+  // Custom gutter renderer — show "+" on hover, indicators for comments/annotations
   const renderGutter = useCallback(
     ({ change, inHoverState, renderDefault }: GutterOptions) => {
-      const key = getChangeKey(change);
       const line = getLineFromChange(change);
       const hasComments =
         selectedFile &&
         fileComments.some((c) => c.comment.line === line);
+      const hasAnnotations = annotationsByLine.has(line);
 
       if (inHoverState) {
         return (
@@ -296,12 +320,21 @@ export function DiffViewer() {
         );
       }
 
+      if (hasAnnotations) {
+        return (
+          <>
+            <span className="diff-annotation-indicator" />
+            {renderDefault()}
+          </>
+        );
+      }
+
       return renderDefault();
     },
-    [selectedFile, fileComments],
+    [selectedFile, fileComments, annotationsByLine],
   );
 
-  // Build widgets — inline comment threads and/or open forms
+  // Build widgets — inline comment threads, annotation threads, and/or open forms
   const widgets = useMemo(() => {
     if (!selectedFile) return {};
     const w: Record<string, ReactNode> = {};
@@ -314,31 +347,50 @@ export function DiffViewer() {
       commentsByLine.get(line)!.push(fc);
     }
 
-    // Render threads for lines with existing comments
-    for (const [line, lineComments] of commentsByLine) {
+    // Collect all lines that have either comments or annotations
+    const allLines = new Set<number>([
+      ...commentsByLine.keys(),
+      ...annotationsByLine.keys(),
+    ]);
+
+    // Render widgets for lines with existing comments and/or annotations
+    for (const line of allLines) {
       const changeKey = lineToKeyMap[`${selectedFile}:${line}`];
       if (!changeKey) continue;
 
+      const lineComments = commentsByLine.get(line);
+      const lineAnnotations = annotationsByLine.get(line);
+
       w[changeKey] = (
-        <InlineCommentThread
-          comments={lineComments}
-          isFormOpen={activeCommentKey === changeKey}
-          file={selectedFile}
-          line={line}
-          onAdd={(body, type) => {
-            addComment({ file: selectedFile, line, body, type });
-          }}
-          onUpdate={(index, body, type) => {
-            updateComment(index, { file: selectedFile, line, body, type });
-          }}
-          onDelete={deleteComment}
-          onOpenForm={() => setActiveCommentKey(changeKey)}
-          onCloseForm={() => setActiveCommentKey(null)}
-        />
+        <>
+          {lineAnnotations && lineAnnotations.length > 0 && (
+            <InlineAnnotationThread
+              annotations={lineAnnotations}
+              onDismiss={dismissAnnotation}
+            />
+          )}
+          {lineComments && lineComments.length > 0 && (
+            <InlineCommentThread
+              comments={lineComments}
+              isFormOpen={activeCommentKey === changeKey}
+              file={selectedFile}
+              line={line}
+              onAdd={(body, type) => {
+                addComment({ file: selectedFile, line, body, type });
+              }}
+              onUpdate={(index, body, type) => {
+                updateComment(index, { file: selectedFile, line, body, type });
+              }}
+              onDelete={deleteComment}
+              onOpenForm={() => setActiveCommentKey(changeKey)}
+              onCloseForm={() => setActiveCommentKey(null)}
+            />
+          )}
+        </>
       );
     }
 
-    // Render standalone form for active key with no existing comments
+    // Render standalone form for active key with no existing content
     if (activeCommentKey && !w[activeCommentKey]) {
       const line = keyToLineMap[activeCommentKey];
       if (line !== undefined) {
@@ -360,12 +412,15 @@ export function DiffViewer() {
   }, [
     selectedFile,
     fileComments,
+    fileAnnotations,
+    annotationsByLine,
     activeCommentKey,
     lineToKeyMap,
     keyToLineMap,
     addComment,
     updateComment,
     deleteComment,
+    dismissAnnotation,
     setActiveCommentKey,
   ]);
 
@@ -512,22 +567,18 @@ function FileHeader({
         {path}
       </span>
       {stage && (
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
-          stage === "staged"
-            ? "bg-green-600/20 text-green-400 border-green-500/30"
-            : "bg-yellow-600/20 text-yellow-400 border-yellow-500/30"
-        }`}>
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${STAGE_BADGE_STYLES[stage]}`}>
           {stage === "staged" ? "Staged" : "Unstaged"}
         </span>
       )}
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
         {additions !== undefined && additions > 0 && (
-          <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+          <span className="text-success text-xs font-mono">
             +{additions}
           </span>
         )}
         {deletions !== undefined && deletions > 0 && (
-          <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+          <span className="text-danger text-xs font-mono">
             -{deletions}
           </span>
         )}

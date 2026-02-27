@@ -10,17 +10,7 @@ import {
   Bot,
 } from "lucide-react";
 import type { Annotation } from "../../types";
-
-const CATEGORY_COLORS: Record<string, string> = {
-  security: "text-red-500 dark:text-red-400",
-  performance: "text-orange-500 dark:text-orange-400",
-  convention: "text-blue-500 dark:text-blue-400",
-  correctness: "text-yellow-500 dark:text-yellow-400",
-  complexity: "text-purple-500 dark:text-purple-400",
-  "test-coverage": "text-cyan-500 dark:text-cyan-400",
-  documentation: "text-gray-500 dark:text-gray-400",
-  other: "text-gray-500 dark:text-gray-400",
-};
+import { CATEGORY_COLORS } from "../../lib/semantic-colors";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
   finding: AlertCircle,
