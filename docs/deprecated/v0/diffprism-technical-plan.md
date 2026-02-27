@@ -965,3 +965,6 @@ For UI changes, embed a live preview. For API changes, show example request/resp
    With headless tools, this becomes more tractable: the agent can call `analyze_diff` with additional context parameters and get back analysis that's aware of intent. The context panel could show "user requirement → code change that satisfies it," making review a verification exercise.
 
 9. **Multi-agent annotation conflict resolution:** When multiple agents annotate the same line, how should the UI present conflicting findings? Stack them? Merge? Let the human dismiss individual sources? This design decision affects both the data model and the UI.
+
+
+Deprecated on Feb 27, 2026

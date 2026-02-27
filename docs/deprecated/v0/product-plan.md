@@ -203,3 +203,6 @@ Each layer builds on the one below it. The review surface is the human foundatio
 ---
 
 *Feature tracking, milestones, and implementation details live in `diffprism-technical-plan.md`.*
+
+
+Deprecated on Feb 27, 2026
