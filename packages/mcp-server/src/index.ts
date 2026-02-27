@@ -138,7 +138,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "update_review_context",
-    "Push reasoning/context to a running DiffPrism review session. Non-blocking — returns immediately. Use this when `diffprism watch` or `diffprism server` is running to update the review UI with agent reasoning without opening a new review.",
+    "Push reasoning/context to a running DiffPrism review session. Non-blocking — returns immediately. Updates the review UI with agent reasoning without opening a new review. Requires a prior `open_review` call in this session.",
     {
       reasoning: z
         .string()
@@ -207,7 +207,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_result",
-    "Fetch the most recent review result from a DiffPrism session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. The result is marked as consumed after retrieval so it won't be returned again. Use wait=true to block until a result is available (recommended after pushing context to a watch session).",
+    "Fetch the most recent review result from a DiffPrism session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. Use wait=true to block until a result is available. Note: `open_review` already blocks and returns the result — this tool is only needed for advanced workflows where you want to check results separately.",
     {
       wait: z
         .boolean()
