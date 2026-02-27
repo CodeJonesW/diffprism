@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { ReviewComment } from "../../types";
+import { useReviewStore } from "../../store/review";
 
 type CommentType = ReviewComment["type"];
 
@@ -15,6 +16,8 @@ interface InlineCommentFormProps {
   onCancel: () => void;
   initialBody?: string;
   initialType?: CommentType;
+  file?: string;
+  line?: number;
 }
 
 export function InlineCommentForm({
@@ -22,24 +25,48 @@ export function InlineCommentForm({
   onCancel,
   initialBody = "",
   initialType = "suggestion",
+  file,
+  line,
 }: InlineCommentFormProps) {
   const [body, setBody] = useState(initialBody);
   const [type, setType] = useState<CommentType>(initialType);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const setDraftComment = useReviewStore((s) => s.setDraftComment);
 
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
 
+  // Sync draft state to store so ActionBar can detect unsaved comments
+  useEffect(() => {
+    if (file !== undefined && line !== undefined) {
+      if (body.trim()) {
+        setDraftComment({ body, type, file, line });
+      } else {
+        setDraftComment(null);
+      }
+    }
+  }, [body, type, file, line, setDraftComment]);
+
+  function handleSave() {
+    if (body.trim()) {
+      setDraftComment(null);
+      onSave(body.trim(), type);
+    }
+  }
+
+  function handleCancel() {
+    setDraftComment(null);
+    onCancel();
+  }
+
   function handleKeyDown(e: React.KeyboardEvent) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
-      if (body.trim()) {
-        onSave(body.trim(), type);
-      }
+      handleSave();
     } else if (e.key === "Escape") {
       e.preventDefault();
-      onCancel();
+      handleCancel();
     }
   }
 
@@ -67,13 +94,13 @@ export function InlineCommentForm({
         </select>
         <div className="flex-1" />
         <button
-          onClick={onCancel}
+          onClick={handleCancel}
           className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
         >
           Cancel
         </button>
         <button
-          onClick={() => body.trim() && onSave(body.trim(), type)}
+          onClick={handleSave}
           disabled={!body.trim()}
           className="px-3 py-1.5 text-xs font-medium rounded bg-accent/20 text-accent border border-accent/30 hover:bg-accent/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >

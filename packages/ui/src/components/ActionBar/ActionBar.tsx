@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, X, XCircle, MessageSquare, GitPullRequest } from "lucide-react";
+import { Check, X, XCircle, MessageSquare, GitPullRequest, AlertTriangle } from "lucide-react";
 import type { ReviewResult, ReviewDecision } from "../../types";
 import { useReviewStore } from "../../store/review";
 import { ACTION_BUTTON_STYLES } from "../../lib/semantic-colors";
@@ -15,7 +15,8 @@ interface ActionBarProps {
 export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
   const [summary, setSummary] = useState("");
   const [postToGithub, setPostToGithub] = useState(false);
-  const { diffSet, fileStatuses, comments, metadata } = useReviewStore();
+  const [pendingDecision, setPendingDecision] = useState<ReviewDecision | null>(null);
+  const { diffSet, fileStatuses, comments, metadata, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment } = useReviewStore();
   const isGitHubPr = !!metadata?.githubPr;
 
   const totalAdditions =
@@ -24,17 +25,44 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
     diffSet?.files.reduce((sum, f) => sum + f.deletions, 0) ?? 0;
   const fileCount = diffSet?.files.length ?? 0;
 
-  function handleSubmit(decision: ReviewDecision) {
+  const hasDraft = !!(draftComment && draftComment.body.trim());
+
+  function doSubmit(decision: ReviewDecision) {
     const hasStatuses = Object.values(fileStatuses).some(
       (s) => s !== "unreviewed",
     );
     onSubmit({
       decision,
-      comments,
+      comments: useReviewStore.getState().comments,
       fileStatuses: hasStatuses ? fileStatuses : undefined,
       summary: summary.trim() || undefined,
       postToGithub: isGitHubPr && postToGithub ? true : undefined,
     });
+  }
+
+  function handleSubmit(decision: ReviewDecision) {
+    if (hasDraft) {
+      setPendingDecision(decision);
+      return;
+    }
+    doSubmit(decision);
+  }
+
+  function handleSaveAndSubmit() {
+    if (pendingDecision) {
+      saveDraftComment();
+      doSubmit(pendingDecision);
+      setPendingDecision(null);
+    }
+  }
+
+  function handleDiscardAndSubmit() {
+    if (pendingDecision) {
+      setDraftComment(null);
+      setActiveCommentKey(null);
+      doSubmit(pendingDecision);
+      setPendingDecision(null);
+    }
   }
 
   // Watch mode: submitted with no new changes — compact bar
@@ -100,6 +128,35 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
         rows={3}
         className="w-full bg-background border border-border rounded-lg px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent mb-3"
       />
+
+      {/* Unsaved comment warning */}
+      {pendingDecision && (
+        <div className="flex items-center gap-3 mb-3 px-3 py-2.5 rounded-lg bg-warning/10 border border-warning/30">
+          <AlertTriangle className="w-4 h-4 text-warning flex-shrink-0" />
+          <span className="text-sm text-text-primary">
+            You have an unsaved comment. Save it before submitting?
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleSaveAndSubmit}
+            className="px-3 py-1.5 text-xs font-medium rounded bg-accent/20 text-accent border border-accent/30 hover:bg-accent/30 transition-colors cursor-pointer"
+          >
+            Save & Submit
+          </button>
+          <button
+            onClick={handleDiscardAndSubmit}
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          >
+            Discard & Submit
+          </button>
+          <button
+            onClick={() => setPendingDecision(null)}
+            className="px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex items-center gap-3">

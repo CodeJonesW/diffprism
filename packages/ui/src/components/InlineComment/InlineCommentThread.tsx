@@ -45,6 +45,8 @@ export function InlineCommentThread({
               key={index}
               initialBody={comment.body}
               initialType={comment.type}
+              file={file}
+              line={line}
               onSave={(body, type) => {
                 onUpdate(index, body, type);
                 setEditingIndex(null);
@@ -93,6 +95,8 @@ export function InlineCommentThread({
 
       {isFormOpen && editingIndex === null && (
         <InlineCommentForm
+          file={file}
+          line={line}
           onSave={(body, type) => {
             onAdd(body, type);
             onCloseForm();
