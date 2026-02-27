@@ -34,6 +34,8 @@ import {
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { createDiffPoller } from "./diff-poller.js";
 import type { DiffPoller } from "./diff-poller.js";
+import { appendHistory, generateEntryId } from "./review-history.js";
+import type { ReviewHistoryEntry } from "./review-history.js";
 
 // ─── TTL constants ───
 
@@ -270,6 +272,28 @@ function broadcastSessionList(): void {
   broadcastToAll({ type: "session:list", payload: summaries });
 }
 
+function recordReviewHistory(session: Session, result: ReviewResult): void {
+  try {
+    const { payload } = session;
+    const entry: ReviewHistoryEntry = {
+      id: generateEntryId(),
+      timestamp: Date.now(),
+      diffRef: session.diffRef ?? "unknown",
+      decision: result.decision,
+      filesReviewed: payload.diffSet.files.length,
+      additions: payload.diffSet.files.reduce((sum, f) => sum + f.additions, 0),
+      deletions: payload.diffSet.files.reduce((sum, f) => sum + f.deletions, 0),
+      commentCount: result.comments.length,
+      branch: payload.metadata.currentBranch,
+      title: payload.metadata.title,
+      summary: result.summary ?? payload.briefing.summary,
+    };
+    appendHistory(session.projectPath, entry);
+  } catch {
+    // History recording is best-effort — don't fail the review
+  }
+}
+
 // ─── API route handler ───
 
 async function handleApiRequest(
@@ -448,6 +472,7 @@ async function handleApiRequest(
       const result = JSON.parse(body) as ReviewResult;
       session.result = result;
       session.status = "submitted";
+      recordReviewHistory(session, result);
       if (result.decision === "dismissed") {
         broadcastSessionRemoved(postResultParams.id);
       } else {
@@ -817,6 +842,7 @@ export async function startGlobalServer(
             if (session) {
               session.result = msg.payload;
               session.status = "submitted";
+              recordReviewHistory(session, msg.payload);
               if (msg.payload.decision === "dismissed") {
                 broadcastSessionRemoved(sid);
               } else {
