@@ -61,6 +61,7 @@ export interface ReviewResult {
   fileStatuses?: Record<string, FileReviewStatus>;
   summary?: string;
   postReviewAction?: PostReviewAction;
+  postToGithub?: boolean;
 }
 
 // ─── Annotation Types ───
@@ -198,12 +199,24 @@ export interface WorktreeMetadata {
   mainWorktreePath?: string;
 }
 
+export interface GitHubPrMetadata {
+  owner: string;
+  repo: string;
+  number: number;
+  title: string;
+  author: string;
+  url: string;
+  baseBranch: string;
+  headBranch: string;
+}
+
 export interface ReviewMetadata {
   title?: string;
   description?: string;
   reasoning?: string;
   currentBranch?: string;
   worktree?: WorktreeMetadata;
+  githubPr?: GitHubPrMetadata;
 }
 
 export interface DiffErrorPayload {
@@ -238,6 +251,7 @@ export interface ReviewOptions {
   cwd?: string;
   silent?: boolean; // suppress stdout (for MCP mode)
   dev?: boolean; // use Vite dev server instead of static files
+  injectedPayload?: ReviewInitPayload; // skip getDiff/analyze, use pre-computed payload (e.g. GitHub PR)
 }
 
 // ─── Watch Mode ───

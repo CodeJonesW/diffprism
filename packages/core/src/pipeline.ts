@@ -28,13 +28,60 @@ import {
 export async function startReview(
   options: ReviewOptions,
 ): Promise<ReviewResult> {
-  const { diffRef, title, description, reasoning, cwd, silent, dev } = options;
+  const { diffRef, title, description, reasoning, cwd, silent, dev, injectedPayload } = options;
 
-  // 1. Get the diff
-  const { diffSet, rawDiff } = getDiff(diffRef, { cwd });
-  const currentBranch = getCurrentBranch({ cwd });
+  let diffSet;
+  let rawDiff;
+  let briefing;
+  let metadata: ReviewMetadata;
 
-  // Handle empty diff
+  if (injectedPayload) {
+    // Use pre-computed payload (e.g. GitHub PR review)
+    diffSet = injectedPayload.diffSet;
+    rawDiff = injectedPayload.rawDiff;
+    briefing = injectedPayload.briefing;
+    metadata = { ...injectedPayload.metadata };
+  } else {
+    // 1. Get the diff from local git
+    const result = getDiff(diffRef, { cwd });
+    diffSet = result.diffSet;
+    rawDiff = result.rawDiff;
+    const currentBranch = getCurrentBranch({ cwd });
+
+    // Handle empty diff
+    if (diffSet.files.length === 0) {
+      if (!silent) {
+        console.log("No changes to review.");
+      }
+      return {
+        decision: "approved",
+        comments: [],
+        summary: "No changes to review.",
+      };
+    }
+
+    // 2. Analyze
+    briefing = analyze(diffSet);
+
+    // Detect worktree info
+    const worktreeInfo = detectWorktree({ cwd });
+
+    metadata = {
+      title,
+      description,
+      reasoning,
+      currentBranch,
+      worktree: worktreeInfo.isWorktree
+        ? {
+            isWorktree: true,
+            worktreePath: worktreeInfo.worktreePath,
+            mainWorktreePath: worktreeInfo.mainWorktreePath,
+          }
+        : undefined,
+    };
+  }
+
+  // Handle empty diff (for injected payloads too)
   if (diffSet.files.length === 0) {
     if (!silent) {
       console.log("No changes to review.");
@@ -46,30 +93,12 @@ export async function startReview(
     };
   }
 
-  // 2. Analyze
-  const briefing = analyze(diffSet);
-
   // 3. Create session
   const session = createSession(options);
   updateSession(session.id, { status: "in_progress" });
 
-  // Detect worktree info
-  const worktreeInfo = detectWorktree({ cwd });
-
-  // Track mutable metadata
-  const metadata: ReviewMetadata = {
-    title,
-    description,
-    reasoning,
-    currentBranch,
-    worktree: worktreeInfo.isWorktree
-      ? {
-          isWorktree: true,
-          worktreePath: worktreeInfo.worktreePath,
-          mainWorktreePath: worktreeInfo.mainWorktreePath,
-        }
-      : undefined,
-  };
+  // Whether this review uses a pre-computed payload (no local git)
+  const isInjected = !!injectedPayload;
 
   // Poller reference — set after bridge creation, used in callbacks
   let poller: DiffPoller | null = null;
@@ -82,6 +111,7 @@ export async function startReview(
 
   // Shared handler for ref changes (used by both WS and HTTP paths)
   function handleDiffRefChange(newRef: string): void {
+    if (isInjected) return; // No local git for injected payloads
     const { diffSet: newDiffSet, rawDiff: newRawDiff } = getDiff(newRef, { cwd });
     const newBriefing = analyze(newDiffSet);
 
@@ -116,6 +146,7 @@ export async function startReview(
       if (payload.description !== undefined) metadata.description = payload.description;
     },
     onDiffRefChange: (newRef: string) => {
+      if (isInjected) return;
       try {
         handleDiffRefChange(newRef);
       } catch (err) {
@@ -125,6 +156,7 @@ export async function startReview(
       }
     },
     onRefsRequest: async () => {
+      if (isInjected) return null;
       try {
         const resolvedCwd = cwd ?? process.cwd();
         const branches = listBranches({ cwd: resolvedCwd });
@@ -136,6 +168,7 @@ export async function startReview(
       }
     },
     onCompareRequest: async (ref: string) => {
+      if (isInjected) return false;
       try {
         handleDiffRefChange(ref);
         return true;
@@ -185,43 +218,45 @@ export async function startReview(
       rawDiff,
       briefing,
       metadata,
-      watchMode: true,
+      watchMode: !isInjected,
     };
 
     bridge.sendInit(initPayload);
 
-    // 10. Start diff poller for live updates
-    poller = createDiffPoller({
-      diffRef,
-      cwd: cwd ?? process.cwd(),
-      pollInterval: 1000,
-      onDiffChanged: (updatePayload: DiffUpdatePayload) => {
-        // Update stored init payload for reconnects
-        bridge.storeInitPayload({
-          reviewId: session.id,
-          diffSet: updatePayload.diffSet,
-          rawDiff: updatePayload.rawDiff,
-          briefing: updatePayload.briefing,
-          metadata,
-          watchMode: true,
-        });
+    // 10. Start diff poller for live updates (skip for injected payloads)
+    if (!isInjected) {
+      poller = createDiffPoller({
+        diffRef,
+        cwd: cwd ?? process.cwd(),
+        pollInterval: 1000,
+        onDiffChanged: (updatePayload: DiffUpdatePayload) => {
+          // Update stored init payload for reconnects
+          bridge.storeInitPayload({
+            reviewId: session.id,
+            diffSet: updatePayload.diffSet,
+            rawDiff: updatePayload.rawDiff,
+            briefing: updatePayload.briefing,
+            metadata,
+            watchMode: true,
+          });
 
-        bridge.sendDiffUpdate(updatePayload);
+          bridge.sendDiffUpdate(updatePayload);
 
-        if (!silent && updatePayload.changedFiles.length > 0) {
-          console.log(
-            `[${new Date().toLocaleTimeString()}] Diff updated: ${updatePayload.changedFiles.length} file(s) changed`,
-          );
-        }
-      },
-    });
-    poller.start();
+          if (!silent && updatePayload.changedFiles.length > 0) {
+            console.log(
+              `[${new Date().toLocaleTimeString()}] Diff updated: ${updatePayload.changedFiles.length} file(s) changed`,
+            );
+          }
+        },
+      });
+      poller.start();
+    }
 
     // 11. Wait for result
     const result = await bridge.waitForResult();
 
     // 12. Stop poller and update session
-    poller.stop();
+    poller?.stop();
     updateSession(session.id, { status: "completed", result });
 
     return result;

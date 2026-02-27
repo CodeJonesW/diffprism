@@ -380,6 +380,7 @@ describe("setup command", () => {
                 "mcp__diffprism__add_annotation",
                 "mcp__diffprism__get_review_state",
                 "mcp__diffprism__flag_for_attention",
+                "mcp__diffprism__review_pr",
               ],
             },
             hooks: {
@@ -413,6 +414,7 @@ describe("setup command", () => {
         "mcp__diffprism__add_annotation",
         "mcp__diffprism__get_review_state",
         "mcp__diffprism__flag_for_attention",
+        "mcp__diffprism__review_pr",
       ]);
     });
   });
@@ -766,6 +768,7 @@ describe("setup command", () => {
                 "mcp__diffprism__add_annotation",
                 "mcp__diffprism__get_review_state",
                 "mcp__diffprism__flag_for_attention",
+                "mcp__diffprism__review_pr",
               ],
             },
           });

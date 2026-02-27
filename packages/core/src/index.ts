@@ -19,6 +19,7 @@ export type {
   ReviewBriefing,
   ReviewInitPayload,
   ReviewMetadata,
+  GitHubPrMetadata,
   WorktreeMetadata,
   ServerMessage,
   ClientMessage,

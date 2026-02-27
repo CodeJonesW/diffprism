@@ -10,13 +10,15 @@ import {
   Gauge,
   ShieldAlert,
   Search,
+  GitPullRequest,
+  ExternalLink,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 import { RefSelector } from "../RefSelector";
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
-  const { briefing, isServerMode, clearReview } = useReviewStore();
+  const { briefing, metadata, isServerMode, clearReview } = useReviewStore();
 
   if (!briefing) return null;
   
@@ -113,6 +115,29 @@ export function BriefingBar() {
         <RefSelector />
       </div>
       </div>
+
+      {/* GitHub PR context */}
+      {metadata?.githubPr && (
+        <div className="px-4 py-2 border-t border-border/50 flex items-center gap-3 text-xs">
+          <GitPullRequest className="w-3.5 h-3.5 text-purple-700 dark:text-purple-400 flex-shrink-0" />
+          <span className="text-text-primary font-medium truncate">
+            {metadata.githubPr.owner}/{metadata.githubPr.repo}#{metadata.githubPr.number}
+          </span>
+          <span className="text-text-secondary">by {metadata.githubPr.author}</span>
+          <span className="text-text-secondary font-mono">
+            {metadata.githubPr.baseBranch} ← {metadata.githubPr.headBranch}
+          </span>
+          <a
+            href={metadata.githubPr.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto flex items-center gap-1 text-accent hover:text-accent/80 transition-colors flex-shrink-0"
+          >
+            View on GitHub
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
 
       {/* Expanded details */}
       {expanded && (

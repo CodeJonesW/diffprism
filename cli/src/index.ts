@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { review } from "./commands/review.js";
+import { reviewPr } from "./commands/review-pr.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
@@ -27,6 +28,15 @@ program
   .option("-t, --title <title>", "Review title")
   .option("--dev", "Use Vite dev server with HMR instead of static files")
   .action(review);
+
+program
+  .command("review-pr <pr>")
+  .description("Review a GitHub pull request in DiffPrism")
+  .option("-t, --title <title>", "Override review title")
+  .option("--reasoning <text>", "Agent reasoning about the PR")
+  .option("--dev", "Use Vite dev server with HMR instead of static files")
+  .option("--post-to-github", "Automatically post review back to GitHub without prompting")
+  .action(reviewPr);
 
 program
   .command("start [ref]")

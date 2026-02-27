@@ -29,6 +29,23 @@ vi.mock("@diffprism/analysis", () => ({
   analyze: (...args: unknown[]) => mockAnalyze(...args),
 }));
 
+const mockResolveGitHubToken = vi.fn();
+const mockParsePrRef = vi.fn();
+const mockCreateGitHubClient = vi.fn();
+const mockFetchPullRequest = vi.fn();
+const mockFetchPullRequestDiff = vi.fn();
+const mockNormalizePr = vi.fn();
+const mockSubmitGitHubReview = vi.fn();
+vi.mock("@diffprism/github", () => ({
+  resolveGitHubToken: (...args: unknown[]) => mockResolveGitHubToken(...args),
+  parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
+  createGitHubClient: (...args: unknown[]) => mockCreateGitHubClient(...args),
+  fetchPullRequest: (...args: unknown[]) => mockFetchPullRequest(...args),
+  fetchPullRequestDiff: (...args: unknown[]) => mockFetchPullRequestDiff(...args),
+  normalizePr: (...args: unknown[]) => mockNormalizePr(...args),
+  submitGitHubReview: (...args: unknown[]) => mockSubmitGitHubReview(...args),
+}));
+
 const mockToolFn = vi.fn();
 const mockConnect = vi.fn();
 vi.mock("@modelcontextprotocol/sdk/server/mcp.js", () => ({
@@ -96,7 +113,7 @@ describe("mcp-server", () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(8);
+    expect(mockToolFn).toHaveBeenCalledTimes(9);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
@@ -105,6 +122,7 @@ describe("mcp-server", () => {
     expect(mockToolFn.mock.calls[5][0]).toBe("add_annotation");
     expect(mockToolFn.mock.calls[6][0]).toBe("get_review_state");
     expect(mockToolFn.mock.calls[7][0]).toBe("flag_for_attention");
+    expect(mockToolFn.mock.calls[8][0]).toBe("review_pr");
   });
 
   it("connects the stdio transport", async () => {

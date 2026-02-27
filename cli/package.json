@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@diffprism/core": "workspace:*",
+    "@diffprism/github": "workspace:*",
     "@diffprism/mcp-server": "workspace:*",
     "commander": "^13.0.0",
     "tsx": "^4.19.0"
