@@ -6,3 +6,6 @@ ui-dist
 
 inline-commenting
 .diffprism
+.mcp.json
+.claude/settings.json
+.claude/skills/review/

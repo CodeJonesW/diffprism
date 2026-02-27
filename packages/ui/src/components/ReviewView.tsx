@@ -7,6 +7,7 @@ import { HotkeyGuide } from "./HotkeyGuide";
 import { AnnotationPanel } from "./AnnotationPanel";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
+import { getFileKey } from "../lib/file-key";
 
 interface ReviewViewProps {
   onSubmit: (result: ReviewResult) => void;
@@ -17,7 +18,23 @@ interface ReviewViewProps {
 }
 
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
-  const { annotations, dismissAnnotation, selectFile } = useReviewStore();
+  const { annotations, dismissAnnotation, selectFile, diffSet } = useReviewStore();
+
+  // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
+  const navigateToFile = (filePath: string) => {
+    if (!diffSet) return;
+    // Try exact match first (works for non-working-copy diffs)
+    const exact = diffSet.files.find((f) => getFileKey(f) === filePath);
+    if (exact) {
+      selectFile(filePath);
+      return;
+    }
+    // Try matching by raw path (for working-copy diffs with staged:/unstaged: prefixes)
+    const byPath = diffSet.files.find((f) => f.path === filePath);
+    if (byPath) {
+      selectFile(getFileKey(byPath));
+    }
+  };
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -32,7 +49,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
           <AnnotationPanel
             annotations={annotations}
             onDismiss={dismissAnnotation}
-            onNavigate={selectFile}
+            onNavigate={navigateToFile}
           />
         </div>
 

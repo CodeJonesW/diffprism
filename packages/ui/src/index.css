@@ -52,6 +52,7 @@
   /* Inline comment button */
   --color-comment-btn-bg: #167a5c;
   --color-comment-indicator: #4f3fba;
+  --color-annotation-indicator: #c07820;
 
   /* Scrollbar */
   --color-scrollbar-track: #e5e9f2;
@@ -119,6 +120,7 @@
   /* Inline comment button */
   --color-comment-btn-bg: #2db98c;
   --color-comment-indicator: #7c6bf0;
+  --color-annotation-indicator: #e0a050;
 
   /* Scrollbar */
   --color-scrollbar-track: #0b0f1a;
@@ -399,6 +401,19 @@
   height: 6px;
   border-radius: 50%;
   background-color: var(--color-comment-indicator);
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Amber dot for lines with agent annotations */
+.diff-annotation-indicator {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-annotation-indicator);
   position: absolute;
   left: 4px;
   top: 50%;
