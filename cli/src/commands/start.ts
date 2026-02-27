@@ -1,12 +1,11 @@
 import { setup } from "./setup.js";
-import { startWatch } from "@diffprism/core";
+import { ensureServer, submitReviewToServer } from "@diffprism/core";
 
 interface StartFlags {
   staged?: boolean;
   unstaged?: boolean;
   title?: string;
   dev?: boolean;
-  interval?: string;
   global?: boolean;
   force?: boolean;
 }
@@ -25,7 +24,7 @@ export async function start(
   const hasChanges = outcome.created.length > 0 || outcome.updated.length > 0;
 
   if (hasChanges) {
-    console.log("✓ DiffPrism configured for Claude Code.");
+    console.log("DiffPrism configured for Claude Code.");
   }
 
   // Step 2: Determine diff ref
@@ -41,39 +40,28 @@ export async function start(
     diffRef = "working-copy";
   }
 
-  const pollInterval = flags.interval ? parseInt(flags.interval, 10) : 1000;
-
-  // Step 3: Start watch (startWatch prints its own URL output)
+  // Step 3: Ensure server is running and submit review
   try {
-    const handle = await startWatch({
-      diffRef,
-      title: flags.title,
-      cwd: process.cwd(),
-      dev: flags.dev,
-      pollInterval,
-    });
+    const serverInfo = await ensureServer({ dev: flags.dev });
 
-    console.log("Use /review in Claude Code to send changes for review.");
+    console.log(
+      `DiffPrism server at http://localhost:${serverInfo.httpPort}`,
+    );
+
     if (hasChanges) {
       console.log(
         "If this is your first time, restart Claude Code first to load the MCP server.",
       );
     }
 
-    // Graceful shutdown on SIGINT/SIGTERM
-    const shutdown = async () => {
-      console.log("\nStopping DiffPrism...");
-      await handle.stop();
-      process.exit(0);
-    };
-
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-
-    // Keep the process alive
-    await new Promise(() => {
-      // Never resolves — watch runs until interrupted
+    const { result } = await submitReviewToServer(serverInfo, diffRef, {
+      title: flags.title,
+      cwd: process.cwd(),
+      diffRef,
     });
+
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: ${message}`);

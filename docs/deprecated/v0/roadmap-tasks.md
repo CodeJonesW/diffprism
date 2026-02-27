@@ -197,3 +197,5 @@ Record what was accomplished each session to maintain context.
 | 2026-02-26 | Phase 2-5 parallel | 5 worktree agents: real file triage (2.1), annotation types (3.1), annotation API (3.2), worktree detection (5.1), review history (5.2). Merged + fixed CI. PR #129 → v0.30.0. |
 | 2026-02-26 | Phase 3-5 parallel | Shipped 5 tasks in v0.31.0 (PR #130): add_annotation MCP (3.3), get_review_state MCP (3.4), triage UI (2.2), annotation rendering (3.5), flag_for_attention (5.3). |
 | 2026-02-26 | Phase 4-5 parallel | Launching 3 agents: run verification from UI (4.1), change narrative view (4.2), per-session live watching (5.4). |
+
+Deprecated on Feb 27, 2026

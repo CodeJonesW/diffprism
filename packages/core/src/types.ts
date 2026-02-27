@@ -353,6 +353,7 @@ export interface GlobalServerOptions {
   silent?: boolean;
   dev?: boolean;
   pollInterval?: number; // ms, default 2000
+  openBrowser?: boolean; // default true — set false for daemon auto-start
 }
 
 export interface GlobalServerHandle {

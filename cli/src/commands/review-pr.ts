@@ -8,8 +8,7 @@ import {
   normalizePr,
   submitGitHubReview,
 } from "@diffprism/github";
-import { startReview, isServerAlive } from "@diffprism/core";
-import type { ReviewResult, ReviewInitPayload } from "@diffprism/core";
+import { ensureServer, submitReviewToServer } from "@diffprism/core";
 
 interface ReviewPrFlags {
   title?: string;
@@ -43,7 +42,7 @@ export async function reviewPr(
     }
 
     // 4. Normalize to DiffPrism types
-    const { payload, diffSet, briefing, metadata } = normalizePr(rawDiff, prMetadata, {
+    const { payload, diffSet } = normalizePr(rawDiff, prMetadata, {
       title: flags.title,
       reasoning: flags.reasoning,
     });
@@ -52,47 +51,13 @@ export async function reviewPr(
       `${diffSet.files.length} files, +${diffSet.files.reduce((s, f) => s + f.additions, 0)} -${diffSet.files.reduce((s, f) => s + f.deletions, 0)}`,
     );
 
-    // 5. Route to global server or ephemeral review
-    let result: ReviewResult;
-
-    const serverInfo = await isServerAlive();
-    if (serverInfo) {
-      // POST to global server
-      const createResponse = await fetch(
-        `http://localhost:${serverInfo.httpPort}/api/reviews`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payload,
-            projectPath: `github:${owner}/${repo}`,
-            diffRef: `PR #${number}`,
-          }),
-        },
-      );
-
-      if (!createResponse.ok) {
-        throw new Error(`Global server returned ${createResponse.status}`);
-      }
-
-      const { sessionId } = (await createResponse.json()) as { sessionId: string };
-      console.log(`Review session created: ${sessionId}`);
-      console.log("Waiting for review submission...");
-
-      // Poll for result
-      result = await pollForResult(serverInfo.httpPort, sessionId);
-    } else {
-      // Ephemeral in-process review with pre-computed payload
-      result = await startReview({
-        diffRef: `PR #${number}`,
-        title: metadata.title,
-        description: metadata.description,
-        reasoning: metadata.reasoning,
-        cwd: process.cwd(),
-        dev: flags.dev,
-        injectedPayload: payload,
-      });
-    }
+    // 5. Route through global server (auto-start if needed)
+    const serverInfo = await ensureServer({ dev: flags.dev });
+    const { result } = await submitReviewToServer(serverInfo, `PR #${number}`, {
+      injectedPayload: payload,
+      projectPath: `github:${owner}/${repo}`,
+      diffRef: `PR #${number}`,
+    });
 
     console.log(JSON.stringify(result, null, 2));
 
@@ -111,32 +76,6 @@ export async function reviewPr(
     console.error(`Error: ${message}`);
     process.exit(1);
   }
-}
-
-async function pollForResult(httpPort: number, sessionId: string): Promise<ReviewResult> {
-  const pollIntervalMs = 2000;
-  const maxWaitMs = 600 * 1000;
-  const start = Date.now();
-
-  while (Date.now() - start < maxWaitMs) {
-    const response = await fetch(
-      `http://localhost:${httpPort}/api/reviews/${sessionId}/result`,
-    );
-
-    if (response.ok) {
-      const data = (await response.json()) as {
-        result: ReviewResult | null;
-        status: string;
-      };
-      if (data.result) {
-        return data.result;
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-
-  throw new Error("Review timed out waiting for submission.");
 }
 
 async function promptPostToGithub(): Promise<boolean> {

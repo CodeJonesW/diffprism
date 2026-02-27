@@ -173,3 +173,6 @@ The global server handles the core multi-agent use case. Remaining work:
 2. **Fast feedback loop** — browser opens immediately, result returns as JSON
 3. **Local-first** — no accounts, no cloud, everything runs on the user's machine
 4. **Agent-friendly** — structured input/output, MCP integration, silent mode for automation
+
+
+Deprecated on Feb 27, 2026

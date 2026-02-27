@@ -176,3 +176,7 @@ When `/review` is invoked, the system checks in order:
 | After submit | Tab auto-closes | Resumes watching | Returns to session list |
 | Desktop notifications | No | No | Yes (v0.23.0) |
 | Quick actions (commit/PR) | Yes | Yes | Yes |
+
+
+
+Deprecated on Feb 27, 2026

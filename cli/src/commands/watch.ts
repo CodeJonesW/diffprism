@@ -1,11 +1,10 @@
-import { startWatch } from "@diffprism/core";
+import { ensureServer, submitReviewToServer } from "@diffprism/core";
 
 interface WatchFlags {
   staged?: boolean;
   unstaged?: boolean;
   title?: string;
   dev?: boolean;
-  interval?: string;
 }
 
 export async function watch(
@@ -24,31 +23,25 @@ export async function watch(
     diffRef = "working-copy";
   }
 
-  const pollInterval = flags.interval ? parseInt(flags.interval, 10) : 1000;
-
   try {
-    const handle = await startWatch({
-      diffRef,
+    // Ensure server is running (auto-starts daemon if needed)
+    const serverInfo = await ensureServer({ dev: flags.dev });
+
+    console.log(
+      `DiffPrism server at http://localhost:${serverInfo.httpPort}`,
+    );
+    console.log("Submitting review session...");
+
+    // Submit review — the server handles watching via DiffPoller
+    const { result } = await submitReviewToServer(serverInfo, diffRef, {
       title: flags.title,
       cwd: process.cwd(),
-      dev: flags.dev,
-      pollInterval,
+      diffRef,
     });
 
-    // Graceful shutdown on SIGINT/SIGTERM
-    const shutdown = async () => {
-      console.log("\nStopping watch...");
-      await handle.stop();
-      process.exit(0);
-    };
-
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-
-    // Keep the process alive
-    await new Promise(() => {
-      // Never resolves — watch runs until interrupted
-    });
+    // Print result when user submits
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: ${message}`);

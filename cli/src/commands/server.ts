@@ -1,3 +1,7 @@
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 import { startGlobalServer, readServerFile, isServerAlive } from "@diffprism/core";
 import { setup, isGlobalSetupDone } from "./setup.js";
 
@@ -5,23 +9,39 @@ interface ServerFlags {
   port?: string;
   wsPort?: string;
   dev?: boolean;
+  background?: boolean;
+  _daemon?: boolean;
 }
 
 export async function server(flags: ServerFlags): Promise<void> {
-  // Check if a server is already running
-  const existing = await isServerAlive();
-  if (existing) {
-    console.log(`DiffPrism server is already running on port ${existing.httpPort} (PID ${existing.pid})`);
-    console.log(`Use 'diffprism server stop' to stop it first.`);
-    process.exit(1);
+  // --background: re-spawn as a detached daemon and exit
+  if (flags.background) {
+    await spawnDaemon(flags);
     return;
+  }
+
+  const isDaemon = !!flags._daemon;
+
+  // Check if a server is already running (skip for daemon — we were just spawned)
+  if (!isDaemon) {
+    const existing = await isServerAlive();
+    if (existing) {
+      console.log(`DiffPrism server is already running on port ${existing.httpPort} (PID ${existing.pid})`);
+      console.log(`Use 'diffprism server stop' to stop it first.`);
+      process.exit(1);
+      return;
+    }
   }
 
   // Auto-run global setup if needed
   if (!isGlobalSetupDone()) {
-    console.log("Running global setup...\n");
-    await setup({ global: true, quiet: false });
-    console.log("");
+    if (!isDaemon) {
+      console.log("Running global setup...\n");
+    }
+    await setup({ global: true, quiet: isDaemon });
+    if (!isDaemon) {
+      console.log("");
+    }
   }
 
   const httpPort = flags.port ? parseInt(flags.port, 10) : undefined;
@@ -32,11 +52,15 @@ export async function server(flags: ServerFlags): Promise<void> {
       httpPort,
       wsPort,
       dev: flags.dev,
+      silent: isDaemon,
+      openBrowser: !isDaemon,
     });
 
     // Graceful shutdown on SIGINT/SIGTERM
     const shutdown = async () => {
-      console.log("\nStopping server...");
+      if (!isDaemon) {
+        console.log("\nStopping server...");
+      }
       await handle.stop();
       process.exit(0);
     };
@@ -50,9 +74,59 @@ export async function server(flags: ServerFlags): Promise<void> {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    console.error(`Error starting server: ${message}`);
+    if (!isDaemon) {
+      console.error(`Error starting server: ${message}`);
+    }
     process.exit(1);
   }
+}
+
+async function spawnDaemon(flags: ServerFlags): Promise<void> {
+  // Check if already running
+  const existing = await isServerAlive();
+  if (existing) {
+    console.log(`DiffPrism server is already running on port ${existing.httpPort} (PID ${existing.pid})`);
+    return;
+  }
+
+  // Build daemon args: same process.argv but replace --background with --_daemon
+  const args = process.argv.slice(1).filter((a) => a !== "--background");
+  args.push("--_daemon");
+
+  // Ensure log directory exists
+  const logDir = path.join(os.homedir(), ".diffprism");
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  const logPath = path.join(logDir, "server.log");
+  const logFd = fs.openSync(logPath, "a");
+
+  // Spawn detached child
+  const child = spawn(process.execPath, args, {
+    detached: true,
+    stdio: ["ignore", logFd, logFd],
+    env: { ...process.env },
+  });
+  child.unref();
+  fs.closeSync(logFd);
+
+  // Poll for server.json to confirm startup
+  console.log("Starting DiffPrism server in background...");
+  const startTime = Date.now();
+  const timeoutMs = 15_000;
+
+  while (Date.now() - startTime < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const info = await isServerAlive();
+    if (info) {
+      console.log(`DiffPrism server started (PID ${info.pid}, port ${info.httpPort})`);
+      console.log(`Logs: ${logPath}`);
+      return;
+    }
+  }
+
+  console.error("Timed out waiting for server to start. Check logs at:", logPath);
+  process.exit(1);
 }
 
 export async function serverStatus(): Promise<void> {
