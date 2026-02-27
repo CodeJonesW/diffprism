@@ -16,6 +16,7 @@ import { FileCode, Columns2, Rows2, HelpCircle } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread } from "../InlineComment";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
+import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
 
 /**
  * Adapter for refractor v4 to work with react-diff-view's tokenize function.
@@ -566,22 +567,18 @@ function FileHeader({
         {path}
       </span>
       {stage && (
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
-          stage === "staged"
-            ? "bg-green-600/20 text-green-400 border-green-500/30"
-            : "bg-yellow-600/20 text-yellow-400 border-yellow-500/30"
-        }`}>
+        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${STAGE_BADGE_STYLES[stage]}`}>
           {stage === "staged" ? "Staged" : "Unstaged"}
         </span>
       )}
       <div className="flex items-center gap-2 ml-auto flex-shrink-0">
         {additions !== undefined && additions > 0 && (
-          <span className="text-green-700 dark:text-green-400 text-xs font-mono">
+          <span className="text-success text-xs font-mono">
             +{additions}
           </span>
         )}
         {deletions !== undefined && deletions > 0 && (
-          <span className="text-red-700 dark:text-red-400 text-xs font-mono">
+          <span className="text-danger text-xs font-mono">
             -{deletions}
           </span>
         )}

@@ -2,6 +2,7 @@ import { GitBranch, FileCode, Clock, Radio, X } from "lucide-react";
 import { NotificationToggle } from "../NotificationToggle";
 import type { NotificationPermission } from "../../hooks/useNotifications.js";
 import type { SessionSummary } from "../../types";
+import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
 
 interface SessionListProps {
   sessions: SessionSummary[];
@@ -23,54 +24,30 @@ function getProjectName(projectPath: string): string {
   return parts[parts.length - 1] || projectPath;
 }
 
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  in_review: "In Review",
+  changes_requested: "Changes Requested",
+  approved: "Approved",
+  approved_with_comments: "Approved",
+  dismissed: "Dismissed",
+  submitted: "Submitted",
+};
+
 function statusBadge(session: SessionSummary) {
   const { status, decision } = session;
 
-  if (status === "pending") {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/20 text-yellow-400 border border-yellow-500/30">
-        Pending
-      </span>
-    );
-  }
+  const key =
+    status === "submitted"
+      ? (decision ?? "submitted")
+      : status;
 
-  if (status === "in_review") {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-accent/20 text-accent border border-accent/30">
-        In Review
-      </span>
-    );
-  }
+  const style = STATUS_BADGE_STYLES[key] ?? STATUS_BADGE_STYLES.submitted;
+  const label = STATUS_LABELS[key] ?? STATUS_LABELS.submitted;
 
-  // status === "submitted" — show decision-specific badge
-  if (decision === "changes_requested") {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-600/20 text-red-400 border border-red-500/30">
-        Changes Requested
-      </span>
-    );
-  }
-
-  if (decision === "approved" || decision === "approved_with_comments") {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
-        Approved
-      </span>
-    );
-  }
-
-  if (decision === "dismissed") {
-    return (
-      <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-gray-600/20 text-gray-400 border border-gray-500/30">
-        Dismissed
-      </span>
-    );
-  }
-
-  // Fallback for submitted without a decision
   return (
-    <span className="inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/20 text-green-400 border border-green-500/30">
-      Submitted
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded ${style}`}>
+      {label}
     </span>
   );
 }
@@ -191,12 +168,12 @@ export function SessionList({ sessions, activeSessionId, onSelect, onClose, noti
                   {session.fileCount} file{session.fileCount !== 1 ? "s" : ""}
                 </span>
                 {session.additions > 0 && (
-                  <span className="text-green-400 text-xs font-mono">
+                  <span className="text-success text-xs font-mono">
                     +{session.additions}
                   </span>
                 )}
                 {session.deletions > 0 && (
-                  <span className="text-red-400 text-xs font-mono">
+                  <span className="text-danger text-xs font-mono">
                     -{session.deletions}
                   </span>
                 )}

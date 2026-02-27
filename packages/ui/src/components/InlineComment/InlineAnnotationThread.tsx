@@ -7,28 +7,7 @@ import {
   Bot,
 } from "lucide-react";
 import type { Annotation } from "../../types";
-
-const CATEGORY_COLORS: Record<string, string> = {
-  security: "text-red-500 dark:text-red-400",
-  performance: "text-orange-500 dark:text-orange-400",
-  convention: "text-blue-500 dark:text-blue-400",
-  correctness: "text-yellow-500 dark:text-yellow-400",
-  complexity: "text-purple-500 dark:text-purple-400",
-  "test-coverage": "text-cyan-500 dark:text-cyan-400",
-  documentation: "text-gray-500 dark:text-gray-400",
-  other: "text-gray-500 dark:text-gray-400",
-};
-
-const CATEGORY_BADGE_STYLES: Record<string, string> = {
-  security: "bg-red-600/15 text-red-600 dark:text-red-400 border-red-500/30",
-  performance: "bg-orange-600/15 text-orange-600 dark:text-orange-400 border-orange-500/30",
-  convention: "bg-blue-600/15 text-blue-600 dark:text-blue-400 border-blue-500/30",
-  correctness: "bg-yellow-600/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
-  complexity: "bg-purple-600/15 text-purple-600 dark:text-purple-400 border-purple-500/30",
-  "test-coverage": "bg-cyan-600/15 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
-  documentation: "bg-gray-600/15 text-gray-600 dark:text-gray-400 border-gray-500/30",
-  other: "bg-gray-600/15 text-gray-600 dark:text-gray-400 border-gray-500/30",
-};
+import { CATEGORY_COLORS, CATEGORY_BADGE_STYLES } from "../../lib/semantic-colors";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
   finding: AlertCircle,

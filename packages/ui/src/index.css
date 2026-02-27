@@ -69,6 +69,14 @@
   --color-token-function: #2870c9;
   --color-token-variable: #b06e18;
 
+  /* Semantic status colors */
+  --color-success: #0e7a5c;
+  --color-danger: #c93c33;
+  --color-warning: #b06e18;
+  --color-info: #2870c9;
+  --color-neutral: #6b7a8f;
+  --color-perf: #c07820;
+
   /* Semantic colors for Tailwind */
   --color-added: rgba(30, 160, 120, 0.40);
   --color-deleted: rgba(210, 75, 65, 0.40);
@@ -136,6 +144,14 @@
   --color-token-keyword: #b08df0;
   --color-token-function: #6aabf7;
   --color-token-variable: #e0a050;
+
+  /* Semantic status colors */
+  --color-success: #42c9a2;
+  --color-danger: #f07a6e;
+  --color-warning: #e0a050;
+  --color-info: #6aabf7;
+  --color-neutral: #5f6f8a;
+  --color-perf: #e89040;
 
   /* Semantic colors for Tailwind */
   --color-added: rgba(45, 185, 140, 0.40);
