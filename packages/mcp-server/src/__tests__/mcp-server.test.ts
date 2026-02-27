@@ -4,16 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mockEnsureServer = vi.fn();
 const mockSubmitReviewToServer = vi.fn();
-const mockReadWatchFile = vi.fn();
-const mockReadReviewResult = vi.fn();
-const mockConsumeReviewResult = vi.fn();
 const mockIsServerAlive = vi.fn();
 vi.mock("@diffprism/core", () => ({
   ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
   submitReviewToServer: (...args: unknown[]) => mockSubmitReviewToServer(...args),
-  readWatchFile: (...args: unknown[]) => mockReadWatchFile(...args),
-  readReviewResult: (...args: unknown[]) => mockReadReviewResult(...args),
-  consumeReviewResult: (...args: unknown[]) => mockConsumeReviewResult(...args),
   isServerAlive: (...args: unknown[]) => mockIsServerAlive(...args),
 }));
 

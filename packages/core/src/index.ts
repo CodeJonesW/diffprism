@@ -24,14 +24,10 @@ export type {
   ServerMessage,
   ClientMessage,
   ReviewOptions,
-  WatchOptions,
-  WatchHandle,
   DiffUpdatePayload,
   ContextUpdatePayload,
   DiffErrorPayload,
-  WatchFileInfo,
   FileReviewStatus,
-  ReviewResultFile,
   GlobalServerInfo,
   GlobalSessionStatus,
   SessionSummary,
@@ -42,12 +38,9 @@ export type {
   GitRefsPayload,
 } from "./types.js";
 
-export { startReview } from "./pipeline.js";
-export { startWatch } from "./watch.js";
 export { createDiffPoller } from "./diff-poller.js";
 export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
-export { readWatchFile, readReviewResult, consumeReviewResult } from "./watch-file.js";
 export { startGlobalServer } from "./global-server.js";
 export { ensureServer, submitReviewToServer } from "./server-client.js";
 export type {

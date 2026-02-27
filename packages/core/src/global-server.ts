@@ -375,8 +375,8 @@ async function handleApiRequest(
         existingSession.hasNewChanges = false;
         existingSession.annotations = [];
 
-        // Restart watcher if needed
-        if (diffRef && hasConnectedClients()) {
+        // Restart watcher immediately (watches regardless of connected UI clients)
+        if (diffRef) {
           startSessionWatcher(sessionId);
         }
 
@@ -420,8 +420,8 @@ async function handleApiRequest(
 
         sessions.set(sessionId, session);
 
-        // Start watcher if clients are connected and diffRef is provided
-        if (diffRef && hasConnectedClients()) {
+        // Start watcher immediately (watches regardless of connected UI clients)
+        if (diffRef) {
           startSessionWatcher(sessionId);
         }
 
@@ -1003,11 +1003,8 @@ export async function startGlobalServer(
 
     ws.on("close", () => {
       clientSessions.delete(ws);
-
-      // Stop all watchers when no clients remain
-      if (!hasConnectedClients()) {
-        stopAllWatchers();
-      }
+      // Watchers keep running even when no UI clients are connected —
+      // the server is the source of truth, not the browser.
     });
   });
 

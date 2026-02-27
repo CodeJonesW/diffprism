@@ -4,9 +4,6 @@ import { z } from "zod";
 import {
   ensureServer,
   submitReviewToServer,
-  readWatchFile,
-  readReviewResult,
-  consumeReviewResult,
   isServerAlive,
 } from "@diffprism/core";
 import type {
@@ -160,47 +157,20 @@ export async function startMcpServer(): Promise<void> {
         if (title !== undefined) payload.title = title;
         if (description !== undefined) payload.description = description;
 
-        // Try global server first
-        if (lastGlobalSessionId) {
-          const serverInfo = lastGlobalServerInfo ?? (await isServerAlive());
-          if (serverInfo) {
-            const response = await fetch(
-              `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/context`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(payload),
-              },
-            );
-
-            if (response.ok) {
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: "Context updated in DiffPrism server session.",
-                  },
-                ],
-              };
-            }
-          }
-        }
-
-        // Fallback: try watch session (for standalone `diffprism watch`)
-        const watchInfo = readWatchFile();
-        if (!watchInfo) {
+        const serverInfo = lastGlobalServerInfo ?? (await isServerAlive());
+        if (!serverInfo || !lastGlobalSessionId) {
           return {
             content: [
               {
                 type: "text" as const,
-                text: "No DiffPrism session is running. Use `open_review` to start a review, or run `diffprism server`.",
+                text: "No DiffPrism session is running. Use `open_review` to start a review.",
               },
             ],
           };
         }
 
         const response = await fetch(
-          `http://localhost:${watchInfo.wsPort}/api/context`,
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/context`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -209,14 +179,14 @@ export async function startMcpServer(): Promise<void> {
         );
 
         if (!response.ok) {
-          throw new Error(`Watch server returned ${response.status}`);
+          throw new Error(`Server returned ${response.status}`);
         }
 
         return {
           content: [
             {
               type: "text" as const,
-              text: "Context updated in DiffPrism watch session.",
+              text: "Context updated in DiffPrism session.",
             },
           ],
         };
@@ -253,45 +223,21 @@ export async function startMcpServer(): Promise<void> {
         const maxWaitMs = Math.min((timeout ?? 300), 600) * 1000;
         const pollIntervalMs = 2000;
 
-        // Try global server first
-        if (lastGlobalSessionId && lastGlobalServerInfo) {
-          const serverInfo = await isServerAlive();
-          if (serverInfo) {
-            if (wait) {
-              const start = Date.now();
-              while (Date.now() - start < maxWaitMs) {
-                const response = await fetch(
-                  `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/result`,
-                );
-                if (response.ok) {
-                  const data = (await response.json()) as {
-                    result: ReviewResult | null;
-                    status: string;
-                  };
-                  if (data.result) {
-                    return {
-                      content: [
-                        {
-                          type: "text" as const,
-                          text: JSON.stringify(data.result, null, 2),
-                        },
-                      ],
-                    };
-                  }
-                }
-                await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-              }
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: "No review result received within timeout.",
-                  },
-                ],
-              };
-            }
+        const serverInfo = lastGlobalServerInfo ?? (await isServerAlive());
+        if (!serverInfo || !lastGlobalSessionId) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No DiffPrism session is running. Use `open_review` to start a review.",
+              },
+            ],
+          };
+        }
 
-            // Non-blocking check
+        if (wait) {
+          const start = Date.now();
+          while (Date.now() - start < maxWaitMs) {
             const response = await fetch(
               `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/result`,
             );
@@ -311,36 +257,8 @@ export async function startMcpServer(): Promise<void> {
                 };
               }
             }
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: "No pending review result.",
-                },
-              ],
-            };
-          }
-        }
-
-        // Fallback: file-based watch session result
-        if (wait) {
-          const start = Date.now();
-          while (Date.now() - start < maxWaitMs) {
-            const data = readReviewResult();
-            if (data) {
-              consumeReviewResult();
-              return {
-                content: [
-                  {
-                    type: "text" as const,
-                    text: JSON.stringify(data.result, null, 2),
-                  },
-                ],
-              };
-            }
             await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
           }
-
           return {
             content: [
               {
@@ -351,25 +269,31 @@ export async function startMcpServer(): Promise<void> {
           };
         }
 
-        const data = readReviewResult();
-        if (!data) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: "No pending review result.",
-              },
-            ],
+        // Non-blocking check
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${lastGlobalSessionId}/result`,
+        );
+        if (response.ok) {
+          const data = (await response.json()) as {
+            result: ReviewResult | null;
+            status: string;
           };
+          if (data.result) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify(data.result, null, 2),
+                },
+              ],
+            };
+          }
         }
-
-        consumeReviewResult();
-
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(data.result, null, 2),
+              text: "No pending review result.",
             },
           ],
         };

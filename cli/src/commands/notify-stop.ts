@@ -1,10 +1,10 @@
-import { readWatchFile } from "@diffprism/core";
+import { isServerAlive } from "@diffprism/core";
 
 export async function notifyStop(): Promise<void> {
   try {
-    const watchInfo = readWatchFile();
-    if (!watchInfo) {
-      // No watch running — silently exit
+    const serverInfo = await isServerAlive();
+    if (!serverInfo) {
+      // No server running — silently exit
       process.exit(0);
       return;
     }
@@ -13,7 +13,7 @@ export async function notifyStop(): Promise<void> {
     const timeout = setTimeout(() => controller.abort(), 2000);
 
     try {
-      await fetch(`http://localhost:${watchInfo.wsPort}/api/refresh`, {
+      await fetch(`http://localhost:${serverInfo.httpPort}/api/refresh`, {
         method: "POST",
         signal: controller.signal,
       });
