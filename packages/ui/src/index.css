@@ -8,136 +8,136 @@
 
 :root {
   /* Layout */
-  --color-background: #ffffff;
-  --color-surface: #f6f8fa;
-  --color-border: #d0d7de;
-  --color-text-primary: #1f2328;
-  --color-text-secondary: #656d76;
-  --color-accent: #0969da;
+  --color-background: #e5e9f2;
+  --color-surface: #d8dde9;
+  --color-border: #b3bbd0;
+  --color-text-primary: #141828;
+  --color-text-secondary: #434e65;
+  --color-accent: #4f3fba;
 
   /* Diff */
-  --color-diff-bg: #ffffff;
-  --color-diff-text: #1f2328;
-  --color-gutter-bg: #f6f8fa;
-  --color-gutter-text: #656d76;
-  --color-gutter-border: #d0d7de;
+  --color-diff-bg: #e5e9f2;
+  --color-diff-text: #141828;
+  --color-gutter-bg: #d8dde9;
+  --color-gutter-text: #434e65;
+  --color-gutter-border: #b3bbd0;
 
   /* Diff additions */
-  --color-diff-insert-bg: rgba(46, 160, 67, 0.15);
-  --color-diff-insert-gutter-bg: rgba(46, 160, 67, 0.2);
-  --color-diff-insert-gutter-text: #1a7f37;
+  --color-diff-insert-bg: rgba(30, 160, 120, 0.15);
+  --color-diff-insert-gutter-bg: rgba(30, 160, 120, 0.22);
+  --color-diff-insert-gutter-text: #14704f;
 
   /* Diff deletions */
-  --color-diff-delete-bg: rgba(248, 81, 73, 0.15);
-  --color-diff-delete-gutter-bg: rgba(248, 81, 73, 0.2);
-  --color-diff-delete-gutter-text: #cf222e;
+  --color-diff-delete-bg: rgba(210, 75, 65, 0.15);
+  --color-diff-delete-gutter-bg: rgba(210, 75, 65, 0.22);
+  --color-diff-delete-gutter-text: #b02e26;
 
   /* Diff hunks */
-  --color-hunk-bg: rgba(9, 105, 218, 0.1);
-  --color-hunk-border: #d0d7de;
-  --color-hunk-gutter-bg: rgba(9, 105, 218, 0.15);
-  --color-hunk-gutter-text: #0969da;
-  --color-hunk-content-text: #656d76;
+  --color-hunk-bg: rgba(90, 72, 201, 0.10);
+  --color-hunk-border: #b3bbd0;
+  --color-hunk-gutter-bg: rgba(79, 63, 186, 0.15);
+  --color-hunk-gutter-text: #4f3fba;
+  --color-hunk-content-text: #434e65;
 
   /* Word-level diff */
-  --color-diff-edit-insert: rgba(46, 160, 67, 0.4);
-  --color-diff-edit-delete: rgba(248, 81, 73, 0.4);
+  --color-diff-edit-insert: rgba(30, 160, 120, 0.42);
+  --color-diff-edit-delete: rgba(210, 75, 65, 0.42);
 
   /* Split view divider */
-  --color-split-divider: #d0d7de;
+  --color-split-divider: #b3bbd0;
 
   /* Widget */
-  --color-widget-bg: #f6f8fa;
+  --color-widget-bg: #d8dde9;
 
   /* Inline comment button */
-  --color-comment-btn-bg: #238636;
-  --color-comment-indicator: #0969da;
+  --color-comment-btn-bg: #167a5c;
+  --color-comment-indicator: #4f3fba;
 
   /* Scrollbar */
-  --color-scrollbar-track: #ffffff;
-  --color-scrollbar-thumb: #d0d7de;
-  --color-scrollbar-thumb-hover: #afb8c1;
+  --color-scrollbar-track: #e5e9f2;
+  --color-scrollbar-thumb: #b3bbd0;
+  --color-scrollbar-thumb-hover: #98a2b8;
 
   /* Syntax tokens */
-  --color-token-comment: #6e7781;
-  --color-token-punctuation: #1f2328;
-  --color-token-property: #0550ae;
-  --color-token-string: #0a3069;
-  --color-token-operator: #cf222e;
-  --color-token-keyword: #cf222e;
-  --color-token-function: #8250df;
-  --color-token-variable: #953800;
+  --color-token-comment: #6b7a8f;
+  --color-token-punctuation: #1a1f2e;
+  --color-token-property: #0b6e82;
+  --color-token-string: #0e7a5c;
+  --color-token-operator: #c93c33;
+  --color-token-keyword: #6e45c9;
+  --color-token-function: #2870c9;
+  --color-token-variable: #b06e18;
 
   /* Semantic colors for Tailwind */
-  --color-added: rgba(46, 160, 67, 0.44);
-  --color-deleted: rgba(248, 81, 73, 0.44);
+  --color-added: rgba(30, 160, 120, 0.40);
+  --color-deleted: rgba(210, 75, 65, 0.40);
 }
 
 .dark {
   /* Layout */
-  --color-background: #0d1117;
-  --color-surface: #161b22;
-  --color-border: #30363d;
-  --color-text-primary: #e6edf3;
-  --color-text-secondary: #8b949e;
-  --color-accent: #58a6ff;
+  --color-background: #0b0f1a;
+  --color-surface: #131829;
+  --color-border: #252d3f;
+  --color-text-primary: #dfe5f1;
+  --color-text-secondary: #7585a3;
+  --color-accent: #7c6bf0;
 
   /* Diff */
-  --color-diff-bg: #0d1117;
-  --color-diff-text: #e6edf3;
-  --color-gutter-bg: #161b22;
-  --color-gutter-text: #8b949e;
-  --color-gutter-border: #30363d;
+  --color-diff-bg: #0b0f1a;
+  --color-diff-text: #dfe5f1;
+  --color-gutter-bg: #111623;
+  --color-gutter-text: #7585a3;
+  --color-gutter-border: #252d3f;
 
   /* Diff additions */
-  --color-diff-insert-bg: rgba(46, 160, 67, 0.15);
-  --color-diff-insert-gutter-bg: rgba(46, 160, 67, 0.2);
-  --color-diff-insert-gutter-text: #7ee787;
+  --color-diff-insert-bg: rgba(45, 185, 140, 0.12);
+  --color-diff-insert-gutter-bg: rgba(45, 185, 140, 0.18);
+  --color-diff-insert-gutter-text: #5ee0b2;
 
   /* Diff deletions */
-  --color-diff-delete-bg: rgba(248, 81, 73, 0.15);
-  --color-diff-delete-gutter-bg: rgba(248, 81, 73, 0.2);
-  --color-diff-delete-gutter-text: #f85149;
+  --color-diff-delete-bg: rgba(235, 100, 90, 0.12);
+  --color-diff-delete-gutter-bg: rgba(235, 100, 90, 0.18);
+  --color-diff-delete-gutter-text: #f07068;
 
   /* Diff hunks */
-  --color-hunk-bg: rgba(88, 166, 255, 0.1);
-  --color-hunk-border: #30363d;
-  --color-hunk-gutter-bg: rgba(88, 166, 255, 0.15);
-  --color-hunk-gutter-text: #58a6ff;
-  --color-hunk-content-text: #8b949e;
+  --color-hunk-bg: rgba(124, 107, 240, 0.08);
+  --color-hunk-border: #252d3f;
+  --color-hunk-gutter-bg: rgba(124, 107, 240, 0.12);
+  --color-hunk-gutter-text: #9688f0;
+  --color-hunk-content-text: #7585a3;
 
   /* Word-level diff */
-  --color-diff-edit-insert: rgba(46, 160, 67, 0.4);
-  --color-diff-edit-delete: rgba(248, 81, 73, 0.4);
+  --color-diff-edit-insert: rgba(45, 185, 140, 0.35);
+  --color-diff-edit-delete: rgba(235, 100, 90, 0.35);
 
   /* Split view divider */
-  --color-split-divider: #30363d;
+  --color-split-divider: #252d3f;
 
   /* Widget */
-  --color-widget-bg: #161b22;
+  --color-widget-bg: #131829;
 
   /* Inline comment button */
-  --color-comment-btn-bg: #238636;
-  --color-comment-indicator: #58a6ff;
+  --color-comment-btn-bg: #2db98c;
+  --color-comment-indicator: #7c6bf0;
 
   /* Scrollbar */
-  --color-scrollbar-track: #0d1117;
-  --color-scrollbar-thumb: #30363d;
-  --color-scrollbar-thumb-hover: #484f58;
+  --color-scrollbar-track: #0b0f1a;
+  --color-scrollbar-thumb: #252d3f;
+  --color-scrollbar-thumb-hover: #3a4560;
 
   /* Syntax tokens */
-  --color-token-comment: #8b949e;
-  --color-token-punctuation: #e6edf3;
-  --color-token-property: #79c0ff;
-  --color-token-string: #a5d6ff;
-  --color-token-operator: #ff7b72;
-  --color-token-keyword: #ff7b72;
-  --color-token-function: #d2a8ff;
-  --color-token-variable: #ffa657;
+  --color-token-comment: #5f6f8a;
+  --color-token-punctuation: #bec8db;
+  --color-token-property: #56c8e0;
+  --color-token-string: #42c9a2;
+  --color-token-operator: #f07a6e;
+  --color-token-keyword: #b08df0;
+  --color-token-function: #6aabf7;
+  --color-token-variable: #e0a050;
 
   /* Semantic colors for Tailwind */
-  --color-added: rgba(46, 160, 67, 0.44);
-  --color-deleted: rgba(248, 81, 73, 0.44);
+  --color-added: rgba(45, 185, 140, 0.40);
+  --color-deleted: rgba(235, 100, 90, 0.40);
 }
 
 /* ─── Dark theme overrides for react-diff-view ─── */
