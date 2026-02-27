@@ -1,18 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock @diffprism/core before importing the review command
+const mockEnsureServer = vi.fn();
+const mockSubmitReviewToServer = vi.fn();
 vi.mock("@diffprism/core", () => ({
-  startReview: vi.fn(),
+  ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
+  submitReviewToServer: (...args: unknown[]) =>
+    mockSubmitReviewToServer(...args),
 }));
 
 import { review } from "../commands/review.js";
-import { startReview } from "@diffprism/core";
 
-const mockStartReview = vi.mocked(startReview);
+const defaultServerInfo = {
+  httpPort: 24680,
+  wsPort: 24681,
+  pid: 1234,
+  startedAt: Date.now(),
+};
 
 describe("review command", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnsureServer.mockResolvedValue(defaultServerInfo);
     // Prevent actual process.exit
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -21,76 +30,86 @@ describe("review command", () => {
 
   describe("flag resolution", () => {
     it('resolves --staged flag to diffRef "staged"', async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review(undefined, { staged: true });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "staged",
         expect.objectContaining({ diffRef: "staged" }),
       );
     });
 
     it('resolves --unstaged flag to diffRef "unstaged"', async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review(undefined, { unstaged: true });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "unstaged",
         expect.objectContaining({ diffRef: "unstaged" }),
       );
     });
 
     it("resolves an explicit ref argument", async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review("HEAD~3..HEAD", {});
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "HEAD~3..HEAD",
         expect.objectContaining({ diffRef: "HEAD~3..HEAD" }),
       );
     });
 
     it('defaults to "working-copy" when no ref or flags are provided', async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review(undefined, {});
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "working-copy",
         expect.objectContaining({ diffRef: "working-copy" }),
       );
     });
 
     it("--staged takes priority over a ref argument", async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review("HEAD~1..HEAD", { staged: true });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "staged",
         expect.objectContaining({ diffRef: "staged" }),
       );
     });
   });
 
   describe("options passthrough", () => {
-    it("passes title and dev flag to startReview", async () => {
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
+    it("passes title to submitReviewToServer and dev to ensureServer", async () => {
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-1",
       });
 
       await review(undefined, {
@@ -99,10 +118,12 @@ describe("review command", () => {
         dev: true,
       });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockEnsureServer).toHaveBeenCalledWith({ dev: true });
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "staged",
         expect.objectContaining({
           title: "My Review",
-          dev: true,
         }),
       );
     });
@@ -115,7 +136,10 @@ describe("review command", () => {
         comments: [],
         summary: "LGTM",
       };
-      mockStartReview.mockResolvedValue(result);
+      mockSubmitReviewToServer.mockResolvedValue({
+        result,
+        sessionId: "session-1",
+      });
 
       await review(undefined, { staged: true });
 
@@ -126,7 +150,7 @@ describe("review command", () => {
     });
 
     it("prints error message and exits 1 on failure", async () => {
-      mockStartReview.mockRejectedValue(new Error("git not found"));
+      mockEnsureServer.mockRejectedValue(new Error("git not found"));
 
       await review(undefined, { staged: true });
 

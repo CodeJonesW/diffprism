@@ -1,4 +1,4 @@
-import { startReview } from "@diffprism/core";
+import { ensureServer, submitReviewToServer } from "@diffprism/core";
 
 interface ReviewFlags {
   staged?: boolean;
@@ -25,11 +25,11 @@ export async function review(
   }
 
   try {
-    const result = await startReview({
-      diffRef,
+    const serverInfo = await ensureServer({ dev: flags.dev });
+    const { result } = await submitReviewToServer(serverInfo, diffRef, {
       title: flags.title,
       cwd: process.cwd(),
-      dev: flags.dev,
+      diffRef,
     });
 
     // Print structured result to stdout

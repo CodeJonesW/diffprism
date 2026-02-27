@@ -795,6 +795,7 @@ export async function startGlobalServer(
     silent = false,
     dev = false,
     pollInterval = 2000,
+    openBrowser = true,
   } = options;
 
   serverPollInterval = pollInterval;
@@ -1053,7 +1054,9 @@ export async function startGlobalServer(
 
   // Open browser to UI
   const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&httpPort=${httpPort}&serverMode=true`;
-  await open(uiUrl);
+  if (openBrowser) {
+    await open(uiUrl);
+  }
 
   // Re-open browser when a review arrives and no UI clients are connected
   reopenBrowserIfNeeded = (): void => {

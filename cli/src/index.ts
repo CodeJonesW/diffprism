@@ -90,6 +90,8 @@ const serverCmd = program
   .option("-p, --port <port>", "HTTP API port (default: 24680)")
   .option("--ws-port <port>", "WebSocket port (default: 24681)")
   .option("--dev", "Use Vite dev server with HMR instead of static files")
+  .option("--background", "Start server as a background daemon")
+  .option("--_daemon", "Internal: run as spawned daemon (do not use directly)")
   .action(server);
 
 serverCmd

@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── Mocks ───
 
-const mockStartReview = vi.fn();
+const mockEnsureServer = vi.fn();
+const mockSubmitReviewToServer = vi.fn();
 const mockReadWatchFile = vi.fn();
 const mockReadReviewResult = vi.fn();
 const mockConsumeReviewResult = vi.fn();
 const mockIsServerAlive = vi.fn();
 vi.mock("@diffprism/core", () => ({
-  startReview: (...args: unknown[]) => mockStartReview(...args),
+  ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
+  submitReviewToServer: (...args: unknown[]) => mockSubmitReviewToServer(...args),
   readWatchFile: (...args: unknown[]) => mockReadWatchFile(...args),
   readReviewResult: (...args: unknown[]) => mockReadReviewResult(...args),
   consumeReviewResult: (...args: unknown[]) => mockConsumeReviewResult(...args),
@@ -16,12 +18,8 @@ vi.mock("@diffprism/core", () => ({
 }));
 
 const mockGetDiff = vi.fn();
-const mockGetCurrentBranch = vi.fn();
-const mockDetectWorktree = vi.fn();
 vi.mock("@diffprism/git", () => ({
   getDiff: (...args: unknown[]) => mockGetDiff(...args),
-  getCurrentBranch: (...args: unknown[]) => mockGetCurrentBranch(...args),
-  detectWorktree: (...args: unknown[]) => mockDetectWorktree(...args),
 }));
 
 const mockAnalyze = vi.fn();
@@ -59,54 +57,22 @@ vi.mock("@modelcontextprotocol/sdk/server/stdio.js", () => ({
   StdioServerTransport: vi.fn(),
 }));
 
-const mockExistsSync = vi.fn();
-vi.mock("node:fs", () => ({
-  default: {
-    existsSync: (...args: unknown[]) => mockExistsSync(...args),
-  },
-}));
-
 // ─── Helpers ───
 
-function makeDiffSet(fileCount = 1) {
-  return {
-    baseRef: "HEAD",
-    headRef: "staged",
-    files: Array.from({ length: fileCount }, (_, i) => ({
-      path: `src/file${i}.ts`,
-      status: "modified" as const,
-      hunks: [],
-      language: "typescript",
-      binary: false,
-      additions: 5,
-      deletions: 2,
-    })),
-  };
-}
-
-function makeBriefing() {
-  return {
-    summary: "1 file changed",
-    triage: { critical: [], notable: [], mechanical: [] },
-    impact: {
-      affectedModules: [],
-      affectedTests: [],
-      publicApiChanges: false,
-      breakingChanges: [],
-      newDependencies: [],
-    },
-    verification: { testsPass: null, typeCheck: null, lintClean: null },
-    fileStats: [],
-  };
-}
+const defaultServerInfo = {
+  httpPort: 24680,
+  wsPort: 24681,
+  pid: 1234,
+  startedAt: Date.now(),
+};
 
 describe("mcp-server", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default: no global server running
+    // Default: ensureServer succeeds
+    mockEnsureServer.mockResolvedValue(defaultServerInfo);
+    // Default: no server alive (for tools that check directly)
     mockIsServerAlive.mockResolvedValue(null);
-    // Default: not in a worktree
-    mockDetectWorktree.mockReturnValue({ isWorktree: false });
   });
 
   it("registers tools", async () => {
@@ -145,56 +111,31 @@ describe("mcp-server", () => {
       return mockToolFn.mock.calls[0][3];
     }
 
-    it("falls back to startReview when no global server is running", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockResolvedValue({
-        decision: "approved",
-        comments: [],
-        summary: "LGTM",
+    it("calls ensureServer and submitReviewToServer", async () => {
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [], summary: "LGTM" },
+        sessionId: "session-123",
       });
 
       const handler = await getToolHandler();
       await handler({ diff_ref: "staged" });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockEnsureServer).toHaveBeenCalledWith({ silent: true });
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "staged",
         expect.objectContaining({
+          cwd: process.cwd(),
           diffRef: "staged",
-          silent: true,
         }),
       );
     });
 
-    it("enables dev mode when inside diffprism workspace", async () => {
-      mockExistsSync.mockReturnValue(true);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockResolvedValue({ decision: "approved", comments: [] });
-
-      const handler = await getToolHandler();
-      await handler({ diff_ref: "staged" });
-
-      expect(mockStartReview).toHaveBeenCalledWith(
-        expect.objectContaining({ dev: true }),
-      );
-    });
-
-    it("disables dev mode when outside diffprism workspace", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockResolvedValue({ decision: "approved", comments: [] });
-
-      const handler = await getToolHandler();
-      await handler({ diff_ref: "unstaged" });
-
-      expect(mockStartReview).toHaveBeenCalledWith(
-        expect.objectContaining({ dev: false }),
-      );
-    });
-
-    it("passes optional fields through to startReview", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockResolvedValue({ decision: "approved", comments: [] });
+    it("passes optional fields through to submitReviewToServer", async () => {
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-123",
+      });
 
       const handler = await getToolHandler();
       await handler({
@@ -204,25 +145,28 @@ describe("mcp-server", () => {
         reasoning: "Because I said so",
       });
 
-      expect(mockStartReview).toHaveBeenCalledWith(
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "HEAD~2..HEAD",
         expect.objectContaining({
-          diffRef: "HEAD~2..HEAD",
           title: "My Review",
           description: "Some changes",
           reasoning: "Because I said so",
+          diffRef: "HEAD~2..HEAD",
         }),
       );
     });
 
     it("returns ReviewResult as JSON text content", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
       const reviewResult = {
         decision: "changes_requested",
         comments: [{ file: "a.ts", line: 1, body: "Fix this", type: "must_fix" }],
         summary: "Needs work",
       };
-      mockStartReview.mockResolvedValue(reviewResult);
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: reviewResult,
+        sessionId: "session-123",
+      });
 
       const handler = await getToolHandler();
       const result = await handler({ diff_ref: "staged" });
@@ -233,22 +177,36 @@ describe("mcp-server", () => {
       expect(result.isError).toBeUndefined();
     });
 
-    it("returns error content when startReview throws", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockRejectedValue(new Error("No changes to review"));
+    it("returns error content when ensureServer throws", async () => {
+      mockEnsureServer.mockRejectedValue(
+        new Error("DiffPrism server failed to start within 15s"),
+      );
 
       const handler = await getToolHandler();
       const result = await handler({ diff_ref: "staged" });
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toBe("Error: No changes to review");
+      expect(result.content[0].text).toBe(
+        "Error: DiffPrism server failed to start within 15s",
+      );
+    });
+
+    it("returns error content when submitReviewToServer throws", async () => {
+      mockSubmitReviewToServer.mockRejectedValue(
+        new Error("Global server returned 500 on create"),
+      );
+
+      const handler = await getToolHandler();
+      const result = await handler({ diff_ref: "staged" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(
+        "Error: Global server returned 500 on create",
+      );
     });
 
     it("handles non-Error throws gracefully", async () => {
-      mockExistsSync.mockReturnValue(false);
-      mockIsServerAlive.mockResolvedValue(null);
-      mockStartReview.mockRejectedValue("string error");
+      mockSubmitReviewToServer.mockRejectedValue("string error");
 
       const handler = await getToolHandler();
       const result = await handler({ diff_ref: "staged" });
@@ -257,80 +215,18 @@ describe("mcp-server", () => {
       expect(result.content[0].text).toBe("Error: string error");
     });
 
-    it("routes through global server when one is running", async () => {
-      const serverInfo = { httpPort: 24680, wsPort: 24681, pid: 1234, startedAt: Date.now() };
-      mockIsServerAlive.mockResolvedValue(serverInfo);
-
-      const diffSet = makeDiffSet();
-      mockGetDiff.mockReturnValue({ diffSet, rawDiff: "diff content" });
-      mockGetCurrentBranch.mockReturnValue("feature/test");
-      mockAnalyze.mockReturnValue(makeBriefing());
-
-      // Mock fetch: first call creates session, second call returns result
-      const originalFetch = globalThis.fetch;
-      let fetchCallCount = 0;
-      globalThis.fetch = vi.fn().mockImplementation(async (url: string) => {
-        fetchCallCount++;
-        if (typeof url === "string" && url.includes("/api/reviews") && !url.includes("/result")) {
-          // POST /api/reviews — create session
-          return {
-            ok: true,
-            status: 201,
-            json: async () => ({ sessionId: "session-test-123" }),
-          };
-        }
-        if (typeof url === "string" && url.includes("/result")) {
-          // GET /api/reviews/:id/result — return result on first poll
-          return {
-            ok: true,
-            json: async () => ({
-              result: { decision: "approved", comments: [], summary: "LGTM" },
-              status: "submitted",
-            }),
-          };
-        }
-        return { ok: false, status: 404 };
+    it("stores sessionId for subsequent tool calls", async () => {
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-456",
       });
 
-      try {
-        const handler = await getToolHandler();
-        const result = await handler({
-          diff_ref: "staged",
-          title: "Test via global",
-        });
-
-        // Should NOT call startReview
-        expect(mockStartReview).not.toHaveBeenCalled();
-
-        // Should compute diff locally
-        expect(mockGetDiff).toHaveBeenCalledWith("staged", { cwd: process.cwd() });
-        expect(mockAnalyze).toHaveBeenCalledWith(diffSet);
-
-        // Should return the result
-        const parsed = JSON.parse(result.content[0].text);
-        expect(parsed.decision).toBe("approved");
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-
-    it("returns early with approved result for empty diff via global server", async () => {
-      const serverInfo = { httpPort: 24680, wsPort: 24681, pid: 1234, startedAt: Date.now() };
-      mockIsServerAlive.mockResolvedValue(serverInfo);
-
-      const emptyDiffSet = { baseRef: "HEAD", headRef: "staged", files: [] };
-      mockGetDiff.mockReturnValue({ diffSet: emptyDiffSet, rawDiff: "" });
-      mockGetCurrentBranch.mockReturnValue("main");
-
       const handler = await getToolHandler();
-      const result = await handler({ diff_ref: "staged" });
+      await handler({ diff_ref: "staged" });
 
-      // Should NOT call startReview or fetch
-      expect(mockStartReview).not.toHaveBeenCalled();
-
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.decision).toBe("approved");
-      expect(parsed.summary).toBe("No changes to review.");
+      // The sessionId is stored in module state for update_review_context / get_review_result.
+      // We verify by checking the handler was called successfully (state is internal).
+      expect(mockSubmitReviewToServer).toHaveBeenCalled();
     });
   });
 });

@@ -49,6 +49,11 @@ export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
 export { readWatchFile, readReviewResult, consumeReviewResult } from "./watch-file.js";
 export { startGlobalServer } from "./global-server.js";
+export { ensureServer, submitReviewToServer } from "./server-client.js";
+export type {
+  EnsureServerOptions,
+  SubmitReviewOptions,
+} from "./server-client.js";
 export {
   writeServerFile,
   readServerFile,
