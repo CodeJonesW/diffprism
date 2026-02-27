@@ -4,32 +4,58 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ## Key Files
 
-- `src/index.ts` — `startMcpServer()` creates an McpServer, registers tools, connects StdioServerTransport.
+- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 9 tools, connects StdioServerTransport.
 
 ## Tools
 
 ### `open_review`
-- **Params:** `diff_ref` (required), `title`, `description`, `reasoning` (all optional)
-- **Behavior:** Detects running global server via `isServerAlive()`. If found, computes diff locally with `getDiff()` + `analyze()`, POSTs to `/api/reviews`, then polls `/api/reviews/:id/result`. If no global server, falls back to `startReview()` with `silent: true` (ephemeral browser tab).
-- **Returns:** `ReviewResult` as JSON text content. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action via quick actions in the FileBrowser.
+- **Params:** `diff_ref` (required), `title`, `description`, `reasoning`, `annotations` (all optional)
+- **Behavior:** Calls `ensureServer()` to auto-start the daemon if needed, then `submitReviewToServer()` to compute diff locally, POST to server, and poll for result.
+- **Returns:** `ReviewResult` as JSON. May include `postReviewAction` ('commit' or 'commit_and_pr').
 
 ### `update_review_context`
-- Routes to global server session if `lastGlobalSessionId` exists, otherwise falls back to watch file.
+- **Params:** `reasoning`, `title`, `description` (all optional)
+- **Behavior:** POSTs context update to the server for the most recent session. Requires a prior `open_review` call.
 
 ### `get_review_result`
-- Polls global server if session exists, otherwise falls back to file-based result.
+- **Params:** `wait` (optional bool), `timeout` (optional number)
+- **Behavior:** Polls the server for the most recent session's result. Primarily for advanced workflows — `open_review` already blocks and returns the result.
 
-## Global Server Detection
+### `get_diff`
+- **Params:** `diff_ref` (required)
+- **Behavior:** Runs `getDiff()` locally and returns the structured `DiffSet` as JSON. No server needed.
 
-Module-level state (`lastGlobalSessionId`, `lastGlobalServerInfo`) tracks the active global server session across tool calls. On each `open_review`, the MCP server checks `isServerAlive()` — reads `~/.diffprism/server.json`, checks PID, pings HTTP.
+### `analyze_diff`
+- **Params:** `diff_ref` (required)
+- **Behavior:** Runs `getDiff()` + `analyze()` locally and returns the `ReviewBriefing` as JSON. No server needed.
+
+### `add_annotation`
+- **Params:** `session_id` (required), `file`, `line`, `body`, `type` (required), `confidence`, `category`, `source_agent` (optional)
+- **Behavior:** POSTs a structured finding to a review session on the server.
+
+### `get_review_state`
+- **Params:** `session_id` (optional, defaults to most recent)
+- **Behavior:** Fetches session metadata and annotations from the server.
+
+### `flag_for_attention`
+- **Params:** `session_id` (optional), `files` (required array), `source_agent` (optional)
+- **Behavior:** Posts warning annotations for each flagged file to highlight them for human review.
+
+### `review_pr`
+- **Params:** `pr` (required), `title`, `reasoning`, `post_to_github` (optional)
+- **Behavior:** Fetches GitHub PR diff, normalizes to DiffPrism types, routes through global server. Optionally posts review back to GitHub.
+
+## Server Interaction
+
+All tools that need the server use `ensureServer()` from `@diffprism/core` to auto-start the daemon if not running. Module-level state (`lastGlobalSessionId`, `lastGlobalServerInfo`) tracks the active session across tool calls.
 
 ## Critical: Stdio Safety
 
-The MCP protocol runs over stdio. Any stdout output from the pipeline corrupts the protocol. This is why `silent: true` is passed to `startReview()`, which sets Vite to `logLevel: "silent"` and suppresses all console.log calls.
+The MCP protocol runs over stdio. Any stdout output corrupts the protocol. The `ensureServer()` call uses `silent: true` and the daemon is spawned detached with stdout redirected to `~/.diffprism/server.log`.
 
 ## Dependencies
 
-Runtime: `@diffprism/core`, `@diffprism/git`, `@diffprism/analysis`, `@modelcontextprotocol/sdk`, `zod`.
+Runtime: `@diffprism/core`, `@diffprism/git`, `@diffprism/analysis`, `@diffprism/github`, `@modelcontextprotocol/sdk`, `zod`.
 
 ## Running
 

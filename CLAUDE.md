@@ -7,26 +7,23 @@ Local-first code review tool for agent-generated code changes. Opens a browser-b
 pnpm monorepo, all ESM (`"type": "module"`), TypeScript strict mode.
 
 ```
-packages/core       — Shared types (types.ts), pipeline orchestrator, WebSocket bridge, global server
+packages/core       — Shared types (types.ts), server-client utilities, global server
 packages/git        — Git diff execution + unified diff parser (no deps beyond Node built-ins)
 packages/analysis   — Deterministic review briefing (no deps beyond core types)
 packages/ui         — React 19 + Vite 6 + Tailwind 3 + Zustand 5 + react-diff-view + refractor
-packages/mcp-server — MCP tool server (open_review), routes to global server when available
-packages/github     — Placeholder (M4+)
+packages/mcp-server — MCP tool server (9 tools), all reviews route through global server
+packages/github     — GitHub PR fetching, normalization, and review submission
 cli/                — Commander CLI (review, serve, setup, server commands), bin shim using tsx
 ```
 
-**Dependency flow:** `git` + `analysis` → `core` (pipeline + global server) → `cli` + `mcp-server`. UI is standalone Vite app connected via WebSocket. MCP server auto-detects a running global server and routes reviews there instead of opening ephemeral browser tabs.
-
-**Review workflows:** See **`docs/workflows.md`** for the three modes of operation (ephemeral, watch, global server) — when to use each, setup steps, and how the mode priority works.
+**Dependency flow:** `git` + `analysis` → `core` (server-client + global server) → `cli` + `mcp-server`. UI is standalone Vite app connected via WebSocket. All clients use `ensureServer()` to auto-start the daemon, then route reviews through the HTTP API.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
 | `packages/core/src/types.ts` | **The contract.** All shared interfaces. |
-| `packages/core/src/pipeline.ts` | `startReview()` orchestrator |
-| `packages/core/src/ws-bridge.ts` | WebSocket server with reconnect handling |
+| `packages/core/src/server-client.ts` | `ensureServer()` auto-starts daemon + `submitReviewToServer()` HTTP client |
 | `packages/core/src/global-server.ts` | `startGlobalServer()` — HTTP API + WS for multi-session reviews |
 | `packages/core/src/server-file.ts` | `~/.diffprism/server.json` discovery file management |
 | `packages/git/src/parser.ts` | Line-by-line state machine diff parser |
@@ -37,7 +34,7 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 | `packages/ui/src/store/review.ts` | Zustand store (all UI state) |
 | `packages/ui/src/hooks/useWebSocket.ts` | WS connection + state dispatch |
 | `packages/ui/vite.config.ts` | Vite config with inline PostCSS (Tailwind path fix) |
-| `packages/mcp-server/src/index.ts` | MCP server — routes to global server or runs in-process |
+| `packages/mcp-server/src/index.ts` | MCP server — 9 tools, all routed through global server |
 | `cli/src/commands/setup.ts` | `diffprism setup` — one-command Claude Code integration |
 | `cli/src/commands/server.ts` | `diffprism server` — start/status/stop global server |
 | `cli/src/templates/skill.ts` | Embedded `/review` skill content (SKILL.md template) |
@@ -58,21 +55,18 @@ pnpm cli setup -- --global                      # Global setup (no git repo need
 
 ## Data Flow
 
-1. `getDiff(ref)` → `{ diffSet, rawDiff }` — git package shells out to `git diff`, parser builds DiffSet
-2. `analyze(diffSet)` → `ReviewBriefing` — deterministic: file stats, triage (all notable for M0), impact detection
-3. `startReview(options)` orchestrates: get ports → start WS bridge → start Vite dev server → open browser → send `review:init` → await `review:submit` → cleanup → return ReviewResult
+All reviews flow through the global server (auto-started as a background daemon on first use):
+
+1. `ensureServer()` — checks `~/.diffprism/server.json` for a running server; if not found, spawns `diffprism server --_daemon` in the background and waits for it to be ready
+2. `getDiff(ref)` → `{ diffSet, rawDiff }` — git package shells out to `git diff`, parser builds DiffSet
+3. `analyze(diffSet)` → `ReviewBriefing` — deterministic: file stats, triage, impact detection
+4. `submitReviewToServer(serverInfo, diffRef, options)` — POSTs payload to `http://localhost:24680/api/reviews`, then polls `/api/reviews/:id/result` until the user submits
+5. Global server creates session, notifies connected UI clients via WS (`session:added`)
+6. UI shows session list, user selects a session, server sends `review:init`
 
 **WebSocket protocol:**
 - Server → Client: `review:init`, `diff:update`, `context:update`, `session:list`, `session:added`
 - Client → Server: `review:submit`, `session:select`
-- WS bridge stores pending init for late-connecting clients, 2s reconnect grace for React HMR
-
-**Global server flow (multi-session):**
-1. `diffprism server` starts HTTP API (port 24680) + WS (port 24681), writes `~/.diffprism/server.json`
-2. MCP `open_review` detects running server via `isServerAlive()`, computes diff locally, POSTs to `/api/reviews`
-3. Global server creates session, notifies connected UI clients via WS (`session:added`)
-4. UI shows session list, user selects a session, server sends `review:init`
-5. MCP polls `GET /api/reviews/:id/result` until user submits
 
 ## Conventions
 
@@ -98,6 +92,7 @@ pnpm cli setup -- --global                      # Global setup (no git repo need
 - **packages/analysis/src/__tests__/deterministic.test.ts** — 6 suites: categorize, stats, modules, tests, deps, summary, full analyze
 - **packages/core/src/__tests__/global-server.test.ts** — 9 tests: HTTP API for session CRUD, result submission, context updates
 - **packages/core/src/__tests__/server-file.test.ts** — 7 tests: server file read/write/remove, PID liveness checks
+- **packages/core/src/__tests__/server-client.test.ts** — ensureServer() auto-start, submitReviewToServer() HTTP client
 - **packages/ui/src/__tests__/store.test.ts** — 23 tests: review store, session management
 - **cli/src/__tests__/setup.test.ts** — 8 suites: git root detection, .mcp.json, .claude/settings.json, skill file, summary output, global setup, isGlobalSetupDone
 - **Run:** `pnpm test` or `npx vitest run` per package
@@ -106,13 +101,12 @@ pnpm cli setup -- --global                      # Global setup (no git repo need
 
 - **Tailwind content path:** When Vite runs programmatically via `createServer({ root: uiRoot })`, PostCSS configs must use absolute paths. Fixed by inlining PostCSS in `vite.config.ts` with `path.join(__dirname, "tailwind.config.js")`.
 - **CSS import order:** `@import` must precede `@tailwind` directives.
-- **WS bridge reconnect:** React dev mode double-mounts components, causing WS disconnect/reconnect. Added 2-second grace timer before rejecting.
-- **Pipeline UI path:** `resolveUiRoot()` walks up from `import.meta.url` to workspace root — fragile if files move.
 - **MCP stdio safety:** Any console output during MCP mode corrupts the protocol. `silent: true` is critical.
+- **Daemon auto-start:** `ensureServer()` spawns a detached background process and polls `server.json` for readiness. Logs go to `~/.diffprism/server.log`.
 
 ## UX Design Notes
 
-**`docs/ux-design-notes.md`** is a living document tracking user experience decisions, observations, and expected behavior. **Update it whenever:**
+**`docs/deprecated/v0/ux-design-notes.md`** is a living document tracking user experience decisions, observations, and expected behavior. **Update it whenever:**
 
 - A default behavior changes (e.g., CLI flags, diff scope)
 - A UX pain point is discovered or fixed
@@ -148,6 +142,19 @@ The roadmap is organized into three parallel tracks corresponding to three agent
 - ~~Multi-session UI — session list, switching, status badges~~ ✅ v0.16.0 (#90)
 - ~~Global setup — `diffprism setup --global`~~ ✅ (#91)
 
+**Server-First Architecture:**
+- ~~Auto-start daemon (`ensureServer()`) — no manual `diffprism server` needed~~ ✅ v0.33.0
+- ~~Remove ephemeral/watch modes — single server code path~~ ✅ v0.34.0
+- ~~Simplified skill file~~ ✅ v0.34.0
+
+**Agent-Native Tools:**
+- ~~Headless `analyze_diff(ref)` MCP tool~~ ✅ v0.30.0
+- ~~Headless `get_diff(ref)` MCP tool~~ ✅ v0.30.0
+- ~~`add_annotation(session_id, file, line, comment)`~~ ✅ v0.32.0
+- ~~`get_review_state(session_id)`~~ ✅ v0.32.0
+- ~~`flag_for_attention(session_id, files, reason)`~~ ✅ v0.32.0
+- ~~`review_pr(pr)` — GitHub PR review~~ ✅ v0.34.0
+
 ### Track A: Human Review Experience
 
 *Make the review surface the best place to understand and decide on code changes.*
@@ -174,15 +181,8 @@ The roadmap is organized into three parallel tracks corresponding to three agent
 
 *Give agents direct access to review primitives so they can participate in review, not just be subjects of it.*
 
-**Near-term (highest priority new work):**
-- Headless `analyze_diff(ref)` MCP tool — returns ReviewBriefing without opening browser
-- Headless `get_diff(ref)` MCP tool — returns structured DiffSet
+**Near-term:**
 - Agent self-review loop — agents check own work (console.logs, test gaps, complexity) before requesting human review
-
-**Mid-term:**
-- `add_annotation(session_id, file, line, comment)` — agent posts findings to a review session
-- `get_review_state(session_id)` — read current state of a review
-- `flag_for_attention(session_id, files, reason)` — mark files that need human eyes
 - Multi-agent review composition — security/performance/convention agents annotate same diff, findings merge into single briefing
 - Bidirectional review — human delegates fixes to agent from review UI, diff updates live
 
@@ -216,15 +216,14 @@ The roadmap is organized into three parallel tracks corresponding to three agent
 
 ## Plan Alignment
 
-DiffPrism has two planning documents that define the roadmap:
-- **`product-plan.md`** — Strategic product vision, three agent postures, and track-based roadmap
-- **`diffprism-technical-plan.md`** — Technical architecture decisions and implementation approach
+DiffPrism's architecture and roadmap are documented in:
+- **`docs/server-first-plan.md`** — Server-first architecture plan (Sprints 1-3 shipped, Sprint 4 deferred)
+- **`docs/product-plan-discussion-2026-02-27.md`** — Strategic product vision, three agent postures, and track-based roadmap
 
-**Before starting feature work**, check both plans to confirm the work maps to an active track.
+**Before starting feature work**, check these plans to confirm the work maps to an active track.
 
 **Flag misalignment when:**
 - Work targets a feature outside the current active tracks (A/B/C near-term items)
-- The plans contradict each other (e.g., different track ordering, conflicting scope)
 - CLAUDE.md `## Roadmap` has drifted from the plan files (missing items, wrong status)
 - A request pulls in long-term work without explicit user approval
 

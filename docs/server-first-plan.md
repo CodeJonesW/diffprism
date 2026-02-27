@@ -346,30 +346,32 @@ The setup is still one command. The output is simpler because there's less to co
 
 ## Execution Order
 
-### Sprint 1: Foundation (Phase 0)
-- [ ] Add `--background` daemon mode to `diffprism server`
-- [ ] Create `ensureServer()` utility (start server if not running)
-- [ ] Wire `ensureServer()` into CLI `review` command
-- [ ] Wire `ensureServer()` into MCP `open_review`
-- [ ] Test: `diffprism review --staged` works without manual server start
-- [ ] Test: MCP `open_review` works without manual server start
+### Sprint 1: Foundation (Phase 0) ✅
+- [x] Add `--background` daemon mode to `diffprism server`
+- [x] Create `ensureServer()` utility (start server if not running)
+- [x] Wire `ensureServer()` into CLI `review` command
+- [x] Wire `ensureServer()` into MCP `open_review`
+- [x] Test: `diffprism review --staged` works without manual server start
+- [x] Test: MCP `open_review` works without manual server start
 
-### Sprint 2: Consolidation (Phase 0 + 1)
-- [ ] Remove `startReview()` ephemeral pipeline (route through server)
-- [ ] Remove `startWatch()` standalone watch (server watches by default)
-- [ ] Remove `watch-bridge.ts`, `watch-file.ts`, `ws-bridge.ts`
-- [ ] Remove/alias CLI `watch` and `start` commands
-- [ ] Start DiffPoller on session creation (not on WS connect)
-- [ ] Test: all existing workflows still work through the server
+### Sprint 2: Consolidation (Phase 0 + 1) ✅
+- [x] Remove `startReview()` ephemeral pipeline (route through server)
+- [x] Remove `startWatch()` standalone watch (server watches by default)
+- [x] Remove `watch-bridge.ts`, `watch-file.ts`, `ws-bridge.ts`
+- [x] Remove/alias CLI `watch` and `start` commands
+- [x] Start DiffPoller on session creation (not on WS connect)
+- [x] Test: all existing workflows still work through the server
 
-### Sprint 3: Agent Simplification (Phase 2)
-- [ ] Simplify skill file to ~15 lines
-- [ ] Merge `update_review_context` into `open_review` session reuse
-- [ ] Merge `get_review_result` polling into `open_review` blocking
-- [ ] Evaluate Claude Code hooks for automatic file-change notifications
-- [ ] Test: model successfully calls review with no steering
+### Sprint 3: Agent Simplification (Phase 2) ✅
+- [x] Simplify skill file to ~15 lines
+- [x] Merge `update_review_context` into `open_review` session reuse
+- [x] Merge `get_review_result` polling into `open_review` blocking
+- [x] Evaluate Claude Code hooks for automatic file-change notifications
+- [x] Test: model successfully calls review with no steering
 
-### Sprint 4: SDK (Phase 3)
+### Sprint 4: SDK (Phase 3) — Deferred
+> Deferred in favor of stabilizing the server-first architecture and shipping GitHub PR review (`review_pr`). The SDK extraction (`@diffprism/agent`) remains a future goal but the HTTP API + MCP tools cover current needs.
+
 - [ ] Create `packages/agent/` with `DiffPrism` class
 - [ ] Implement `analyze()`, `review()`, `getDiff()`, `annotate()`, `getSession()`
 - [ ] Refactor MCP server to use SDK internally

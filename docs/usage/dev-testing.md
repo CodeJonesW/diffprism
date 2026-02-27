@@ -8,16 +8,12 @@ All CLI commands can be run directly from source using `tsx`, bypassing the inst
 # Review (one-shot, blocks until submitted)
 npx tsx cli/src/index.ts review --dev
 
-# Start (setup + watch in one command)
-npx tsx cli/src/index.ts start --dev
-
-# Watch (persistent, live-updating — no setup step)
-npx tsx cli/src/index.ts watch --dev
+# Start the global server in dev mode
+npx tsx cli/src/index.ts server --dev
 
 # Or use the pnpm alias
 pnpm cli review --dev
-pnpm cli start --dev
-pnpm cli watch --dev
+pnpm cli server --dev
 ```
 
 The `--dev` flag starts the Vite dev server with HMR, so UI changes in `packages/ui/src/` are reflected immediately without rebuilding.
@@ -40,8 +36,6 @@ pnpm cli review --dev all
 # Arbitrary git range
 pnpm cli review --dev HEAD~3..HEAD
 ```
-
-Same flags work with `watch` and `start`.
 
 ## Testing the MCP server
 
@@ -78,11 +72,11 @@ pnpm run build
 
 ### UI development
 
-1. Start watch in dev mode: `pnpm cli start --dev` (or `pnpm cli watch --dev` if already set up)
+1. Start the server in dev mode: `pnpm cli server --dev`
 2. Edit files in `packages/ui/src/` — changes hot-reload in the browser
-3. Submit a review to test the submit flow, watch keeps running
+3. Submit a review to test the submit flow
 
-### Backend/pipeline changes
+### Backend/core changes
 
 1. Edit source in `packages/core/`, `packages/git/`, or `packages/analysis/`
 2. Run `pnpm cli review --dev` to test — tsx runs directly from source
