@@ -1,15 +1,24 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useReviewStore } from "../store/review";
-import type { ReviewResult, ServerMessage, ClientMessage, SessionSummary } from "../types";
+import type { ReviewResult, ServerMessage, ClientMessage, SessionSummary, DiffUpdatePayload, Annotation } from "../types";
 
 interface UseWebSocketOptions {
   onSessionAdded?: (session: SessionSummary) => void;
+  onSessionUpdated?: (session: SessionSummary) => void;
+  onDiffUpdated?: (fileCount: number) => void;
+  onAnnotationAdded?: (annotation: Annotation) => void;
 }
 
 export function useWebSocket(options?: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const onSessionAddedRef = useRef(options?.onSessionAdded);
   onSessionAddedRef.current = options?.onSessionAdded;
+  const onSessionUpdatedRef = useRef(options?.onSessionUpdated);
+  onSessionUpdatedRef.current = options?.onSessionUpdated;
+  const onDiffUpdatedRef = useRef(options?.onDiffUpdated);
+  onDiffUpdatedRef.current = options?.onDiffUpdated;
+  const onAnnotationAddedRef = useRef(options?.onAnnotationAdded);
+  onAnnotationAddedRef.current = options?.onAnnotationAdded;
 
   const {
     connectionStatus,
@@ -63,6 +72,8 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           initReview(message.payload);
         } else if (message.type === "diff:update") {
           updateDiff(message.payload);
+          const payload = message.payload as DiffUpdatePayload;
+          onDiffUpdatedRef.current?.(payload.diffSet.files.length);
         } else if (message.type === "diff:error") {
           console.error("Diff error:", message.payload.error);
         } else if (message.type === "context:update") {
@@ -74,10 +85,12 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           onSessionAddedRef.current?.(message.payload);
         } else if (message.type === "session:updated") {
           updateSession(message.payload);
+          onSessionUpdatedRef.current?.(message.payload);
         } else if (message.type === "session:removed") {
           removeSession(message.payload.sessionId);
         } else if (message.type === "annotation:added") {
           addAnnotation(message.payload);
+          onAnnotationAddedRef.current?.(message.payload as Annotation);
         } else if (message.type === "annotation:dismissed") {
           dismissAnnotation(message.payload.annotationId);
         }

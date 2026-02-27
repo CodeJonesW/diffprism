@@ -273,6 +273,9 @@ function broadcastSessionList(): void {
 }
 
 function recordReviewHistory(session: Session, result: ReviewResult): void {
+  // Skip history for non-filesystem paths (e.g. github: prefixed paths)
+  if (session.projectPath.startsWith("github:")) return;
+
   try {
     const { payload } = session;
     const entry: ReviewHistoryEntry = {
@@ -651,6 +654,12 @@ async function handleApiRequest(
       return true;
     }
 
+    // Ref listing requires a real filesystem path
+    if (session.projectPath.startsWith("github:")) {
+      jsonResponse(res, 400, { error: "Ref listing not available for GitHub PRs" });
+      return true;
+    }
+
     try {
       const branches = listBranches({ cwd: session.projectPath });
       const commits = listCommits({ cwd: session.projectPath });
@@ -669,6 +678,12 @@ async function handleApiRequest(
     const session = sessions.get(postCompareParams.id);
     if (!session) {
       jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    // Ref comparison requires a real filesystem path
+    if (session.projectPath.startsWith("github:")) {
+      jsonResponse(res, 400, { error: "Ref comparison not available for GitHub PRs" });
       return true;
     }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { GitBranch, GitCommit, ChevronDown, Loader2, RotateCcw, X } from "lucide-react";
+import { GitBranch, GitCommit, ChevronDown, Loader2, RotateCcw, X, AlertCircle } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 import { useHttpApi } from "../../hooks/useHttpApi";
 import type { GitRefsPayload } from "../../types";
@@ -9,6 +9,7 @@ export function RefSelector() {
   const [refs, setRefs] = useState<GitRefsPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [comparing, setComparing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [activeTab, setActiveTab] = useState<"branches" | "commits">("branches");
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -23,6 +24,7 @@ export function RefSelector() {
     if (!activeSessionId) return;
     setIsOpen(true);
     setFilter("");
+    setError(null);
     setLoading(true);
     const data = await fetchRefs(activeSessionId);
     setRefs(data);
@@ -33,12 +35,15 @@ export function RefSelector() {
     async (ref: string) => {
       if (!activeSessionId) return;
       setComparing(true);
-      const success = await compareAgainst(activeSessionId, ref);
-      if (success) {
+      setError(null);
+      const result = await compareAgainst(activeSessionId, ref);
+      if (result.ok) {
         setCompareRef(ref);
+        setIsOpen(false);
+      } else {
+        setError(result.error ?? "Comparison failed");
       }
       setComparing(false);
-      setIsOpen(false);
     },
     [activeSessionId, compareAgainst, setCompareRef],
   );
@@ -46,12 +51,15 @@ export function RefSelector() {
   const handleReset = useCallback(async () => {
     if (!activeSessionId) return;
     setComparing(true);
-    const success = await compareAgainst(activeSessionId, "working-copy");
-    if (success) {
+    setError(null);
+    const result = await compareAgainst(activeSessionId, "working-copy");
+    if (result.ok) {
       setCompareRef(null);
+      setIsOpen(false);
+    } else {
+      setError(result.error ?? "Reset failed");
     }
     setComparing(false);
-    setIsOpen(false);
   }, [activeSessionId, compareAgainst, setCompareRef]);
 
   // Close on click outside
@@ -85,8 +93,10 @@ export function RefSelector() {
     }
   }, [isOpen]);
 
-  if (!isAvailable) {
-    // Non-server mode — show static badge
+  const isGitHubPr = !!metadata?.githubPr;
+
+  if (!isAvailable || isGitHubPr) {
+    // Non-server mode or GitHub PR — show static badge (no ref switching for PRs)
     if (!metadata?.currentBranch) return null;
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-neutral/15 text-neutral border border-neutral/30 font-mono">
@@ -168,6 +178,14 @@ export function RefSelector() {
               Commits
             </button>
           </div>
+
+          {/* Error */}
+          {error && (
+            <div className="px-3 py-2 flex items-center gap-2 bg-danger/10 border-b border-danger/20 text-danger text-xs">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
 
           {/* Content */}
           <div className="max-h-64 overflow-y-auto">
