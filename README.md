@@ -2,39 +2,29 @@
 
 Browser-based code review for agent-generated changes. Review what your AI wrote before it ships.
 
-## Try It Now
-
-Make sure you have uncommitted changes in a git repo, then:
+## Try It
 
 ```bash
-npx diffprism review
+npx diffprism demo
 ```
 
-A browser window opens with a full diff viewer. Review the changes, leave inline comments, and click **Approve** or **Request Changes**. Your decision is returned as JSON.
-
-That's the core loop. Everything below is about wiring this into your agent workflow so it happens automatically.
+A browser window opens with a sample code review. Click around — leave comments, approve, see how it works. No git repo needed.
 
 ## Setup for Claude Code
 
 ```bash
-npx diffprism setup     # run from your project root, then restart Claude Code
+npx diffprism setup
 ```
 
-This registers DiffPrism as an MCP tool and installs the `/review` skill.
+Walks you through configuration. After restarting Claude Code, type `/review` to review your agent's changes.
 
-**After restarting Claude Code, you have two ways to trigger a review:**
+**Two ways to trigger a review:**
 
 1. **Type `/review`** — Claude opens your current changes in DiffPrism's browser UI, waits for your decision, and acts on it (e.g., commits if you approve).
 
 2. **Ask Claude to review** — Say "review my changes" or "open a review" and Claude will call the tool.
 
 The review blocks Claude until you submit your decision in the browser. If you request changes, Claude reads your comments and fixes them. If you approve via the quick action menu, Claude commits or opens a PR automatically.
-
-### Try it right now
-
-1. Ask Claude to make a small change (e.g., "add a hello world function")
-2. Type `/review`
-3. A browser tab opens with the diff — review it and click Approve
 
 ## Use from the CLI
 

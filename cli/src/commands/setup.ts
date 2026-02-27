@@ -15,6 +15,7 @@ interface SetupFlags {
   global?: boolean;
   force?: boolean;
   quiet?: boolean;
+  dev?: boolean;
 }
 
 export interface SetupOutcome {
@@ -287,7 +288,114 @@ async function setupGitignore(
   return { action: "created", filePath };
 }
 
+async function promptChoice(question: string, options: string[]): Promise<number> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  for (let i = 0; i < options.length; i++) {
+    console.log(`  ${i + 1}. ${options[i]}`);
+  }
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      const num = parseInt(answer.trim(), 10);
+      if (num >= 1 && num <= options.length) {
+        resolve(num - 1);
+      } else {
+        resolve(0); // Default to first option
+      }
+    });
+  });
+}
+
 export async function setup(flags: SetupFlags): Promise<SetupOutcome> {
+  const force = flags.force ?? false;
+  const global = flags.global ?? false;
+  const quiet = flags.quiet ?? false;
+
+  // Interactive wizard for first-time users:
+  // - Not --global or --force
+  // - TTY stdin (not piped/CI)
+  // - Not quiet mode
+  const isInteractive = !global && !force && !quiet && process.stdin.isTTY;
+
+  if (isInteractive) {
+    return setupInteractive(flags);
+  }
+
+  return setupBatch(flags);
+}
+
+async function setupInteractive(flags: SetupFlags): Promise<SetupOutcome> {
+  const dev = flags.dev;
+  const gitRoot = findGitRoot(process.cwd());
+
+  console.log("\n  Welcome to DiffPrism");
+  console.log("  Browser-based code review for agent-generated changes.\n");
+
+  // Ask how they'll use DiffPrism
+  const modeChoice = await promptChoice("\nHow will you use DiffPrism? ", [
+    "With Claude Code (recommended)",
+    "From the CLI only",
+  ]);
+
+  if (modeChoice === 0) {
+    // Claude Code setup
+    if (!gitRoot) {
+      console.log("\n  Not in a git repository — configuring globally.\n");
+      const outcome = await setupBatch({ global: true, quiet: true });
+
+      console.log("  Setting up for Claude Code...");
+      console.log("  ✓ Installed /review skill");
+      console.log("  ✓ Added tool permissions");
+      console.log("\n  Restart Claude Code, then type /review to start a review.\n");
+
+      // Offer demo
+      await offerDemo(dev);
+      return outcome;
+    }
+
+    console.log("\n  Setting up for Claude Code...");
+    const outcome = await setupBatch({ quiet: true });
+
+    if (outcome.created.length > 0 || outcome.updated.length > 0) {
+      console.log("  ✓ Registered MCP server (.mcp.json)");
+      console.log("  ✓ Added tool permissions (.claude/settings.json)");
+      console.log("  ✓ Installed /review skill");
+      console.log("  ✓ Added .diffprism to .gitignore");
+    } else {
+      console.log("  ✓ Already configured");
+    }
+
+    console.log("\n  Restart Claude Code, then type /review to start a review.\n");
+
+    // Offer demo
+    await offerDemo(dev);
+    return outcome;
+  }
+
+  // CLI-only mode
+  console.log("\n  DiffPrism is ready to use.");
+  console.log("  Run `diffprism review` in any git repo to review changes.\n");
+
+  // Offer demo
+  await offerDemo(dev);
+  return { created: [], updated: [], skipped: [] };
+}
+
+async function offerDemo(dev?: boolean): Promise<void> {
+  const wantsDemo = await promptUser("Try a demo review now? (Y/n) ");
+  if (wantsDemo) {
+    console.log("");
+    const { demo } = await import("./demo.js");
+    await demo({ dev });
+  }
+}
+
+async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   const force = flags.force ?? false;
   const global = flags.global ?? false;
   const quiet = flags.quiet ?? false;

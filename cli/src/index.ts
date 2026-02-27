@@ -9,6 +9,7 @@ import { teardown } from "./commands/teardown.js";
 import { start } from "./commands/start.js";
 import { watch } from "./commands/watch.js";
 import { notifyStop } from "./commands/notify-stop.js";
+import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
 
 declare const DIFFPRISM_VERSION: string;
@@ -19,6 +20,12 @@ program
   .name("diffprism")
   .description("Local-first code review tool for agent-generated changes")
   .version(typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev");
+
+program
+  .command("demo")
+  .description("Open a sample review to see DiffPrism in action")
+  .option("--dev", "Use Vite dev server")
+  .action(demo);
 
 program
   .command("review [ref]")
@@ -75,6 +82,7 @@ program
   .description("Configure DiffPrism for Claude Code integration")
   .option("--global", "Configure globally (skill + permissions, no git repo required)")
   .option("--force", "Overwrite existing configuration files")
+  .option("--dev", "Use Vite dev server")
   .action((flags) => { setup(flags); });
 
 program
