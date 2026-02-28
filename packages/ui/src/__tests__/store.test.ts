@@ -70,6 +70,7 @@ describe("review store", () => {
       compareRef: null,
       focusedHunkIndex: null,
       hunkCount: 0,
+      showWorkflowTips: false,
       isServerMode: false,
       sessions: [],
       activeSessionId: null,
@@ -249,6 +250,18 @@ describe("review store", () => {
       useReviewStore.getState().toggleTheme(); // light → dark
       expect(useReviewStore.getState().theme).toBe("dark");
       expect(localStorage.getItem("diffprism-theme")).toBe("dark");
+    });
+  });
+
+  describe("toggleWorkflowTips", () => {
+    it("toggles showWorkflowTips on and off", () => {
+      expect(useReviewStore.getState().showWorkflowTips).toBe(false);
+
+      useReviewStore.getState().toggleWorkflowTips();
+      expect(useReviewStore.getState().showWorkflowTips).toBe(true);
+
+      useReviewStore.getState().toggleWorkflowTips();
+      expect(useReviewStore.getState().showWorkflowTips).toBe(false);
     });
   });
 

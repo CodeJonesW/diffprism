@@ -12,7 +12,7 @@ import {
 import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
-import { FileCode, Columns2, Rows2, HelpCircle } from "lucide-react";
+import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread } from "../InlineComment";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
@@ -175,6 +175,7 @@ export function DiffViewer() {
     deleteComment,
     setActiveCommentKey,
     toggleHotkeyGuide,
+    toggleWorkflowTips,
     focusedHunkIndex,
     setHunkCount,
     annotations,
@@ -523,6 +524,7 @@ export function DiffViewer() {
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onToggleHotkeyGuide={toggleHotkeyGuide}
+        onToggleWorkflowTips={toggleWorkflowTips}
       />
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <Diff
@@ -553,6 +555,7 @@ function FileHeader({
   viewMode,
   onViewModeChange,
   onToggleHotkeyGuide,
+  onToggleWorkflowTips,
 }: {
   path: string;
   stage?: "staged" | "unstaged";
@@ -561,6 +564,7 @@ function FileHeader({
   viewMode?: "unified" | "split";
   onViewModeChange?: (mode: "unified" | "split") => void;
   onToggleHotkeyGuide?: () => void;
+  onToggleWorkflowTips?: () => void;
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-surface border-b border-border flex-shrink-0">
@@ -609,6 +613,15 @@ function FileHeader({
               <Columns2 className="w-3.5 h-3.5" />
             </button>
           </div>
+        )}
+        {onToggleWorkflowTips && (
+          <button
+            onClick={onToggleWorkflowTips}
+            className="p-1.5 rounded text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
+            title="Workflow tips"
+          >
+            <Lightbulb className="w-4 h-4" />
+          </button>
         )}
         {onToggleHotkeyGuide && (
           <button

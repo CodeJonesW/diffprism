@@ -59,12 +59,14 @@ export interface ReviewState {
 
   // Server mode (multi-session)
   showHotkeyGuide: boolean;
+  showWorkflowTips: boolean;
   isServerMode: boolean;
   sessions: SessionSummary[];
   activeSessionId: string | null;
 
   // Actions
   toggleHotkeyGuide: () => void;
+  toggleWorkflowTips: () => void;
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
   setConnectionStatus: (status: ReviewState["connectionStatus"]) => void;
@@ -118,6 +120,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   compareRef: null,
   annotations: [],
   showHotkeyGuide: false,
+  showWorkflowTips: false,
   isServerMode: false,
   sessions: [],
   activeSessionId: null,
@@ -231,6 +234,10 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   toggleHotkeyGuide: () => {
     set((state) => ({ showHotkeyGuide: !state.showHotkeyGuide }));
+  },
+
+  toggleWorkflowTips: () => {
+    set((state) => ({ showWorkflowTips: !state.showWorkflowTips }));
   },
 
   toggleTheme: () => {
