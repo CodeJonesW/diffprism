@@ -1,7 +1,5 @@
-import { parseDiff } from "@diffprism/git";
-import { analyze } from "@diffprism/analysis";
 import { ensureServer, submitReviewToServer } from "@diffprism/core";
-import type { ReviewInitPayload } from "@diffprism/core";
+import type { ReviewInitPayload, DiffSet, ReviewBriefing } from "@diffprism/core";
 import { sampleDiff } from "../demo-data/sample-diff.js";
 
 interface DemoFlags {
@@ -12,6 +10,10 @@ export async function demo(flags: DemoFlags): Promise<void> {
   try {
     console.log("Starting DiffPrism demo...\n");
 
+    // Dynamic imports — these packages aren't direct CLI dependencies
+    const { parseDiff } = await import("@diffprism/git") as { parseDiff: (raw: string, base: string, head: string) => DiffSet };
+    const { analyze } = await import("@diffprism/analysis") as { analyze: (diffSet: DiffSet) => ReviewBriefing };
+
     // 1. Parse embedded diff
     const diffSet = parseDiff(sampleDiff, "main", "feature/add-auth");
 
@@ -19,7 +21,7 @@ export async function demo(flags: DemoFlags): Promise<void> {
     const briefing = analyze(diffSet);
 
     console.log(
-      `${diffSet.files.length} files, +${diffSet.files.reduce((s, f) => s + f.additions, 0)} -${diffSet.files.reduce((s, f) => s + f.deletions, 0)}`,
+      `${diffSet.files.length} files, +${diffSet.files.reduce((s: number, f: { additions: number }) => s + f.additions, 0)} -${diffSet.files.reduce((s: number, f: { deletions: number }) => s + f.deletions, 0)}`,
     );
 
     // 3. Build payload
