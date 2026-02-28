@@ -33,9 +33,15 @@ importers:
 
   cli:
     dependencies:
+      '@diffprism/analysis':
+        specifier: workspace:*
+        version: link:../packages/analysis
       '@diffprism/core':
         specifier: workspace:*
         version: link:../packages/core
+      '@diffprism/git':
+        specifier: workspace:*
+        version: link:../packages/git
       '@diffprism/github':
         specifier: workspace:*
         version: link:../packages/github
