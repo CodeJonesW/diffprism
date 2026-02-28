@@ -11,7 +11,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@diffprism/analysis": "workspace:*",
     "@diffprism/core": "workspace:*",
+    "@diffprism/git": "workspace:*",
     "@diffprism/github": "workspace:*",
     "@diffprism/mcp-server": "workspace:*",
     "commander": "^13.0.0",

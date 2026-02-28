@@ -397,6 +397,8 @@ export function DiffViewer() {
         w[activeCommentKey] = (
           <div className="border-t border-border bg-surface">
             <InlineCommentForm
+              file={selectedFile}
+              line={line}
               onSave={(body, type) => {
                 addComment({ file: selectedFile, line, body, type });
                 setActiveCommentKey(null);

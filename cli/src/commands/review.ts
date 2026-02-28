@@ -26,6 +26,9 @@ export async function review(
 
   try {
     const serverInfo = await ensureServer({ dev: flags.dev });
+
+    console.log("Opening review in browser...");
+
     const { result } = await submitReviewToServer(serverInfo, diffRef, {
       title: flags.title,
       cwd: process.cwd(),

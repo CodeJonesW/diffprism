@@ -22,6 +22,13 @@ const FILE_STATUS_CYCLE: FileReviewStatus[] = [
 
 export type Theme = "dark" | "light";
 
+export interface DraftComment {
+  body: string;
+  type: ReviewComment["type"];
+  file: string;
+  line: number;
+}
+
 export interface ReviewState {
   reviewId: string | null;
   diffSet: DiffSet | null;
@@ -34,6 +41,7 @@ export interface ReviewState {
   fileStatuses: Record<string, FileReviewStatus>;
   comments: ReviewComment[];
   activeCommentKey: string | null;
+  draftComment: DraftComment | null;
   theme: Theme;
   isWatchMode: boolean;
   watchSubmitted: boolean;
@@ -67,6 +75,8 @@ export interface ReviewState {
   updateComment: (index: number, comment: ReviewComment) => void;
   deleteComment: (index: number) => void;
   setActiveCommentKey: (key: string | null) => void;
+  setDraftComment: (draft: DraftComment | null) => void;
+  saveDraftComment: () => void;
   toggleTheme: () => void;
   updateDiff: (payload: DiffUpdatePayload) => void;
   updateContext: (payload: ContextUpdatePayload) => void;
@@ -98,6 +108,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   fileStatuses: {},
   comments: [],
   activeCommentKey: null,
+  draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   isWatchMode: false,
   watchSubmitted: false,
@@ -133,6 +144,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       comments: [],
       annotations: [],
       activeCommentKey: null,
+      draftComment: null,
       focusedHunkIndex: null,
       hunkCount: 0,
       compareRef: null,
@@ -191,6 +203,30 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setActiveCommentKey: (key: string | null) => {
     set({ activeCommentKey: key });
+    // Clear draft when closing the form
+    if (key === null) {
+      set({ draftComment: null });
+    }
+  },
+
+  setDraftComment: (draft: DraftComment | null) => {
+    set({ draftComment: draft });
+  },
+
+  saveDraftComment: () => {
+    const { draftComment } = get();
+    if (draftComment && draftComment.body.trim()) {
+      set((state) => ({
+        comments: [...state.comments, {
+          file: draftComment.file,
+          line: draftComment.line,
+          body: draftComment.body.trim(),
+          type: draftComment.type,
+        }],
+        draftComment: null,
+        activeCommentKey: null,
+      }));
+    }
   },
 
   toggleHotkeyGuide: () => {
@@ -302,6 +338,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
           fileStatuses: {},
           comments: [],
           activeCommentKey: null,
+          draftComment: null,
           focusedHunkIndex: null,
           hunkCount: 0,
           compareRef: null,
@@ -379,6 +416,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       comments: [],
       annotations: [],
       activeCommentKey: null,
+      draftComment: null,
       focusedHunkIndex: null,
       hunkCount: 0,
       compareRef: null,
