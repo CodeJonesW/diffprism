@@ -4,6 +4,7 @@ import { FileBrowser } from "./FileBrowser";
 import { DiffViewer } from "./DiffViewer";
 import { ActionBar } from "./ActionBar";
 import { HotkeyGuide } from "./HotkeyGuide";
+import { WorkflowTips } from "./WorkflowTips";
 import { AnnotationPanel } from "./AnnotationPanel";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
@@ -66,6 +67,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
         hasUnreviewedChanges={hasUnreviewedChanges}
       />
       <HotkeyGuide />
+      <WorkflowTips />
     </div>
   );
 }
