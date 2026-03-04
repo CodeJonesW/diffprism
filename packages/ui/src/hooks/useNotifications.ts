@@ -56,6 +56,21 @@ export function useNotifications(options?: UseNotificationsOptions): UseNotifica
     return perm;
   }, [hasNotificationApi]);
 
+  // Proactively request permission on first user click when still "default".
+  // Chrome requires a user gesture for requestPermission(), so the auto-request
+  // inside sendNotification (called from a WS handler) silently fails.
+  useEffect(() => {
+    if (!hasNotificationApi || !enabled) return;
+    if (Notification.permission !== "default") return;
+
+    const handler = () => {
+      document.removeEventListener("click", handler, true);
+      void requestPermission();
+    };
+    document.addEventListener("click", handler, true);
+    return () => document.removeEventListener("click", handler, true);
+  }, [hasNotificationApi, enabled, requestPermission]);
+
   const toggle = useCallback(async () => {
     if (!hasNotificationApi) return;
 
@@ -79,7 +94,7 @@ export function useNotifications(options?: UseNotificationsOptions): UseNotifica
   const sendNotification = useCallback(
     async (title: string, body: string, tag?: string, onClick?: () => void) => {
       if (!hasNotificationApi) return;
-      if (document.visibilityState !== "hidden") return;
+      if (document.hasFocus()) return;
       if (!enabled) return;
 
       let currentPermission = permission;

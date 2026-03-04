@@ -64,19 +64,15 @@ function setupNotificationMock(permission: NotificationPermission = "default") {
   return MockNotification;
 }
 
-function setVisibilityState(state: DocumentVisibilityState) {
-  Object.defineProperty(document, "visibilityState", {
-    value: state,
-    writable: true,
-    configurable: true,
-  });
+function setDocumentFocus(focused: boolean) {
+  vi.spyOn(document, "hasFocus").mockReturnValue(focused);
 }
 
 describe("useNotifications", () => {
   beforeEach(() => {
     localStorage.clear();
     notificationInstances = [];
-    setVisibilityState("visible");
+    setDocumentFocus(true);
   });
 
   afterEach(() => {
@@ -106,9 +102,9 @@ describe("useNotifications", () => {
   });
 
   describe("tab focused", () => {
-    it("does not show notification when tab is visible", async () => {
+    it("does not show notification when tab is focused", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("visible");
+      setDocumentFocus(true);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -123,7 +119,7 @@ describe("useNotifications", () => {
   describe("tab hidden + granted", () => {
     it("creates notification with correct content", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -142,7 +138,7 @@ describe("useNotifications", () => {
 
     it("uses fallback title when session has no title", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -156,7 +152,7 @@ describe("useNotifications", () => {
 
     it("handles session without branch", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -172,7 +168,7 @@ describe("useNotifications", () => {
   describe("permission denied", () => {
     it("does not create notification", async () => {
       setupNotificationMock("denied");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -187,7 +183,7 @@ describe("useNotifications", () => {
   describe("permission default", () => {
     it("auto-requests permission and notifies if granted", async () => {
       const mock = setupNotificationMock("default");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -211,7 +207,7 @@ describe("useNotifications", () => {
         });
         return "denied" as NotificationPermission;
       });
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const { result } = renderHook(() => useNotifications());
 
@@ -227,7 +223,7 @@ describe("useNotifications", () => {
   describe("localStorage preference", () => {
     it("suppresses notification when disabled even if granted", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
       localStorage.setItem("diffprism-notifications", "disabled");
 
       const { result } = renderHook(() => useNotifications());
@@ -276,7 +272,7 @@ describe("useNotifications", () => {
   describe("notification click", () => {
     it("calls window.focus, onSessionSelect, and closes notification", async () => {
       setupNotificationMock("granted");
-      setVisibilityState("hidden");
+      setDocumentFocus(false);
 
       const onSessionSelect = vi.fn();
       const focusSpy = vi.spyOn(window, "focus").mockImplementation(() => {});

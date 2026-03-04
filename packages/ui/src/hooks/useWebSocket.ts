@@ -82,6 +82,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           setSessions(message.payload);
         } else if (message.type === "session:added") {
           addSession(message.payload);
+          window.focus();
           onSessionAddedRef.current?.(message.payload);
         } else if (message.type === "session:updated") {
           updateSession(message.payload);
