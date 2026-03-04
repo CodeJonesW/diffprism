@@ -437,7 +437,7 @@ describe("setup command", () => {
       expect(skillCall).toBeUndefined();
     });
 
-    it("warns when skill content differs without --force", async () => {
+    it("auto-updates skill when content differs", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
         if (s === path.join("/projects/myapp", ".git")) return true;
@@ -452,27 +452,6 @@ describe("setup command", () => {
       });
 
       await setup({});
-
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining("Warning"),
-      );
-    });
-
-    it("overwrites skill content with --force", async () => {
-      mockExistsSync.mockImplementation((p: fs.PathLike) => {
-        const s = p.toString();
-        if (s === path.join("/projects/myapp", ".git")) return true;
-        if (s.includes("SKILL.md")) return true;
-        return false;
-      });
-
-      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const s = p.toString();
-        if (s.includes("SKILL.md")) return "old skill content";
-        throw new Error("File not found");
-      });
-
-      await setup({ force: true });
 
       const skillCall = mockWriteFileSync.mock.calls.find(
         (call) => call[0].toString().includes("SKILL.md"),

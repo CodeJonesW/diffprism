@@ -140,12 +140,7 @@ function setupSkill(
     if (existingContent === skillContent) {
       return { action: "skipped", filePath };
     }
-    if (!force) {
-      console.log(
-        `  Warning: ${filePath} exists with different content. Use --force to overwrite.`,
-      );
-      return { action: "skipped", filePath };
-    }
+    // Always update the skill file — it's managed by DiffPrism, not user-edited
   }
 
   if (!fs.existsSync(skillDir)) {
