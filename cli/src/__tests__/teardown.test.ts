@@ -294,46 +294,6 @@ describe("teardown command", () => {
     });
   });
 
-  describe("hook removal", () => {
-    it("removes diffprism hooks via cleanDiffprismHooks", async () => {
-      mockExistsSync.mockImplementation((p: fs.PathLike) => {
-        const s = p.toString();
-        if (s === path.join("/projects/myapp", ".git")) return true;
-        if (s.includes("settings.json")) return true;
-        return false;
-      });
-
-      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const s = p.toString();
-        if (s.includes("settings.json")) {
-          return JSON.stringify({
-            hooks: {
-              Stop: [{
-                matcher: "",
-                hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }],
-              }],
-            },
-          });
-        }
-        throw new Error("File not found");
-      });
-
-      const result = await teardown({ quiet: true });
-
-      expect(result.removed).toContainEqual(
-        expect.stringContaining("hooks"),
-      );
-    });
-
-    it("skips when no hooks exist", async () => {
-      const result = await teardown({ quiet: true });
-
-      expect(result.skipped).toContainEqual(
-        expect.stringContaining("hooks"),
-      );
-    });
-  });
-
   describe("settings.json cleanup", () => {
     it("deletes settings.json when empty after removals", async () => {
       // Track state changes as functions are called
@@ -344,12 +304,6 @@ describe("teardown command", () => {
             "mcp__diffprism__update_review_context",
             "mcp__diffprism__get_review_result",
           ],
-        },
-        hooks: {
-          Stop: [{
-            matcher: "",
-            hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }],
-          }],
         },
       });
 

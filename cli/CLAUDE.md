@@ -26,7 +26,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 
 ### `diffprism teardown`
 - Removes DiffPrism configuration from the current project in one command
-- Reverses all changes made by `diffprism setup`: `.mcp.json`, permissions, hooks, skill, `.gitignore`, `.diffprism/`
+- Reverses all changes made by `diffprism setup`: `.mcp.json`, permissions, skill, `.gitignore`, `.diffprism/`
 - `--global` — Remove global configuration (skill + permissions at `~/.claude/`)
 - `-q, --quiet` — Suppress output
 - Safely handles partial configs: skips items that don't exist, preserves non-DiffPrism entries

@@ -6,9 +6,6 @@ import { reviewPr } from "./commands/review-pr.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
-import { start } from "./commands/start.js";
-import { watch } from "./commands/watch.js";
-import { notifyStop } from "./commands/notify-stop.js";
 import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
 
@@ -46,33 +43,6 @@ program
   .action(reviewPr);
 
 program
-  .command("start [ref]")
-  .description("Set up DiffPrism and start watching for changes")
-  .option("--staged", "Watch staged changes")
-  .option("--unstaged", "Watch unstaged changes")
-  .option("-t, --title <title>", "Review title")
-  .option("--interval <ms>", "Poll interval in milliseconds (default: 1000)")
-  .option("--dev", "Use Vite dev server with HMR instead of static files")
-  .option("--global", "Install skill globally (~/.claude/skills/)")
-  .option("--force", "Overwrite existing configuration files")
-  .action(start);
-
-program
-  .command("watch [ref]")
-  .description("Start a persistent diff watcher with live-updating browser UI")
-  .option("--staged", "Watch staged changes")
-  .option("--unstaged", "Watch unstaged changes")
-  .option("-t, --title <title>", "Review title")
-  .option("--interval <ms>", "Poll interval in milliseconds (default: 1000)")
-  .option("--dev", "Use Vite dev server with HMR instead of static files")
-  .action(watch);
-
-program
-  .command("notify-stop")
-  .description("Signal the watch server to refresh (used by Claude Code hooks)")
-  .action(notifyStop);
-
-program
   .command("serve")
   .description("Start the MCP server for Claude Code integration")
   .action(serve);
@@ -83,6 +53,7 @@ program
   .option("--global", "Configure globally (skill + permissions, no git repo required)")
   .option("--force", "Overwrite existing configuration files")
   .option("--dev", "Use Vite dev server")
+  .option("--no-demo", "Skip the demo review after setup")
   .action((flags) => { setup(flags); });
 
 program
