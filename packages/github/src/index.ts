@@ -3,6 +3,7 @@ export {
   createGitHubClient,
   fetchPullRequest,
   fetchPullRequestDiff,
+  isPrRef,
   parsePrRef,
 } from "./client.js";
 export type { PrMetadata, PrRef } from "./client.js";

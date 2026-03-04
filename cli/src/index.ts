@@ -2,7 +2,6 @@
 
 import { Command } from "commander";
 import { review } from "./commands/review.js";
-import { reviewPr } from "./commands/review-pr.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
@@ -26,21 +25,19 @@ program
 
 program
   .command("review [ref]")
-  .description("Open a browser-based diff review")
+  .description("Open a browser-based diff review (local git ref or GitHub PR ref like owner/repo#123)")
   .option("--staged", "Review staged changes")
   .option("--unstaged", "Review unstaged changes")
   .option("-t, --title <title>", "Review title")
-  .option("--dev", "Use Vite dev server with HMR instead of static files")
-  .action(review);
-
-program
-  .command("review-pr <pr>")
-  .description("Review a GitHub pull request in DiffPrism")
-  .option("-t, --title <title>", "Override review title")
-  .option("--reasoning <text>", "Agent reasoning about the PR")
+  .option("--reasoning <text>", "Agent reasoning about the changes")
   .option("--dev", "Use Vite dev server with HMR instead of static files")
   .option("--post-to-github", "Automatically post review back to GitHub without prompting")
-  .action(reviewPr);
+  .action(review);
+
+// Hidden alias for backwards compatibility
+program
+  .command("review-pr <pr>", { hidden: true })
+  .action((pr: string, flags: Record<string, unknown>) => review(pr, flags));
 
 program
   .command("serve")
