@@ -70,6 +70,17 @@ export async function fetchPullRequestDiff(
 }
 
 /**
+ * Check if a string looks like a GitHub PR reference.
+ * Returns true for "owner/repo#123" or GitHub PR URLs.
+ * Git refs can't contain '#', so there's zero ambiguity.
+ */
+export function isPrRef(input: string): boolean {
+  if (/github\.com\/[^/]+\/[^/]+\/pull\/\d+/.test(input)) return true;
+  if (/^[^/]+\/[^#]+#\d+$/.test(input)) return true;
+  return false;
+}
+
+/**
  * Parse a PR reference string into owner/repo/number.
  *
  * Accepts:

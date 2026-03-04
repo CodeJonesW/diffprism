@@ -7,9 +7,10 @@ description: Open current code changes in DiffPrism's browser-based review UI fo
 
 When the user invokes \`/review\`, call \`mcp__diffprism__open_review\` with:
 
-- \`diff_ref\`: \`"working-copy"\` (or what the user specified, e.g. \`"staged"\`)
+- \`diff_ref\`: \`"working-copy"\` (or what the user specified, e.g. \`"staged"\`, or a GitHub PR ref like \`"owner/repo#123"\`)
 - \`title\`: Brief summary of the changes
 - \`reasoning\`: Your reasoning about the implementation decisions
+- \`post_to_github\`: Set to \`true\` to post the review back to GitHub (only for PR refs)
 
 The tool blocks until the human submits their review. Handle the result:
 

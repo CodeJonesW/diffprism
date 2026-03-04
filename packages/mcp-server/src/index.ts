@@ -14,6 +14,7 @@ import type {
 import { getDiff } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 import {
+  isPrRef,
   resolveGitHubToken,
   parsePrRef,
   createGitHubClient,
@@ -30,6 +31,138 @@ declare const DIFFPRISM_VERSION: string;
 let lastGlobalSessionId: string | null = null;
 let lastGlobalServerInfo: GlobalServerInfo | null = null;
 
+type McpToolResult = {
+  content: Array<{ type: "text"; text: string }>;
+  isError?: boolean;
+};
+
+async function handleLocalReview(
+  diffRef: string,
+  options: {
+    title?: string;
+    description?: string;
+    reasoning?: string;
+    annotations?: Array<{
+      file: string;
+      line: number;
+      body: string;
+      type: "finding" | "suggestion" | "question" | "warning";
+      confidence?: number;
+      category?: string;
+      source_agent?: string;
+    }>;
+  },
+): Promise<{ mcpResult: McpToolResult; sessionId: string; serverInfo: GlobalServerInfo }> {
+  const serverInfo = await ensureServer({ silent: true });
+
+  const { result, sessionId } = await submitReviewToServer(
+    serverInfo,
+    diffRef,
+    {
+      title: options.title,
+      description: options.description,
+      reasoning: options.reasoning,
+      cwd: process.cwd(),
+      annotations: options.annotations,
+      diffRef,
+    },
+  );
+
+  return {
+    mcpResult: {
+      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    },
+    sessionId,
+    serverInfo,
+  };
+}
+
+async function handlePrReview(
+  pr: string,
+  options: {
+    title?: string;
+    reasoning?: string;
+    post_to_github?: boolean;
+  },
+): Promise<{ mcpResult: McpToolResult; sessionId: string; serverInfo: GlobalServerInfo }> {
+  // 1. Resolve GitHub token
+  const token = resolveGitHubToken();
+
+  // 2. Parse PR ref
+  const { owner, repo, number } = parsePrRef(pr);
+
+  // 3. Fetch PR data
+  const client = createGitHubClient(token);
+  const [prMetadata, rawDiff] = await Promise.all([
+    fetchPullRequest(client, owner, repo, number),
+    fetchPullRequestDiff(client, owner, repo, number),
+  ]);
+
+  if (!rawDiff.trim()) {
+    return {
+      mcpResult: {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            decision: "approved",
+            comments: [],
+            summary: "PR has no changes to review.",
+          }, null, 2),
+        }],
+      },
+      sessionId: "",
+      serverInfo: { httpPort: 0, wsPort: 0, pid: 0, startedAt: 0 },
+    };
+  }
+
+  // 4. Normalize to DiffPrism types
+  const { payload } = normalizePr(rawDiff, prMetadata, {
+    title: options.title,
+    reasoning: options.reasoning,
+  });
+
+  // 5. Route through global server (auto-start if needed)
+  const serverInfo = await ensureServer({ silent: true });
+  const { result, sessionId } = await submitReviewToServer(
+    serverInfo,
+    `PR #${number}`,
+    {
+      injectedPayload: payload,
+      projectPath: `github:${owner}/${repo}`,
+      diffRef: `PR #${number}`,
+    },
+  );
+
+  // 6. Optionally post review back to GitHub
+  if ((options.post_to_github || result.postToGithub) && result.decision !== "dismissed") {
+    const posted = await submitGitHubReview(client, owner, repo, number, result);
+    if (posted) {
+      return {
+        mcpResult: {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              ...result,
+              githubReviewId: posted.reviewId,
+              githubReviewUrl: `${prMetadata.url}#pullrequestreview-${posted.reviewId}`,
+            }, null, 2),
+          }],
+        },
+        sessionId,
+        serverInfo,
+      };
+    }
+  }
+
+  return {
+    mcpResult: {
+      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+    },
+    sessionId,
+    serverInfo,
+  };
+}
+
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "diffprism",
@@ -38,12 +171,12 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "open_review",
-    "Open a browser-based code review for local git changes. Blocks until the engineer submits their review decision. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
+    "Open a browser-based code review for local git changes or a GitHub pull request. Blocks until the engineer submits their review decision. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
     {
       diff_ref: z
         .string()
         .describe(
-          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
+          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), a ref range like "HEAD~3..HEAD", or a GitHub PR ref like "owner/repo#123" or a GitHub PR URL',
         ),
       title: z.string().optional().describe("Title for the review"),
       description: z
@@ -54,6 +187,10 @@ export async function startMcpServer(): Promise<void> {
         .string()
         .optional()
         .describe("Agent reasoning about why these changes were made"),
+      post_to_github: z
+        .boolean()
+        .optional()
+        .describe("Post the review back to GitHub after submission (only for PR refs, default: false)"),
       annotations: z
         .array(
           z.object({
@@ -91,36 +228,34 @@ export async function startMcpServer(): Promise<void> {
         .optional()
         .describe("Initial annotations to attach to the review"),
     },
-    async ({ diff_ref, title, description, reasoning, annotations }) => {
+    async ({ diff_ref, title, description, reasoning, post_to_github, annotations }) => {
       try {
-        // Ensure a global server is running (auto-starts if needed)
-        const serverInfo = await ensureServer({ silent: true });
+        let mcpResult: McpToolResult;
+        let sessionId: string;
+        let serverInfo: GlobalServerInfo;
 
-        const { result, sessionId } = await submitReviewToServer(
-          serverInfo,
-          diff_ref,
-          {
+        if (isPrRef(diff_ref)) {
+          ({ mcpResult, sessionId, serverInfo } = await handlePrReview(diff_ref, {
+            title,
+            reasoning,
+            post_to_github,
+          }));
+        } else {
+          ({ mcpResult, sessionId, serverInfo } = await handleLocalReview(diff_ref, {
             title,
             description,
             reasoning,
-            cwd: process.cwd(),
             annotations,
-            diffRef: diff_ref,
-          },
-        );
+          }));
+        }
 
         // Store for update_review_context / get_review_result
-        lastGlobalSessionId = sessionId;
-        lastGlobalServerInfo = serverInfo;
+        if (sessionId) {
+          lastGlobalSessionId = sessionId;
+          lastGlobalServerInfo = serverInfo;
+        }
 
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return mcpResult;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return {
@@ -743,9 +878,10 @@ export async function startMcpServer(): Promise<void> {
     },
   );
 
+  // Backwards-compatible alias — delegates to the same handlePrReview helper
   server.tool(
     "review_pr",
-    "Open a browser-based code review for a GitHub pull request. Fetches the PR diff, runs DiffPrism analysis, and opens the review UI. Blocks until the engineer submits their review decision. Optionally posts the review back to GitHub. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
+    "Alias for open_review with a GitHub PR ref. Prefer using open_review with a PR ref in diff_ref instead.",
     {
       pr: z
         .string()
@@ -764,79 +900,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ pr, title, reasoning, post_to_github }) => {
       try {
-        // 1. Resolve GitHub token
-        const token = resolveGitHubToken();
+        const { mcpResult, sessionId, serverInfo } = await handlePrReview(pr, {
+          title,
+          reasoning,
+          post_to_github,
+        });
 
-        // 2. Parse PR ref
-        const { owner, repo, number } = parsePrRef(pr);
-
-        // 3. Fetch PR data
-        const client = createGitHubClient(token);
-        const [prMetadata, rawDiff] = await Promise.all([
-          fetchPullRequest(client, owner, repo, number),
-          fetchPullRequestDiff(client, owner, repo, number),
-        ]);
-
-        if (!rawDiff.trim()) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  decision: "approved",
-                  comments: [],
-                  summary: "PR has no changes to review.",
-                }, null, 2),
-              },
-            ],
-          };
+        if (sessionId) {
+          lastGlobalSessionId = sessionId;
+          lastGlobalServerInfo = serverInfo;
         }
 
-        // 4. Normalize to DiffPrism types
-        const { payload } = normalizePr(rawDiff, prMetadata, { title, reasoning });
-
-        // 5. Route through global server (auto-start if needed)
-        const serverInfo = await ensureServer({ silent: true });
-        const { result, sessionId } = await submitReviewToServer(
-          serverInfo,
-          `PR #${number}`,
-          {
-            injectedPayload: payload,
-            projectPath: `github:${owner}/${repo}`,
-            diffRef: `PR #${number}`,
-          },
-        );
-
-        lastGlobalSessionId = sessionId;
-        lastGlobalServerInfo = serverInfo;
-
-        // 6. Optionally post review back to GitHub
-        if ((post_to_github || result.postToGithub) && result.decision !== "dismissed") {
-          const posted = await submitGitHubReview(client, owner, repo, number, result);
-          if (posted) {
-            return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: JSON.stringify({
-                    ...result,
-                    githubReviewId: posted.reviewId,
-                    githubReviewUrl: `${prMetadata.url}#pullrequestreview-${posted.reviewId}`,
-                  }, null, 2),
-                },
-              ],
-            };
-          }
-        }
-
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
+        return mcpResult;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return {

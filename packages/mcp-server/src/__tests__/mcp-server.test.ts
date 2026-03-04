@@ -21,6 +21,7 @@ vi.mock("@diffprism/analysis", () => ({
   analyze: (...args: unknown[]) => mockAnalyze(...args),
 }));
 
+const mockIsPrRef = vi.fn();
 const mockResolveGitHubToken = vi.fn();
 const mockParsePrRef = vi.fn();
 const mockCreateGitHubClient = vi.fn();
@@ -29,6 +30,7 @@ const mockFetchPullRequestDiff = vi.fn();
 const mockNormalizePr = vi.fn();
 const mockSubmitGitHubReview = vi.fn();
 vi.mock("@diffprism/github", () => ({
+  isPrRef: (...args: unknown[]) => mockIsPrRef(...args),
   resolveGitHubToken: (...args: unknown[]) => mockResolveGitHubToken(...args),
   parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
   createGitHubClient: (...args: unknown[]) => mockCreateGitHubClient(...args),
@@ -67,6 +69,8 @@ describe("mcp-server", () => {
     mockEnsureServer.mockResolvedValue(defaultServerInfo);
     // Default: no server alive (for tools that check directly)
     mockIsServerAlive.mockResolvedValue(null);
+    // Default: not a PR ref
+    mockIsPrRef.mockReturnValue(false);
   });
 
   it("registers tools", async () => {
@@ -221,6 +225,44 @@ describe("mcp-server", () => {
       // The sessionId is stored in module state for update_review_context / get_review_result.
       // We verify by checking the handler was called successfully (state is internal).
       expect(mockSubmitReviewToServer).toHaveBeenCalled();
+    });
+
+    it("routes to PR flow when diff_ref is a PR reference", async () => {
+      mockIsPrRef.mockReturnValue(true);
+      mockResolveGitHubToken.mockReturnValue("gh-token");
+      mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 99 });
+      mockCreateGitHubClient.mockReturnValue("client");
+      mockFetchPullRequest.mockResolvedValue({
+        owner: "acme", repo: "app", number: 99,
+        title: "Add feature", author: "dev",
+        url: "https://github.com/acme/app/pull/99",
+        baseBranch: "main", headBranch: "feat", body: null,
+      });
+      mockFetchPullRequestDiff.mockResolvedValue("diff --git a/x.ts b/x.ts\n");
+      mockNormalizePr.mockReturnValue({
+        payload: { diffSet: { files: [] }, rawDiff: "" },
+        diffSet: { files: [] },
+      });
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: { decision: "approved", comments: [] },
+        sessionId: "session-pr-99",
+      });
+
+      const handler = await getToolHandler();
+      const result = await handler({ diff_ref: "acme/app#99" });
+
+      expect(mockIsPrRef).toHaveBeenCalledWith("acme/app#99");
+      expect(mockResolveGitHubToken).toHaveBeenCalled();
+      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+        defaultServerInfo,
+        "PR #99",
+        expect.objectContaining({
+          injectedPayload: expect.any(Object),
+          projectPath: "github:acme/app",
+        }),
+      );
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0].text).decision).toBe("approved");
     });
   });
 });
