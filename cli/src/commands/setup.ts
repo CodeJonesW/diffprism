@@ -16,6 +16,7 @@ interface SetupFlags {
   force?: boolean;
   quiet?: boolean;
   dev?: boolean;
+  demo?: boolean;
 }
 
 export interface SetupOutcome {
@@ -156,91 +157,6 @@ function setupSkill(
   return { action, filePath };
 }
 
-export function cleanDiffprismHooks(
-  gitRoot: string,
-): { removed: number } {
-  const filePath = path.join(gitRoot, ".claude", "settings.json");
-  const existing = readJsonFile(filePath);
-
-  const hooks = existing.hooks as Record<string, unknown> | undefined;
-  if (!hooks) return { removed: 0 };
-
-  const stopHooks = hooks.Stop;
-  if (!Array.isArray(stopHooks) || stopHooks.length === 0) {
-    return { removed: 0 };
-  }
-
-  const filtered = stopHooks.filter((entry: Record<string, unknown>) => {
-    const innerHooks = entry.hooks;
-    if (!Array.isArray(innerHooks)) return true;
-    return !innerHooks.some((h: Record<string, unknown>) => {
-      const cmd = h.command;
-      return (
-        typeof cmd === "string" &&
-        cmd.includes("diffprism") &&
-        cmd.includes("notify-stop")
-      );
-    });
-  });
-
-  const removed = stopHooks.length - filtered.length;
-
-  if (removed > 0) {
-    if (filtered.length > 0) {
-      hooks.Stop = filtered;
-    } else {
-      delete hooks.Stop;
-    }
-    writeJsonFile(filePath, { ...existing, hooks });
-  }
-
-  return { removed };
-}
-
-function setupStopHook(
-  gitRoot: string,
-  force: boolean,
-): { action: "created" | "updated" | "skipped"; filePath: string } {
-  const filePath = path.join(gitRoot, ".claude", "settings.json");
-  const existing = readJsonFile(filePath);
-
-  const hooks = (existing.hooks ?? {}) as Record<string, unknown>;
-  const stopHooks = hooks.Stop as Array<Record<string, unknown>> | undefined;
-
-  const hookCommand = "npx diffprism@latest notify-stop";
-
-  // Check if hook already exists
-  if (stopHooks && !force) {
-    const hasHook = stopHooks.some((entry) => {
-      const innerHooks = entry.hooks as Array<Record<string, unknown>> | undefined;
-      return innerHooks?.some((h) => h.command === hookCommand);
-    });
-    if (hasHook) {
-      return { action: "skipped", filePath };
-    }
-  }
-
-  const hookEntry = {
-    matcher: "",
-    hooks: [
-      {
-        type: "command",
-        command: hookCommand,
-      },
-    ],
-  };
-
-  if (stopHooks && !force) {
-    stopHooks.push(hookEntry);
-  } else {
-    hooks.Stop = [hookEntry];
-  }
-
-  const action = fs.existsSync(filePath) ? "updated" : "created";
-  writeJsonFile(filePath, { ...existing, hooks });
-  return { action, filePath: filePath + " (Stop hook)" };
-}
-
 async function promptUser(question: string): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -288,29 +204,6 @@ async function setupGitignore(
   return { action: "created", filePath };
 }
 
-async function promptChoice(question: string, options: string[]): Promise<number> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  for (let i = 0; i < options.length; i++) {
-    console.log(`  ${i + 1}. ${options[i]}`);
-  }
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      const num = parseInt(answer.trim(), 10);
-      if (num >= 1 && num <= options.length) {
-        resolve(num - 1);
-      } else {
-        resolve(0); // Default to first option
-      }
-    });
-  });
-}
-
 export async function setup(flags: SetupFlags): Promise<SetupOutcome> {
   const force = flags.force ?? false;
   const global = flags.global ?? false;
@@ -331,68 +224,39 @@ export async function setup(flags: SetupFlags): Promise<SetupOutcome> {
 
 async function setupInteractive(flags: SetupFlags): Promise<SetupOutcome> {
   const dev = flags.dev;
+  const demo = flags.demo !== false;
   const gitRoot = findGitRoot(process.cwd());
 
   console.log("\n  Welcome to DiffPrism");
   console.log("  Browser-based code review for agent-generated changes.\n");
 
-  // Ask how they'll use DiffPrism
-  const modeChoice = await promptChoice("\nHow will you use DiffPrism? ", [
-    "With Claude Code (recommended)",
-    "From the CLI only",
-  ]);
+  let outcome: SetupOutcome;
 
-  if (modeChoice === 0) {
-    // Claude Code setup
-    if (!gitRoot) {
-      console.log("\n  Not in a git repository — configuring globally.\n");
-      const outcome = await setupBatch({ global: true, quiet: true });
-
-      console.log("  Setting up for Claude Code...");
-      console.log("  ✓ Installed /review skill");
-      console.log("  ✓ Added tool permissions");
-      console.log("\n  Restart Claude Code, then type /review to start a review.\n");
-
-      // Offer demo
-      await offerDemo(dev);
-      return outcome;
-    }
-
-    console.log("\n  Setting up for Claude Code...");
-    const outcome = await setupBatch({ quiet: true });
-
+  if (!gitRoot) {
+    outcome = await setupBatch({ global: true, quiet: true });
+    console.log("  ✓ Configured for Claude Code (global).");
+  } else {
+    outcome = await setupBatch({ quiet: true });
     if (outcome.created.length > 0 || outcome.updated.length > 0) {
-      console.log("  ✓ Registered MCP server (.mcp.json)");
-      console.log("  ✓ Added tool permissions (.claude/settings.json)");
-      console.log("  ✓ Installed /review skill");
-      console.log("  ✓ Added .diffprism to .gitignore");
+      console.log("  ✓ Configured for Claude Code.");
     } else {
-      console.log("  ✓ Already configured");
+      console.log("  ✓ Already configured.");
     }
-
-    console.log("\n  Restart Claude Code, then type /review to start a review.\n");
-
-    // Offer demo
-    await offerDemo(dev);
-    return outcome;
   }
 
-  // CLI-only mode
-  console.log("\n  DiffPrism is ready to use.");
-  console.log("  Run `diffprism review` in any git repo to review changes.\n");
+  console.log("  Restart Claude Code, then type /review to start a review.\n");
 
-  // Offer demo
-  await offerDemo(dev);
-  return { created: [], updated: [], skipped: [] };
+  if (demo) {
+    await runDemo(dev);
+  }
+
+  return outcome;
 }
 
-async function offerDemo(dev?: boolean): Promise<void> {
-  const wantsDemo = await promptUser("Try a demo review now? (Y/n) ");
-  if (wantsDemo) {
-    console.log("");
-    const { demo } = await import("./demo.js");
-    await demo({ dev });
-  }
+async function runDemo(dev?: boolean): Promise<void> {
+  console.log("");
+  const { demo } = await import("./demo.js");
+  await demo({ dev });
 }
 
 async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
@@ -458,27 +322,13 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   const settings = setupClaudeSettings(gitRoot, force);
   result[settings.action].push(settings.filePath);
 
-  // Step 3.5: Clean stale diffprism hooks before adding current one
-  const cleaned = cleanDiffprismHooks(gitRoot);
-  if (cleaned.removed > 0 && !quiet) {
-    console.log(`  Cleaned ${cleaned.removed} stale hook(s)`);
-  }
-
-  // Step 4: .claude/settings.json (Stop hook for watch mode)
-  const hook = setupStopHook(gitRoot, force);
-  result[hook.action].push(hook.filePath);
-
-  // Step 5: Skill file
+  // Step 4: Skill file
   const skill = setupSkill(gitRoot, false, force);
   result[skill.action].push(skill.filePath);
 
   if (!quiet) {
-    printSummary(result, gitRoot);
     console.log("\n✓ DiffPrism configured for Claude Code.\n");
-    console.log("Next steps:");
-    console.log("  1. Restart Claude Code to pick up the MCP configuration");
-    console.log("  2. Use /review in Claude Code to review your changes\n");
-    console.log("Tip: Run `diffprism start` to combine setup + live watch mode.");
+    console.log("Next: Restart Claude Code, then type /review to review your changes.\n");
   }
 
   return result;

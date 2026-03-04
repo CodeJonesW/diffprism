@@ -1,14 +1,18 @@
 # DiffPrism
 
-Browser-based code review for agent-generated changes. Review what your AI wrote before it ships.
+Your AI writes code — you need to review it before it ships. But terminal diffs
+are hard to read, and there's no way to leave structured feedback that the agent
+actually acts on.
 
-## Try It
+DiffPrism opens a code review UI in your browser with syntax-highlighted diffs,
+inline commenting, and structured decisions (approve / request changes) that
+Claude reads and responds to.
 
-```bash
-npx diffprism demo
-```
+## How It Works
 
-A browser window opens with a sample code review. Click around — leave comments, approve, see how it works. No git repo needed.
+1. Type `/review` in Claude Code — your browser opens with the diff
+2. Review the changes, leave inline comments, approve or request changes
+3. Claude reads your decision and acts on it (commits, opens a PR, or fixes what you flagged)
 
 ## Setup for Claude Code
 
@@ -16,17 +20,11 @@ A browser window opens with a sample code review. Click around — leave comment
 npx diffprism setup
 ```
 
-Walks you through configuration. After restarting Claude Code, type `/review` to review your agent's changes.
-
-**Two ways to trigger a review:**
-
-1. **Type `/review`** — Claude opens your current changes in DiffPrism's browser UI, waits for your decision, and acts on it (e.g., commits if you approve).
-
-2. **Ask Claude to review** — Say "review my changes" or "open a review" and Claude will call the tool.
-
-The review blocks Claude until you submit your decision in the browser. If you request changes, Claude reads your comments and fixes them. If you approve via the quick action menu, Claude commits or opens a PR automatically.
+Configures everything and opens a demo review so you can see it in action. Restart Claude Code afterward to load the MCP server.
 
 ## Use from the CLI
+
+No setup needed — just run:
 
 ```bash
 diffprism review                    # Review all changes (staged + unstaged)

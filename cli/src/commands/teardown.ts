@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { findGitRoot, readJsonFile, writeJsonFile, cleanDiffprismHooks, GITIGNORE_ENTRIES } from "./setup.js";
+import { findGitRoot, readJsonFile, writeJsonFile, GITIGNORE_ENTRIES } from "./setup.js";
 
 interface TeardownFlags {
   global?: boolean;
@@ -88,24 +88,6 @@ function teardownClaudePermissions(
 
   writeJsonFile(filePath, existing);
   return { action: "removed", filePath };
-}
-
-function teardownHooks(gitRoot: string): { action: "removed" | "skipped"; filePath: string } {
-  const filePath = path.join(gitRoot, ".claude", "settings.json");
-  const result = cleanDiffprismHooks(gitRoot);
-
-  if (result.removed > 0) {
-    // cleanDiffprismHooks already wrote the file — check if hooks object is now empty
-    const existing = readJsonFile(filePath);
-    const hooks = existing.hooks as Record<string, unknown> | undefined;
-    if (hooks && Object.keys(hooks).length === 0) {
-      delete existing.hooks;
-      writeJsonFile(filePath, existing);
-    }
-    return { action: "removed", filePath: filePath + " (hooks)" };
-  }
-
-  return { action: "skipped", filePath: filePath + " (hooks)" };
 }
 
 function cleanupSettingsFile(baseDir: string): void {
@@ -245,11 +227,7 @@ export async function teardown(flags: TeardownFlags): Promise<TeardownResult> {
   const perms = teardownClaudePermissions(gitRoot);
   result[perms.action].push(perms.filePath);
 
-  // Step 3: Hooks
-  const hooks = teardownHooks(gitRoot);
-  result[hooks.action].push(hooks.filePath);
-
-  // Step 3.5: Clean up empty settings.json
+  // Step 2.5: Clean up empty settings.json
   cleanupSettingsFile(gitRoot);
 
   // Step 4: Skill file
