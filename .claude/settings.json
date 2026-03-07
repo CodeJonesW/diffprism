@@ -12,17 +12,5 @@
       "mcp__diffprism__review_pr"
     ]
   },
-  "hooks": {
-    "Stop": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "npx diffprism@latest notify-stop"
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }

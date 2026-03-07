@@ -18,6 +18,22 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 
 **Dependency flow:** `git` + `analysis` → `core` (server-client + global server) → `cli` + `mcp-server`. UI is standalone Vite app connected via WebSocket. All clients use `ensureServer()` to auto-start the daemon, then route reviews through the HTTP API.
 
+## Repo Context Service
+
+A local MCP server (`repo-context`) is available that provides deep project context for this codebase. It must be running at `http://localhost:8787` (start with `cd ~/dev/repo-context-service && pnpm dev`).
+
+**Use these tools when you need broader project understanding:**
+
+- `get_architecture` — project structure, frameworks, entry points. Use when onboarding or planning multi-file changes.
+- `get_file_context` — imports, exports, dependents for a file. Use before modifying a file to understand what depends on it.
+- `get_related_files` — given changed file paths, find other files likely affected. Use when planning a change to check blast radius.
+- `get_conventions` — naming patterns, test patterns, tooling. Use to match existing style.
+- `search_codebase` — keyword search across indexed code. Use to find where something is defined or used.
+
+All tools take `owner: "codejonesw"` and `repo: "diffprism"`.
+
+**To re-index after changes:** Run `cd ~/dev/repo-context-service && pnpm index-local codejonesw diffprism ~/dev/diffprism` from a terminal.
+
 ## Key Files
 
 | File | Purpose |

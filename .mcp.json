@@ -1,5 +1,9 @@
 {
   "mcpServers": {
+    "repo-context": {
+      "type": "http",
+      "url": "http://localhost:8787/mcp"
+    },
     "diffprism": {
       "command": "npx",
       "args": [
