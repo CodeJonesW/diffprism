@@ -1,30 +1,45 @@
 # DiffPrism
 
-Your AI writes code — you need to review it before it ships. But terminal diffs
-are hard to read, and there's no way to leave structured feedback that the agent
-actually acts on.
+> **This package has been deprecated.** DiffPrism has pivoted from a local CLI tool to a **GitHub App** that delivers pattern-aware code reviews directly on pull requests.
 
-DiffPrism opens a code review UI in your browser with syntax-highlighted diffs,
-inline commenting, and structured decisions (approve / request changes) that
-Claude reads and responds to.
+## Why the Pivot
 
-## How It Works
+The local review tool worked — but it required developers to install an npm package, run a background server, and switch between their terminal and a browser tab. The feedback loop was good for agent-generated code, but it didn't meet developers where they already are: **on the pull request.**
 
-1. Type `/review` in Claude Code — your browser opens with the diff
-2. Review the changes, leave inline comments, approve or request changes
-3. Claude reads your decision and acts on it (commits, opens a PR, or fixes what you flagged)
+DiffPrism is now a GitHub App. Install it once, and it reviews your PRs with awareness of your codebase's existing patterns. No npm install, no CLI, no context switching. Comment `/review` on a PR and get structured inline feedback in seconds.
 
-## Setup for Claude Code
+## What's Different
+
+| | Before (npm package) | Now (GitHub App) |
+|---|---|---|
+| **Setup** | `npx diffprism setup` + restart Claude Code | Install GitHub App on your repo |
+| **Trigger** | `/review` in Claude Code or CLI | `/review` comment on any PR |
+| **Review location** | Separate browser tab | Inline on the PR itself |
+| **Context** | Just the diff | Diff + semantically related code from your repo |
+| **Pattern awareness** | None | References actual patterns from your codebase |
+| **Dependencies** | Node.js, npm, background server | None — fully hosted |
+
+## The GitHub App
+
+DiffPrism indexes your codebase using AST-aware chunking and vector embeddings. When you request a review, it finds code patterns related to the diff and sends both to Claude. The result: reviews that can tell you "this error handling differs from the pattern in `src/api/auth.ts:42`" — not just generic correctness checks.
+
+**The GitHub App is not yet public.** Development is happening at [CodeJonesW/diffprism-github-app](https://github.com/CodeJonesW/diffprism-github-app).
+
+---
+
+## Using the npm Package (Deprecated)
+
+The local tool still works if you prefer browser-based review for agent-generated changes. It will not receive further updates.
+
+### Setup for Claude Code
 
 ```bash
 npx diffprism setup
 ```
 
-Configures everything and opens a demo review so you can see it in action. Restart Claude Code afterward to load the MCP server.
+Configures everything and opens a demo review. Restart Claude Code afterward to load the MCP server.
 
-## Use from the CLI
-
-No setup needed — just run:
+### CLI Usage
 
 ```bash
 diffprism review                    # Review all changes (staged + unstaged)
@@ -33,58 +48,33 @@ diffprism review HEAD~3             # Last 3 commits
 diffprism review main..feature      # Branch diff
 ```
 
-## Multi-Agent Reviews
+### Features
 
-Running multiple Claude Code sessions (e.g., in git worktrees)? All reviews appear in one browser tab.
+- Syntax-highlighted diffs (unified or split view)
+- Inline commenting (must_fix, suggestion, question, nitpick)
+- Review briefing with complexity scores and pattern flags
+- Agent reasoning panel
+- Quick actions — Approve & Commit or Approve, Commit & PR
+- Multi-session dashboard for parallel Claude Code sessions
+- Desktop notifications for new reviews
+- GitHub PR review via MCP
+- Keyboard shortcuts (`j`/`k` files, `n`/`p` hunks, `c` comment, `s` status, `?` help)
+- Dark/light mode
 
-The server starts automatically on first use — no manual setup needed. Each review shows up as a session with status badges, branch info, and change stats. Click to switch between reviews. Desktop notifications alert you when new reviews arrive.
+### Multi-Agent Reviews
+
+Running multiple Claude Code sessions? All reviews appear in one browser tab. The server starts automatically on first use.
 
 ```bash
 diffprism server status             # Check if server is running
 diffprism server stop               # Stop the background server
 ```
 
-## Features
-
-- **Syntax-highlighted diffs** — unified or split (side-by-side) view
-- **Inline commenting** — click any line to add `must_fix`, `suggestion`, `question`, or `nitpick` comments
-- **Review briefing** — complexity scores, test coverage gaps, pattern flags, dependency tracking
-- **Agent reasoning panel** — see why the AI made each change
-- **Quick actions** — Approve & Commit or Approve, Commit & PR from the review UI
-- **Multi-session dashboard** — review multiple agents from one browser tab
-- **Desktop notifications** — get alerted when a new review arrives
-- **GitHub PR review** — review any GitHub PR in DiffPrism's UI
-- **Keyboard shortcuts** — `j`/`k` files, `n`/`p` hunks, `c` comment, `s` status, `?` help
-- **Dark/light mode** — toggle with persistence
-
-## Uninstall
+### Uninstall
 
 ```bash
 npx diffprism teardown              # Remove from current project
 npx diffprism teardown --global     # Remove global config
-```
-
-## Development
-
-```bash
-git clone https://github.com/CodeJonesW/diffprism.git
-cd diffprism
-pnpm install
-pnpm test
-pnpm run build
-pnpm cli review --staged            # Run CLI from source
-```
-
-### Project Structure
-
-```
-packages/core       — Server, types, server-client utilities
-packages/git        — Git diff extraction + parser
-packages/analysis   — Deterministic review briefing
-packages/ui         — React 19 + Vite 6 + Tailwind + Zustand
-packages/mcp-server — MCP tool server (9 tools)
-packages/github     — GitHub PR fetching + review submission
-cli/                — Commander CLI
 ```
 
 ### Requirements
@@ -92,7 +82,9 @@ cli/                — Commander CLI
 - Node.js >= 20
 - Git
 
-## Documentation
+---
 
-- [Claude Code Setup Guide](docs/usage/claude-setup.md) — detailed configuration and troubleshooting
-- [Dev Testing Guide](docs/usage/dev-testing.md) — running from source
+## Links
+
+- [DiffPrism Landing Page](https://diffprism.com)
+- [GitHub App Repository](https://github.com/CodeJonesW/diffprism-github-app)
