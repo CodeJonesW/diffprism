@@ -94,6 +94,7 @@ export interface ReviewState {
   setCompareRef: (ref: string | null) => void;
   addAnnotation: (annotation: Annotation) => void;
   dismissAnnotation: (annotationId: string) => void;
+  clearSessionAttention: (sessionId: string) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -383,7 +384,24 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   addAnnotation: (annotation: Annotation) => {
-    set((state) => ({ annotations: [...state.annotations, annotation] }));
+    set((state) => {
+      const updates: Partial<ReviewState> = {
+        annotations: [...state.annotations, annotation],
+      };
+
+      // Mark session as needing attention when a warning annotation arrives
+      // (flag_for_attention sends warning-type annotations)
+      if (annotation.type === "warning" && annotation.sessionId) {
+        const idx = state.sessions.findIndex((s) => s.id === annotation.sessionId);
+        if (idx !== -1) {
+          const sessions = [...state.sessions];
+          sessions[idx] = { ...sessions[idx], needsAttention: true };
+          updates.sessions = sessions;
+        }
+      }
+
+      return updates;
+    });
   },
 
   dismissAnnotation: (annotationId: string) => {
@@ -405,6 +423,16 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         // Ignore network errors — local state is already updated
       });
     }
+  },
+
+  clearSessionAttention: (sessionId: string) => {
+    set((state) => {
+      const idx = state.sessions.findIndex((s) => s.id === sessionId);
+      if (idx === -1) return state;
+      const sessions = [...state.sessions];
+      sessions[idx] = { ...sessions[idx], needsAttention: false };
+      return { sessions };
+    });
   },
 
   selectSession: (sessionId: string) => {

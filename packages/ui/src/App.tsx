@@ -3,7 +3,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { useNotifications } from "./hooks/useNotifications";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
-import { SessionList } from "./components/SessionList";
+import { Dashboard } from "./components/Dashboard";
 import type { ReviewResult } from "./types";
 
 export default function App() {
@@ -23,6 +23,7 @@ export default function App() {
     selectSession,
     removeSession,
     clearReview,
+    clearSessionAttention,
   } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
@@ -62,6 +63,7 @@ export default function App() {
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
+    clearSessionAttention(sessionId);
     wsSelectSession(sessionId);
   }
 
@@ -121,8 +123,8 @@ export default function App() {
     );
   }
 
-  // Server mode: show session list when no active review
-  if (isServerMode && !diffSet) {
+  // Server mode: persistent dashboard with sidebar + detail pane
+  if (isServerMode) {
     if (connectionStatus === "disconnected") {
       return (
         <div className="h-screen flex items-center justify-center bg-background">
@@ -154,17 +156,18 @@ export default function App() {
     }
 
     return (
-      <div className="h-screen bg-background">
-        <SessionList
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={handleSelectSession}
-          onClose={handleCloseSession}
-          notificationPermission={notificationPermission}
-          notificationsEnabled={notificationsEnabled}
-          onToggleNotifications={toggleNotifications}
-        />
-      </div>
+      <Dashboard
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        hasDiffLoaded={!!diffSet}
+        onSelectSession={handleSelectSession}
+        onCloseSession={handleCloseSession}
+        onSubmit={handleSubmit}
+        onDismiss={handleDismiss}
+        notificationPermission={notificationPermission}
+        notificationsEnabled={notificationsEnabled}
+        onToggleNotifications={toggleNotifications}
+      />
     );
   }
 
