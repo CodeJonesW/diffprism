@@ -4,14 +4,14 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ## Key Files
 
-- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 9 tools, connects StdioServerTransport.
+- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 8 tools, connects StdioServerTransport.
 
 ## Tools
 
 ### `open_review`
-- **Params:** `diff_ref` (required), `title`, `description`, `reasoning`, `annotations` (all optional)
-- **Behavior:** Calls `ensureServer()` to auto-start the daemon if needed, then `submitReviewToServer()` to compute diff locally, POST to server, and poll for result.
-- **Returns:** `ReviewResult` as JSON. May include `postReviewAction` ('commit' or 'commit_and_pr').
+- **Params:** `diff_ref` (required), `title`, `description`, `reasoning`, `timeout_ms`, `annotations` (all optional)
+- **Behavior:** Calls `ensureServer()` to auto-start the daemon if needed, then `submitReviewToServer()` to compute diff locally and POST to server. Returns immediately by default (non-blocking). If `timeout_ms` > 0, polls for a result up to that duration.
+- **Returns:** Session creation confirmation with `sessionId` (non-blocking), or `ReviewResult` as JSON if `timeout_ms` caused a blocking wait.
 
 ### `update_review_context`
 - **Params:** `reasoning`, `title`, `description` (all optional)
@@ -19,7 +19,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ### `get_review_result`
 - **Params:** `wait` (optional bool), `timeout` (optional number)
-- **Behavior:** Polls the server for the most recent session's result. Primarily for advanced workflows — `open_review` already blocks and returns the result.
+- **Behavior:** Polls the server for the most recent session's result. Use `wait: true` to block until a reviewer submits — this is the standard way to await a decision after `open_review`.
 
 ### `get_diff`
 - **Params:** `diff_ref` (required)
@@ -40,10 +40,6 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 ### `flag_for_attention`
 - **Params:** `session_id` (optional), `files` (required array), `source_agent` (optional)
 - **Behavior:** Posts warning annotations for each flagged file to highlight them for human review.
-
-### `review_pr`
-- **Params:** `pr` (required), `title`, `reasoning`, `post_to_github` (optional)
-- **Behavior:** Fetches GitHub PR diff, normalizes to DiffPrism types, routes through global server. Optionally posts review back to GitHub.
 
 ## Server Interaction
 

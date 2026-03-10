@@ -149,7 +149,7 @@ describe("submitReviewToServer", () => {
     );
 
     expect(sessionId).toBe("s-1");
-    expect(result.decision).toBe("approved");
+    expect(result!.decision).toBe("approved");
   });
 
   it("throws when server returns non-OK on create", async () => {
@@ -263,8 +263,8 @@ describe("submitReviewToServer", () => {
       { injectedPayload: payload },
     );
 
-    expect(result.decision).toBe("changes_requested");
-    expect(result.comments).toHaveLength(1);
+    expect(result!.decision).toBe("changes_requested");
+    expect(result!.comments).toHaveLength(1);
     // 1 create + 3 polls = 4 fetch calls
     expect(mockFetch).toHaveBeenCalledTimes(4);
   });

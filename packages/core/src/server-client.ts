@@ -143,18 +143,19 @@ export interface SubmitReviewOptions {
 }
 
 /**
- * Submit a review to the global server and wait for the user's decision.
+ * Submit a review to the global server.
  *
  * If injectedPayload is provided, uses it directly (for GitHub PRs).
  * Otherwise, computes diff locally from diffRef.
  *
- * Returns the ReviewResult once the user submits in the UI.
+ * When timeoutMs is 0, returns immediately after session creation (non-blocking).
+ * Otherwise, polls until the user submits in the UI or the timeout expires.
  */
 export async function submitReviewToServer(
   serverInfo: GlobalServerInfo,
   diffRef: string,
   options: SubmitReviewOptions = {},
-): Promise<{ result: ReviewResult; sessionId: string }> {
+): Promise<{ result: ReviewResult | null; sessionId: string }> {
   const cwd = options.cwd ?? process.cwd();
   const projectPath = options.projectPath ?? cwd;
 
@@ -258,9 +259,14 @@ export async function submitReviewToServer(
     }
   }
 
+  // Non-blocking mode: return immediately after session creation
+  const maxWaitMs = options.timeoutMs ?? 600_000;
+  if (maxWaitMs <= 0) {
+    return { result: null, sessionId };
+  }
+
   // Poll for result
   const pollIntervalMs = 2000;
-  const maxWaitMs = options.timeoutMs ?? 600_000;
   const start = Date.now();
 
   while (Date.now() - start < maxWaitMs) {

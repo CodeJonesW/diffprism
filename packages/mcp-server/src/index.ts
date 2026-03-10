@@ -42,6 +42,7 @@ async function handleLocalReview(
     title?: string;
     description?: string;
     reasoning?: string;
+    timeoutMs?: number;
     annotations?: Array<{
       file: string;
       line: number;
@@ -65,12 +66,30 @@ async function handleLocalReview(
       cwd: process.cwd(),
       annotations: options.annotations,
       diffRef,
+      timeoutMs: options.timeoutMs ?? 0,
     },
   );
 
+  if (result) {
+    return {
+      mcpResult: {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      },
+      sessionId,
+      serverInfo,
+    };
+  }
+
   return {
     mcpResult: {
-      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          status: "session_created",
+          sessionId,
+          message: "Review session opened in DiffPrism dashboard. Use get_review_result to check for a decision.",
+        }, null, 2),
+      }],
     },
     sessionId,
     serverInfo,
@@ -83,6 +102,7 @@ async function handlePrReview(
     title?: string;
     reasoning?: string;
     post_to_github?: boolean;
+    timeoutMs?: number;
   },
 ): Promise<{ mcpResult: McpToolResult; sessionId: string; serverInfo: GlobalServerInfo }> {
   // 1. Resolve GitHub token
@@ -130,8 +150,28 @@ async function handlePrReview(
       injectedPayload: payload,
       projectPath: `github:${owner}/${repo}`,
       diffRef: `PR #${number}`,
+      timeoutMs: options.timeoutMs ?? 0,
     },
   );
+
+  // Non-blocking: return session info immediately
+  if (!result) {
+    return {
+      mcpResult: {
+        content: [{
+          type: "text" as const,
+          text: JSON.stringify({
+            status: "session_created",
+            sessionId,
+            pr: `${owner}/${repo}#${number}`,
+            message: "Review session opened in DiffPrism dashboard. Use get_review_result to check for a decision.",
+          }, null, 2),
+        }],
+      },
+      sessionId,
+      serverInfo,
+    };
+  }
 
   // 6. Optionally post review back to GitHub
   if ((options.post_to_github || result.postToGithub) && result.decision !== "dismissed") {
@@ -171,7 +211,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "open_review",
-    "Open a browser-based code review for local git changes or a GitHub pull request. Blocks until the engineer submits their review decision. The result may include a `postReviewAction` field ('commit' or 'commit_and_pr') if the reviewer requested a post-review action.",
+    "Open a review session in the DiffPrism dashboard for local git changes or a GitHub pull request. Returns immediately with the session ID after registering the session. Use `get_review_result` with `wait: true` when you need the reviewer's decision before proceeding.",
     {
       diff_ref: z
         .string()
@@ -186,11 +226,15 @@ export async function startMcpServer(): Promise<void> {
       reasoning: z
         .string()
         .optional()
-        .describe("Agent reasoning about why these changes were made"),
+        .describe("Summarize what you were trying to accomplish in this session in plain English. This is displayed as the session subtitle in the DiffPrism dashboard and is the primary way users identify sessions at a glance. Always populate this."),
       post_to_github: z
         .boolean()
         .optional()
         .describe("Post the review back to GitHub after submission (only for PR refs, default: false)"),
+      timeout_ms: z
+        .number()
+        .optional()
+        .describe("How long to wait for a review decision (ms). Defaults to 0 (non-blocking, returns immediately after session creation). Set to a positive value to poll for a result up to that duration before returning."),
       annotations: z
         .array(
           z.object({
@@ -228,7 +272,7 @@ export async function startMcpServer(): Promise<void> {
         .optional()
         .describe("Initial annotations to attach to the review"),
     },
-    async ({ diff_ref, title, description, reasoning, post_to_github, annotations }) => {
+    async ({ diff_ref, title, description, reasoning, post_to_github, timeout_ms, annotations }) => {
       try {
         let mcpResult: McpToolResult;
         let sessionId: string;
@@ -239,6 +283,7 @@ export async function startMcpServer(): Promise<void> {
             title,
             reasoning,
             post_to_github,
+            timeoutMs: timeout_ms,
           }));
         } else {
           ({ mcpResult, sessionId, serverInfo } = await handleLocalReview(diff_ref, {
@@ -246,6 +291,7 @@ export async function startMcpServer(): Promise<void> {
             description,
             reasoning,
             annotations,
+            timeoutMs: timeout_ms,
           }));
         }
 
@@ -342,7 +388,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_result",
-    "Fetch the most recent review result from a DiffPrism session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. Use wait=true to block until a result is available. Note: `open_review` already blocks and returns the result — this tool is only needed for advanced workflows where you want to check results separately.",
+    "Fetch the most recent review result from a DiffPrism session. Returns the reviewer's decision and comments if a review has been submitted, or a message indicating no pending result. Use wait=true to block until a result is available — this is the standard way to wait for a reviewer's decision after calling open_review.",
     {
       wait: z
         .boolean()
@@ -863,55 +909,6 @@ export async function startMcpServer(): Promise<void> {
             },
           ],
         };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${message}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-    },
-  );
-
-  // Backwards-compatible alias — delegates to the same handlePrReview helper
-  server.tool(
-    "review_pr",
-    "Alias for open_review with a GitHub PR ref. Prefer using open_review with a PR ref in diff_ref instead.",
-    {
-      pr: z
-        .string()
-        .describe(
-          'GitHub PR reference: "owner/repo#123" or "https://github.com/owner/repo/pull/123"',
-        ),
-      title: z.string().optional().describe("Override review title"),
-      reasoning: z
-        .string()
-        .optional()
-        .describe("Agent reasoning about the PR changes"),
-      post_to_github: z
-        .boolean()
-        .optional()
-        .describe("Post the review back to GitHub after submission (default: false)"),
-    },
-    async ({ pr, title, reasoning, post_to_github }) => {
-      try {
-        const { mcpResult, sessionId, serverInfo } = await handlePrReview(pr, {
-          title,
-          reasoning,
-          post_to_github,
-        });
-
-        if (sessionId) {
-          lastGlobalSessionId = sessionId;
-          lastGlobalServerInfo = serverInfo;
-        }
-
-        return mcpResult;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return {
