@@ -97,7 +97,7 @@ describe("mcp-server", () => {
 
   describe("open_review tool handler", () => {
     async function getToolHandler(): Promise<
-      (args: Record<string, string | undefined>) => Promise<{
+      (args: Record<string, string | number | boolean | undefined>) => Promise<{
         content: Array<{ type: string; text: string }>;
         isError?: boolean;
       }>
