@@ -71,6 +71,9 @@ let serverPollInterval = 2000;
 // Module-level callback set by startGlobalServer to reopen browser when needed
 let reopenBrowserIfNeeded: (() => void) | null = null;
 
+// Module-level UI URL for /api/status
+let serverUiUrl: string | null = null;
+
 function toSummary(session: Session): SessionSummary {
   const { payload } = session;
   const fileCount = payload.diffSet.files.length;
@@ -330,6 +333,7 @@ async function handleApiRequest(
       pid: process.pid,
       sessions: sessions.size,
       uptime: process.uptime(),
+      uiUrl: serverUiUrl,
     });
     return true;
   }
@@ -1052,6 +1056,7 @@ export async function startGlobalServer(
 
   // Open browser to UI
   const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&httpPort=${httpPort}&serverMode=true`;
+  serverUiUrl = uiUrl;
   if (openBrowser) {
     await open(uiUrl);
   }
@@ -1078,6 +1083,7 @@ export async function startGlobalServer(
     clientSessions.clear();
     sessions.clear();
     reopenBrowserIfNeeded = null;
+    serverUiUrl = null;
 
     // Close HTTP server
     await new Promise<void>((resolve) => {

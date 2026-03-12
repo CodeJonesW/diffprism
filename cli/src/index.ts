@@ -7,6 +7,7 @@ import { setup } from "./commands/setup.js";
 import { teardown } from "./commands/teardown.js";
 import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
+import { defaultAction } from "./commands/default.js";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -16,6 +17,8 @@ program
   .name("diffprism")
   .description("Local-first code review tool for agent-generated changes")
   .version(typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev");
+
+program.action(defaultAction);
 
 program
   .command("demo")

@@ -51,6 +51,9 @@ importers:
       commander:
         specifier: ^13.0.0
         version: 13.1.0
+      open:
+        specifier: ^10.1.0
+        version: 10.2.0
       tsx:
         specifier: ^4.19.0
         version: 4.21.0
