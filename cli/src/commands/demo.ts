@@ -44,9 +44,13 @@ export async function demo(flags: DemoFlags): Promise<void> {
       diffRef: "demo",
     });
 
-    console.log(`\nReview submitted: ${result.decision}`);
-    if (result.comments.length > 0) {
-      console.log(`${result.comments.length} comment(s)`);
+    if (result) {
+      console.log(`\nReview submitted: ${result.decision}`);
+      if (result.comments.length > 0) {
+        console.log(`${result.comments.length} comment(s)`);
+      }
+    } else {
+      console.log("\nReview opened in browser.");
     }
 
     console.log("\nNext steps:");

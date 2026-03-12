@@ -113,7 +113,7 @@ async function reviewPrFlow(
   console.log(JSON.stringify(result, null, 2));
 
   // 6. Offer to post review back to GitHub
-  if (flags.postToGithub || (result.decision !== "dismissed" && await promptPostToGithub())) {
+  if (result && (flags.postToGithub || (result.decision !== "dismissed" && await promptPostToGithub()))) {
     console.log("Posting review to GitHub...");
     const posted = await submitGitHubReview(client, owner, repo, number, result);
     if (posted) {

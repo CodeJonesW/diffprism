@@ -77,7 +77,7 @@ describe("mcp-server", () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(9);
+    expect(mockToolFn).toHaveBeenCalledTimes(8);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
@@ -86,7 +86,6 @@ describe("mcp-server", () => {
     expect(mockToolFn.mock.calls[5][0]).toBe("add_annotation");
     expect(mockToolFn.mock.calls[6][0]).toBe("get_review_state");
     expect(mockToolFn.mock.calls[7][0]).toBe("flag_for_attention");
-    expect(mockToolFn.mock.calls[8][0]).toBe("review_pr");
   });
 
   it("connects the stdio transport", async () => {
@@ -98,7 +97,7 @@ describe("mcp-server", () => {
 
   describe("open_review tool handler", () => {
     async function getToolHandler(): Promise<
-      (args: Record<string, string | undefined>) => Promise<{
+      (args: Record<string, string | number | boolean | undefined>) => Promise<{
         content: Array<{ type: string; text: string }>;
         isError?: boolean;
       }>
@@ -109,9 +108,9 @@ describe("mcp-server", () => {
       return mockToolFn.mock.calls[0][3];
     }
 
-    it("calls ensureServer and submitReviewToServer", async () => {
+    it("calls ensureServer and submitReviewToServer with timeoutMs 0 by default", async () => {
       mockSubmitReviewToServer.mockResolvedValue({
-        result: { decision: "approved", comments: [], summary: "LGTM" },
+        result: null,
         sessionId: "session-123",
       });
 
@@ -125,13 +124,14 @@ describe("mcp-server", () => {
         expect.objectContaining({
           cwd: process.cwd(),
           diffRef: "staged",
+          timeoutMs: 0,
         }),
       );
     });
 
     it("passes optional fields through to submitReviewToServer", async () => {
       mockSubmitReviewToServer.mockResolvedValue({
-        result: { decision: "approved", comments: [] },
+        result: null,
         sessionId: "session-123",
       });
 
@@ -151,11 +151,29 @@ describe("mcp-server", () => {
           description: "Some changes",
           reasoning: "Because I said so",
           diffRef: "HEAD~2..HEAD",
+          timeoutMs: 0,
         }),
       );
     });
 
-    it("returns ReviewResult as JSON text content", async () => {
+    it("returns session_created response when non-blocking (default)", async () => {
+      mockSubmitReviewToServer.mockResolvedValue({
+        result: null,
+        sessionId: "session-123",
+      });
+
+      const handler = await getToolHandler();
+      const result = await handler({ diff_ref: "staged" });
+
+      expect(result.content).toHaveLength(1);
+      expect(result.content[0].type).toBe("text");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.status).toBe("session_created");
+      expect(parsed.sessionId).toBe("session-123");
+      expect(result.isError).toBeUndefined();
+    });
+
+    it("returns ReviewResult when timeout_ms causes a blocking wait", async () => {
       const reviewResult = {
         decision: "changes_requested",
         comments: [{ file: "a.ts", line: 1, body: "Fix this", type: "must_fix" }],
@@ -167,7 +185,7 @@ describe("mcp-server", () => {
       });
 
       const handler = await getToolHandler();
-      const result = await handler({ diff_ref: "staged" });
+      const result = await handler({ diff_ref: "staged", timeout_ms: 60000 });
 
       expect(result.content).toHaveLength(1);
       expect(result.content[0].type).toBe("text");
@@ -215,7 +233,7 @@ describe("mcp-server", () => {
 
     it("stores sessionId for subsequent tool calls", async () => {
       mockSubmitReviewToServer.mockResolvedValue({
-        result: { decision: "approved", comments: [] },
+        result: null,
         sessionId: "session-456",
       });
 
@@ -244,7 +262,7 @@ describe("mcp-server", () => {
         diffSet: { files: [] },
       });
       mockSubmitReviewToServer.mockResolvedValue({
-        result: { decision: "approved", comments: [] },
+        result: null,
         sessionId: "session-pr-99",
       });
 
@@ -259,10 +277,13 @@ describe("mcp-server", () => {
         expect.objectContaining({
           injectedPayload: expect.any(Object),
           projectPath: "github:acme/app",
+          timeoutMs: 0,
         }),
       );
       expect(result.isError).toBeUndefined();
-      expect(JSON.parse(result.content[0].text).decision).toBe("approved");
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.status).toBe("session_created");
+      expect(parsed.sessionId).toBe("session-pr-99");
     });
   });
 });

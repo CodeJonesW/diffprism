@@ -338,6 +338,7 @@ export interface SessionSummary {
   projectPath: string;
   branch?: string;
   title?: string;
+  reasoning?: string;
   fileCount: number;
   additions: number;
   deletions: number;
@@ -345,6 +346,7 @@ export interface SessionSummary {
   decision?: ReviewDecision;
   createdAt: number;
   hasNewChanges?: boolean;
+  needsAttention?: boolean;
 }
 
 export interface GlobalServerOptions {

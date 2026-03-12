@@ -86,6 +86,7 @@ function toSummary(session: Session): SessionSummary {
     projectPath: session.projectPath,
     branch: payload.metadata.currentBranch,
     title: payload.metadata.title,
+    reasoning: payload.metadata.reasoning,
     fileCount,
     additions,
     deletions,
