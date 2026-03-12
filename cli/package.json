@@ -17,6 +17,7 @@
     "@diffprism/github": "workspace:*",
     "@diffprism/mcp-server": "workspace:*",
     "commander": "^13.0.0",
+    "open": "^10.1.0",
     "tsx": "^4.19.0"
   },
   "devDependencies": {
