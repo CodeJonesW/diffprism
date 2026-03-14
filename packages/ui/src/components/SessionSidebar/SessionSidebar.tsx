@@ -107,7 +107,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose }:
                   </button>
 
                   {/* Row 1: Title + attention/status */}
-                  <div className="flex items-start justify-between gap-1.5 mb-1">
+                  <div className="flex items-start justify-between gap-1.5 mb-1 pr-7">
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       {session.needsAttention && (
                         <AlertCircle className="w-3.5 h-3.5 text-warning flex-shrink-0 animate-pulse" />
