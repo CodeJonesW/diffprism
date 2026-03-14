@@ -7,12 +7,15 @@ import { WebSocketServer, WebSocket } from "ws";
 import { getDiff, listBranches, listCommits, getCurrentBranch } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
+import fs from "node:fs";
+
 import type {
   GlobalServerOptions,
   GlobalServerHandle,
   GlobalServerInfo,
   SessionSummary,
   GlobalSessionStatus,
+  SessionSource,
   ReviewInitPayload,
   ReviewResult,
   ContextUpdatePayload,
@@ -49,6 +52,7 @@ interface Session {
   id: string;
   payload: ReviewInitPayload;
   projectPath: string;
+  source: SessionSource;
   status: GlobalSessionStatus;
   result: ReviewResult | null;
   createdAt: number;
@@ -97,6 +101,7 @@ function toSummary(session: Session): SessionSummary {
     decision: session.result?.decision,
     createdAt: session.createdAt,
     hasNewChanges: session.hasNewChanges,
+    source: session.source,
   };
 }
 
@@ -334,6 +339,7 @@ async function handleApiRequest(
       sessions: sessions.size,
       uptime: process.uptime(),
       uiUrl: serverUiUrl,
+      cwd: process.cwd(),
     });
     return true;
   }
@@ -348,10 +354,10 @@ async function handleApiRequest(
         diffRef?: string;
       };
 
-      // Check for existing session with same projectPath
+      // Check for existing agent session with same projectPath (manual sessions never dedup)
       let existingSession: Session | undefined;
       for (const session of sessions.values()) {
-        if (session.projectPath === projectPath) {
+        if (session.projectPath === projectPath && session.source === "agent") {
           existingSession = session;
           break;
         }
@@ -413,6 +419,7 @@ async function handleApiRequest(
           id: sessionId,
           payload,
           projectPath,
+          source: "agent",
           status: "pending",
           createdAt: Date.now(),
           result: null,
@@ -441,6 +448,97 @@ async function handleApiRequest(
 
         jsonResponse(res, 201, { sessionId });
       }
+    } catch {
+      jsonResponse(res, 400, { error: "Invalid request body" });
+    }
+    return true;
+  }
+
+  // POST /api/projects/open — open a project directory as a manual session
+  if (method === "POST" && url === "/api/projects/open") {
+    try {
+      const body = await readBody(req);
+      const { projectPath, diffRef = "working-copy" } = JSON.parse(body) as {
+        projectPath: string;
+        diffRef?: string;
+      };
+
+      if (!projectPath) {
+        jsonResponse(res, 400, { error: "Missing projectPath" });
+        return true;
+      }
+
+      // Validate path exists and is a directory
+      try {
+        const stat = fs.statSync(projectPath);
+        if (!stat.isDirectory()) {
+          jsonResponse(res, 400, { error: "Path is not a directory" });
+          return true;
+        }
+      } catch {
+        jsonResponse(res, 400, { error: "Path does not exist" });
+        return true;
+      }
+
+      // Compute diff (throws if not a git repo)
+      let diffResult;
+      try {
+        diffResult = getDiff(diffRef, { cwd: projectPath });
+      } catch (err) {
+        jsonResponse(res, 400, {
+          error: err instanceof Error ? err.message : "Not a git repository",
+        });
+        return true;
+      }
+
+      const { diffSet, rawDiff } = diffResult;
+      const briefing = analyze(diffSet);
+      let currentBranch: string | undefined;
+      try {
+        currentBranch = getCurrentBranch({ cwd: projectPath });
+      } catch {
+        // Not critical
+      }
+
+      const sessionId = `session-${randomUUID().slice(0, 8)}`;
+      const projectName = projectPath.split("/").pop() || projectPath;
+
+      const payload: ReviewInitPayload = {
+        reviewId: sessionId,
+        diffSet,
+        rawDiff,
+        briefing,
+        metadata: {
+          title: projectName,
+          currentBranch,
+        },
+        watchMode: true,
+      };
+
+      const session: Session = {
+        id: sessionId,
+        payload,
+        projectPath,
+        source: "manual",
+        status: "pending",
+        createdAt: Date.now(),
+        result: null,
+        diffRef,
+        lastDiffHash: hashDiff(rawDiff),
+        lastDiffSet: diffSet,
+        hasNewChanges: false,
+        annotations: [],
+      };
+
+      sessions.set(sessionId, session);
+      startSessionWatcher(sessionId);
+
+      broadcastToAll({
+        type: "session:added",
+        payload: toSummary(session),
+      });
+
+      jsonResponse(res, 201, { sessionId, fileCount: diffSet.files.length });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }
@@ -1023,6 +1121,10 @@ export async function startGlobalServer(
   function cleanupExpiredSessions(): void {
     const now = Date.now();
     for (const [id, session] of sessions.entries()) {
+      // Manual sessions are only removed by explicit user close
+      if (session.source === "manual" && session.status !== "submitted") {
+        continue;
+      }
       const age = now - session.createdAt;
       const expired =
         (session.status === "submitted" && age > SUBMITTED_TTL_MS) ||

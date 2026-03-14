@@ -257,6 +257,8 @@ export interface GitRefsPayload {
 
 export type GlobalSessionStatus = "pending" | "in_review" | "submitted";
 
+export type SessionSource = "manual" | "agent";
+
 export interface SessionSummary {
   id: string;
   projectPath: string;
@@ -271,6 +273,7 @@ export interface SessionSummary {
   createdAt: number;
   hasNewChanges?: boolean;
   needsAttention?: boolean;
+  source?: SessionSource;
 }
 
 export interface DiffErrorPayload {
