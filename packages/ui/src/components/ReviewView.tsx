@@ -43,7 +43,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
       <ReasoningPanel />
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar — File Browser + Annotations */}
-        <div className="w-[280px] flex-shrink-0 flex flex-col">
+        <div className="w-[280px] flex-shrink-0 flex flex-col overflow-hidden">
           <div className="flex-1 min-h-0">
             <FileBrowser onSubmit={onSubmit} />
           </div>
