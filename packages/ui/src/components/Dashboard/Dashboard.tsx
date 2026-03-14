@@ -3,8 +3,14 @@ import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
-import { FileCode, Terminal, Settings } from "lucide-react";
-import { useState, useEffect } from "react";
+import { FileCode, Terminal, Settings, FolderOpen } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+
+const DIFF_REF_OPTIONS = [
+  { value: "working-copy", label: "Working Copy" },
+  { value: "unstaged", label: "Unstaged" },
+  { value: "staged", label: "Staged" },
+] as const;
 
 interface DashboardProps {
   sessions: SessionSummary[];
@@ -19,6 +25,100 @@ interface DashboardProps {
   onToggleNotifications?: () => void;
 }
 
+function getHttpPort(): string | null {
+  return new URLSearchParams(window.location.search).get("httpPort");
+}
+
+interface OpenProjectFormProps {
+  onSuccess?: () => void;
+}
+
+function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
+  const [projectPath, setProjectPath] = useState("");
+  const [diffRef, setDiffRef] = useState("working-copy");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Pre-fill with server cwd
+  useEffect(() => {
+    const httpPort = getHttpPort();
+    if (!httpPort) return;
+
+    fetch(`http://localhost:${httpPort}/api/status`)
+      .then((res) => res.json())
+      .then((data) => {
+        const status = data as { cwd?: string };
+        if (status.cwd) setProjectPath(status.cwd);
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSubmit = useCallback(async () => {
+    const httpPort = getHttpPort();
+    if (!httpPort || !projectPath.trim()) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`http://localhost:${httpPort}/api/projects/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectPath: projectPath.trim(), diffRef }),
+      });
+      const data = await res.json() as { error?: string; sessionId?: string };
+
+      if (!res.ok) {
+        setError(data.error ?? "Failed to open project");
+      } else {
+        onSuccess?.();
+      }
+    } catch {
+      setError("Could not connect to server");
+    } finally {
+      setLoading(false);
+    }
+  }, [projectPath, diffRef, onSuccess]);
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className="block text-text-secondary text-xs mb-1">Project path</label>
+        <input
+          type="text"
+          value={projectPath}
+          onChange={(e) => { setProjectPath(e.target.value); setError(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
+          placeholder="/path/to/project"
+          className="w-full bg-background border border-border rounded px-3 py-1.5 text-text-primary text-xs focus:outline-none focus:border-accent"
+        />
+      </div>
+      <div>
+        <label className="block text-text-secondary text-xs mb-1">Diff scope</label>
+        <select
+          value={diffRef}
+          onChange={(e) => setDiffRef(e.target.value)}
+          className="w-full bg-background border border-border rounded px-3 py-1.5 text-text-primary text-xs focus:outline-none focus:border-accent"
+        >
+          {DIFF_REF_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+      </div>
+      {error && (
+        <p className="text-danger text-xs">{error}</p>
+      )}
+      <button
+        onClick={handleSubmit}
+        disabled={loading || !projectPath.trim()}
+        className="w-full bg-accent/15 text-accent text-xs font-medium rounded px-3 py-1.5 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {loading ? "Opening..." : "Open"}
+      </button>
+    </div>
+  );
+}
+
 export function Dashboard({
   sessions,
   activeSessionId,
@@ -31,6 +131,8 @@ export function Dashboard({
   notificationsEnabled,
   onToggleNotifications,
 }: DashboardProps) {
+  const [showOpenProject, setShowOpenProject] = useState(false);
+
   return (
     <div className="h-screen flex bg-background">
       {/* Session sidebar — always visible */}
@@ -40,6 +142,7 @@ export function Dashboard({
           activeSessionId={activeSessionId}
           onSelect={onSelectSession}
           onClose={onCloseSession}
+          onOpenProject={() => setShowOpenProject(true)}
         />
         {/* Notification toggle at bottom of sidebar */}
         {onToggleNotifications && notificationPermission && (
@@ -63,15 +166,33 @@ export function Dashboard({
             watchSubmitted={false}
             hasUnreviewedChanges={true}
           />
+        ) : showOpenProject ? (
+          <div className="flex flex-col items-center justify-center h-full px-8">
+            <div className="max-w-sm w-full">
+              <div className="flex items-center gap-2 mb-4">
+                <FolderOpen className="w-5 h-5 text-accent" />
+                <h2 className="text-text-primary text-lg font-semibold">Open Project</h2>
+              </div>
+              <div className="bg-surface border border-border rounded-lg p-5">
+                <OpenProjectForm onSuccess={() => setShowOpenProject(false)} />
+              </div>
+              <button
+                onClick={() => setShowOpenProject(false)}
+                className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         ) : (
-          <EmptyDetailPane hasAnySessions={sessions.length > 0} />
+          <EmptyDetailPane hasAnySessions={sessions.length > 0} onOpenProject={() => setShowOpenProject(true)} />
         )}
       </div>
     </div>
   );
 }
 
-function EmptyDetailPane({ hasAnySessions }: { hasAnySessions: boolean }) {
+function EmptyDetailPane({ hasAnySessions, onOpenProject }: { hasAnySessions: boolean; onOpenProject: () => void }) {
   if (hasAnySessions) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -81,25 +202,31 @@ function EmptyDetailPane({ hasAnySessions }: { hasAnySessions: boolean }) {
         <h2 className="text-text-primary text-lg font-semibold mb-2">
           Select a session
         </h2>
-        <p className="text-text-secondary text-sm max-w-sm">
+        <p className="text-text-secondary text-sm max-w-sm mb-4">
           Click a session in the sidebar to view its diff, annotations, and submit your review.
         </p>
+        <button
+          onClick={onOpenProject}
+          className="flex items-center gap-1.5 text-accent text-xs font-medium hover:text-accent/80 transition-colors"
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          Open Project
+        </button>
       </div>
     );
   }
 
-  return <OnboardingPane />;
+  return <OnboardingPane onOpenProject={onOpenProject} />;
 }
 
-function OnboardingPane() {
+function OnboardingPane({ onOpenProject }: { onOpenProject: () => void }) {
   const [serverStatus, setServerStatus] = useState<{
     pid: number;
     uptime: number;
   } | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const httpPort = params.get("httpPort");
+    const httpPort = getHttpPort();
     if (!httpPort) return;
 
     fetch(`http://localhost:${httpPort}/api/status`)
@@ -129,6 +256,15 @@ function OnboardingPane() {
             Code review for AI-generated changes
           </p>
         </div>
+
+        {/* Open Project button */}
+        <button
+          onClick={onOpenProject}
+          className="w-full flex items-center justify-center gap-2 bg-accent/15 text-accent text-sm font-medium rounded-lg px-4 py-3 hover:bg-accent/25 transition-colors mb-4"
+        >
+          <FolderOpen className="w-4 h-4" />
+          Open Project
+        </button>
 
         {/* Getting Started card */}
         <div className="bg-surface border border-border rounded-lg p-6">

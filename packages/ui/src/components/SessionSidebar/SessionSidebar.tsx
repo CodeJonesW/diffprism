@@ -1,4 +1,4 @@
-import { GitBranch, Clock, X, AlertCircle } from "lucide-react";
+import { GitBranch, Clock, X, AlertCircle, FolderOpen, Plus } from "lucide-react";
 import type { SessionSummary } from "../../types";
 import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
 
@@ -7,6 +7,7 @@ interface SessionSidebarProps {
   activeSessionId: string | null;
   onSelect: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
+  onOpenProject?: () => void;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -50,17 +51,28 @@ function statusBadge(session: SessionSummary) {
   );
 }
 
-export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose }: SessionSidebarProps) {
+export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, onOpenProject }: SessionSidebarProps) {
   return (
     <div className="flex flex-col h-full bg-surface border-r border-border">
       {/* Header */}
-      <div className="px-3 py-3 border-b border-border">
-        <h2 className="text-text-primary text-xs font-semibold uppercase tracking-wider">
-          Sessions
-        </h2>
-        <span className="text-text-secondary text-[10px]">
-          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
-        </span>
+      <div className="px-3 py-3 border-b border-border flex items-center justify-between">
+        <div>
+          <h2 className="text-text-primary text-xs font-semibold uppercase tracking-wider">
+            Sessions
+          </h2>
+          <span className="text-text-secondary text-[10px]">
+            {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        {onOpenProject && (
+          <button
+            onClick={onOpenProject}
+            className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+            title="Open project"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
 
       {/* Session entries */}
@@ -75,6 +87,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose }:
           <div className="py-1">
             {sessions.map((session) => {
               const isActive = session.id === activeSessionId;
+              const isManual = session.source === "manual";
 
               return (
                 <div
@@ -111,6 +124,9 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose }:
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       {session.needsAttention && (
                         <AlertCircle className="w-3.5 h-3.5 text-warning flex-shrink-0 animate-pulse" />
+                      )}
+                      {isManual && (
+                        <FolderOpen className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
                       )}
                       <span className="text-text-primary text-xs font-medium truncate">
                         {session.title || getProjectName(session.projectPath)}
