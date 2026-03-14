@@ -306,6 +306,19 @@ function recordReviewHistory(session: Session, result: ReviewResult): void {
   }
 }
 
+// ─── Helpers ───
+
+function isInsideGitRepo(dirPath: string): boolean {
+  let current = dirPath;
+  while (current !== "/") {
+    if (fs.existsSync(`${current}/.git`)) return true;
+    const parent = current.replace(/\/[^/]+$/, "") || "/";
+    if (parent === current) break;
+    current = parent;
+  }
+  return fs.existsSync(`${current}/.git`);
+}
+
 // ─── API route handler ───
 
 async function handleApiRequest(
@@ -580,8 +593,8 @@ async function handleApiRequest(
           return a.name.localeCompare(b.name);
         });
 
-        // Check if current dir is a git repo
-        const isGitRepo = fs.existsSync(`${dirPath}/.git`);
+        // Check if current dir is or is inside a git repo
+        const isGitRepo = isInsideGitRepo(dirPath);
         const parentPath = dirPath === "/" ? null : dirPath.replace(/\/[^/]+$/, "") || "/";
 
         jsonResponse(res, 200, { path: dirPath, parentPath, isGitRepo, dirs });
