@@ -545,6 +545,53 @@ async function handleApiRequest(
     return true;
   }
 
+  // GET /api/fs/list?path=<dir> — list directory contents for the path picker
+  if (method === "GET" && req.url) {
+    const parsedUrl = new URL(req.url, "http://localhost");
+    if (parsedUrl.pathname === "/api/fs/list") {
+      const dirPath = parsedUrl.searchParams.get("path") || process.cwd();
+
+      try {
+        const stat = fs.statSync(dirPath);
+        if (!stat.isDirectory()) {
+          jsonResponse(res, 400, { error: "Not a directory" });
+          return true;
+        }
+      } catch {
+        jsonResponse(res, 400, { error: "Path does not exist" });
+        return true;
+      }
+
+      try {
+        const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+        const dirs: Array<{ name: string; path: string; isGitRepo: boolean }> = [];
+
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue;
+          if (entry.name.startsWith(".")) continue; // skip hidden dirs
+          const fullPath = `${dirPath}/${entry.name}`;
+          const isGitRepo = fs.existsSync(`${fullPath}/.git`);
+          dirs.push({ name: entry.name, path: fullPath, isGitRepo });
+        }
+
+        // Sort: git repos first, then alphabetical
+        dirs.sort((a, b) => {
+          if (a.isGitRepo !== b.isGitRepo) return a.isGitRepo ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        });
+
+        // Check if current dir is a git repo
+        const isGitRepo = fs.existsSync(`${dirPath}/.git`);
+        const parentPath = dirPath === "/" ? null : dirPath.replace(/\/[^/]+$/, "") || "/";
+
+        jsonResponse(res, 200, { path: dirPath, parentPath, isGitRepo, dirs });
+      } catch {
+        jsonResponse(res, 500, { error: "Failed to list directory" });
+      }
+      return true;
+    }
+  }
+
   // GET /api/reviews — list all sessions
   if (method === "GET" && url === "/api/reviews") {
     const summaries = Array.from(sessions.values()).map(toSummary);

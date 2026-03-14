@@ -3,7 +3,7 @@ import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
-import { FileCode, Terminal, Settings, FolderOpen } from "lucide-react";
+import { FileCode, Terminal, Settings, FolderOpen, Folder, ChevronUp, GitBranch } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
 const DIFF_REF_OPTIONS = [
@@ -29,17 +29,61 @@ function getHttpPort(): string | null {
   return new URLSearchParams(window.location.search).get("httpPort");
 }
 
+interface DirEntry {
+  name: string;
+  path: string;
+  isGitRepo: boolean;
+}
+
+interface DirListing {
+  path: string;
+  parentPath: string | null;
+  isGitRepo: boolean;
+  dirs: DirEntry[];
+}
+
+function useDirListing(initialPath?: string) {
+  const [listing, setListing] = useState<DirListing | null>(null);
+  const [loadingDir, setLoadingDir] = useState(false);
+
+  const fetchDir = useCallback(async (dirPath?: string) => {
+    const httpPort = getHttpPort();
+    if (!httpPort) return;
+
+    setLoadingDir(true);
+    try {
+      const query = dirPath ? `?path=${encodeURIComponent(dirPath)}` : "";
+      const res = await fetch(`http://localhost:${httpPort}/api/fs/list${query}`);
+      if (res.ok) {
+        const data = await res.json() as DirListing;
+        setListing(data);
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setLoadingDir(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDir(initialPath);
+  }, [fetchDir, initialPath]);
+
+  return { listing, loadingDir, fetchDir };
+}
+
 interface OpenProjectFormProps {
   onSuccess?: () => void;
 }
 
 function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
-  const [projectPath, setProjectPath] = useState("");
+  const [serverCwd, setServerCwd] = useState<string | undefined>();
   const [diffRef, setDiffRef] = useState("working-copy");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { listing, loadingDir, fetchDir } = useDirListing(serverCwd);
 
-  // Pre-fill with server cwd
+  // Get server cwd to seed the initial listing
   useEffect(() => {
     const httpPort = getHttpPort();
     if (!httpPort) return;
@@ -48,14 +92,14 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
       .then((res) => res.json())
       .then((data) => {
         const status = data as { cwd?: string };
-        if (status.cwd) setProjectPath(status.cwd);
+        if (status.cwd) setServerCwd(status.cwd);
       })
       .catch(() => {});
   }, []);
 
-  const handleSubmit = useCallback(async () => {
+  const handleOpen = useCallback(async (projectPath: string) => {
     const httpPort = getHttpPort();
-    if (!httpPort || !projectPath.trim()) return;
+    if (!httpPort) return;
 
     setLoading(true);
     setError(null);
@@ -64,7 +108,7 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
       const res = await fetch(`http://localhost:${httpPort}/api/projects/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectPath: projectPath.trim(), diffRef }),
+        body: JSON.stringify({ projectPath, diffRef }),
       });
       const data = await res.json() as { error?: string; sessionId?: string };
 
@@ -78,21 +122,76 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
     } finally {
       setLoading(false);
     }
-  }, [projectPath, diffRef, onSuccess]);
+  }, [diffRef, onSuccess]);
 
   return (
     <div className="space-y-3">
-      <div>
-        <label className="block text-text-secondary text-xs mb-1">Project path</label>
-        <input
-          type="text"
-          value={projectPath}
-          onChange={(e) => { setProjectPath(e.target.value); setError(null); }}
-          onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); }}
-          placeholder="/path/to/project"
-          className="w-full bg-background border border-border rounded px-3 py-1.5 text-text-primary text-xs focus:outline-none focus:border-accent"
-        />
+      {/* Current path breadcrumb */}
+      {listing && (
+        <div className="flex items-center gap-1 text-text-secondary text-[11px] font-mono truncate min-h-[20px]">
+          {listing.parentPath && (
+            <button
+              onClick={() => fetchDir(listing.parentPath!)}
+              className="p-0.5 rounded hover:bg-border/50 hover:text-text-primary transition-colors flex-shrink-0"
+              title="Go up"
+            >
+              <ChevronUp className="w-3 h-3" />
+            </button>
+          )}
+          <span className="truncate">{listing.path}</span>
+          {listing.isGitRepo && (
+            <GitBranch className="w-3 h-3 text-success flex-shrink-0 ml-1" />
+          )}
+        </div>
+      )}
+
+      {/* Open current directory button (if it's a git repo) */}
+      {listing?.isGitRepo && (
+        <button
+          onClick={() => handleOpen(listing.path)}
+          disabled={loading}
+          className="w-full bg-accent/15 text-accent text-xs font-medium rounded px-3 py-2 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5"
+        >
+          <FolderOpen className="w-3.5 h-3.5" />
+          {loading ? "Opening..." : `Open ${listing.path.split("/").pop()}`}
+        </button>
+      )}
+
+      {/* Directory listing */}
+      <div className="border border-border rounded max-h-[280px] overflow-y-auto">
+        {loadingDir ? (
+          <div className="px-3 py-4 text-text-secondary text-xs text-center">Loading...</div>
+        ) : listing?.dirs.length === 0 ? (
+          <div className="px-3 py-4 text-text-secondary text-xs text-center">No subdirectories</div>
+        ) : (
+          listing?.dirs.map((dir) => (
+            <button
+              key={dir.path}
+              onClick={() => {
+                setError(null);
+                if (dir.isGitRepo) {
+                  // Navigate into it so user can see it and open
+                  fetchDir(dir.path);
+                } else {
+                  fetchDir(dir.path);
+                }
+              }}
+              onDoubleClick={() => {
+                if (dir.isGitRepo) handleOpen(dir.path);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-border/30 transition-colors group"
+            >
+              <Folder className={`w-3.5 h-3.5 flex-shrink-0 ${dir.isGitRepo ? "text-accent" : "text-text-secondary"}`} />
+              <span className="text-text-primary text-xs truncate flex-1">{dir.name}</span>
+              {dir.isGitRepo && (
+                <GitBranch className="w-3 h-3 text-success flex-shrink-0" />
+              )}
+            </button>
+          ))
+        )}
       </div>
+
+      {/* Diff scope selector */}
       <div>
         <label className="block text-text-secondary text-xs mb-1">Diff scope</label>
         <select
@@ -105,16 +204,10 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
           ))}
         </select>
       </div>
+
       {error && (
         <p className="text-danger text-xs">{error}</p>
       )}
-      <button
-        onClick={handleSubmit}
-        disabled={loading || !projectPath.trim()}
-        className="w-full bg-accent/15 text-accent text-xs font-medium rounded px-3 py-1.5 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >
-        {loading ? "Opening..." : "Open"}
-      </button>
     </div>
   );
 }
