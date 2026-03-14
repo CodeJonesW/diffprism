@@ -85,7 +85,7 @@ export function AnnotationPanel({
   if (annotations.length === 0) return null;
 
   return (
-    <div className="border-t border-border">
+    <div className="border-t border-border flex-shrink-0 max-h-[40%] overflow-hidden flex flex-col">
       <div className="px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Bot className="w-4 h-4 text-text-secondary" />
@@ -108,7 +108,7 @@ export function AnnotationPanel({
         )}
       </div>
 
-      <div className="max-h-64 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         {Array.from(grouped.entries()).map(([agent, agentAnnotations]) => (
           <div key={agent} className="border-t border-border/50">
             <div className="px-4 py-1.5 flex items-center gap-2">
