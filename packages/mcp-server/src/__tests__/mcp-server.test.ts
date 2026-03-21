@@ -77,7 +77,7 @@ describe("mcp-server", () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(8);
+    expect(mockToolFn).toHaveBeenCalledTimes(14);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
@@ -86,6 +86,13 @@ describe("mcp-server", () => {
     expect(mockToolFn.mock.calls[5][0]).toBe("add_annotation");
     expect(mockToolFn.mock.calls[6][0]).toBe("get_review_state");
     expect(mockToolFn.mock.calls[7][0]).toBe("flag_for_attention");
+    // Super Review tools
+    expect(mockToolFn.mock.calls[8][0]).toBe("get_pr_context");
+    expect(mockToolFn.mock.calls[9][0]).toBe("get_file_diff");
+    expect(mockToolFn.mock.calls[10][0]).toBe("get_file_context");
+    expect(mockToolFn.mock.calls[11][0]).toBe("add_review_comment");
+    expect(mockToolFn.mock.calls[12][0]).toBe("get_review_comments");
+    expect(mockToolFn.mock.calls[13][0]).toBe("get_user_focus");
   });
 
   it("connects the stdio transport", async () => {

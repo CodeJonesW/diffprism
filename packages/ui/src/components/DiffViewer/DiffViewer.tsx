@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   parseDiff,
   Diff,
@@ -12,7 +12,7 @@ import {
 import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
-import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
+import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb, Sparkles } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread } from "../InlineComment";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
@@ -294,6 +294,30 @@ export function DiffViewer() {
     [activeCommentKey, setActiveCommentKey],
   );
 
+  // "Ask AI" clipboard state
+  const [copiedLine, setCopiedLine] = useState<number | null>(null);
+
+  const handleAskAi = useCallback(
+    (line: number, change: ChangeData, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!selectedFile) return;
+
+      // Get the content of the change
+      const content = "content" in change ? (change as ChangeData & { content: string }).content : "";
+      const changeType = isInsert(change) ? "added" : isDelete(change) ? "deleted" : "context";
+
+      const prompt = `Look at line ${line} of ${selectedFile} in the current PR review session (${changeType} line: \`${content.trim()}\`). Use get_file_diff and get_file_context to understand the full change, then explain what this code does and whether it looks correct.`;
+
+      navigator.clipboard.writeText(prompt).then(() => {
+        setCopiedLine(line);
+        setTimeout(() => setCopiedLine(null), 2000);
+      }).catch(() => {
+        // Clipboard API not available
+      });
+    },
+    [selectedFile],
+  );
+
   // Custom gutter renderer — show "+" on hover, indicators for comments/annotations
   const renderGutter = useCallback(
     ({ change, inHoverState, renderDefault }: GutterOptions) => {
@@ -307,6 +331,13 @@ export function DiffViewer() {
         return (
           <>
             <span className="diff-gutter-add-comment">+</span>
+            <span
+              className="diff-gutter-ask-ai"
+              title={copiedLine === line ? "Copied!" : "Ask AI about this line"}
+              onClick={(e) => handleAskAi(line, change, e)}
+            >
+              {copiedLine === line ? "!" : "?"}
+            </span>
             {renderDefault()}
           </>
         );
@@ -332,7 +363,7 @@ export function DiffViewer() {
 
       return renderDefault();
     },
-    [selectedFile, fileComments, annotationsByLine],
+    [selectedFile, fileComments, annotationsByLine, copiedLine, handleAskAi],
   );
 
   // Build widgets — inline comment threads, annotation threads, and/or open forms

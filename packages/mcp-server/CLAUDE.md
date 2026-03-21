@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ## Key Files
 
-- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 8 tools, connects StdioServerTransport.
+- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 14 tools, connects StdioServerTransport.
 
 ## Tools
 
@@ -40,6 +40,34 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 ### `flag_for_attention`
 - **Params:** `session_id` (optional), `files` (required array), `source_agent` (optional)
 - **Behavior:** Posts warning annotations for each flagged file to highlight them for human review.
+
+### Super Review Tools
+
+These tools enable AI-powered PR review. The user opens a GitHub PR in the DiffPrism UI, then uses Claude Code / Cursor to interrogate the changes via these MCP tools.
+
+### `get_pr_context`
+- **Params:** `session_id` (optional, defaults to most recent)
+- **Behavior:** Returns high-level PR overview: metadata (title, author, branches, URL), briefing summary, file list with stats, local repo path, and whether a local repo is connected.
+
+### `get_file_diff`
+- **Params:** `file` (required), `session_id` (optional)
+- **Behavior:** Returns the diff hunks for a specific file from the active review session, plus its triage category (critical/notable/mechanical).
+
+### `get_file_context`
+- **Params:** `file` (required), `ref` (optional), `session_id` (optional)
+- **Behavior:** Returns full file content from the local repo via `git show`. Uses the PR's head branch ref by default. Falls back to working tree if git show fails. Requires server to be running from within the repo clone.
+
+### `add_review_comment`
+- **Params:** `file` (required), `line` (required), `body` (required), `type` (optional: "comment"/"suggestion"/"concern"), `session_id` (optional)
+- **Behavior:** Posts a comment to the active review session. Appears as an inline annotation in the DiffPrism browser UI in real-time.
+
+### `get_review_comments`
+- **Params:** `session_id` (optional)
+- **Behavior:** Returns all comments and annotations on the active review session.
+
+### `get_user_focus`
+- **Params:** `session_id` (optional)
+- **Behavior:** Returns which file and line range the user is currently viewing in the DiffPrism UI. The UI reports focus state to the server automatically.
 
 ## Server Interaction
 

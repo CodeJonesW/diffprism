@@ -1,9 +1,10 @@
 import { SessionSidebar } from "../SessionSidebar";
 import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
+import { PrInput } from "../PrInput";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
-import { FileCode, Terminal, Settings, FolderOpen, Folder, ChevronUp, GitBranch } from "lucide-react";
+import { FileCode, Terminal, Settings, FolderOpen, Folder, ChevronUp, GitBranch, GitPullRequest } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
 
 const DIFF_REF_OPTIONS = [
@@ -212,6 +213,8 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
   );
 }
 
+type DetailPaneView = "none" | "open-project" | "review-pr";
+
 export function Dashboard({
   sessions,
   activeSessionId,
@@ -224,7 +227,7 @@ export function Dashboard({
   notificationsEnabled,
   onToggleNotifications,
 }: DashboardProps) {
-  const [showOpenProject, setShowOpenProject] = useState(false);
+  const [detailView, setDetailView] = useState<DetailPaneView>("none");
 
   return (
     <div className="h-screen flex bg-background">
@@ -235,7 +238,8 @@ export function Dashboard({
           activeSessionId={activeSessionId}
           onSelect={onSelectSession}
           onClose={onCloseSession}
-          onOpenProject={() => setShowOpenProject(true)}
+          onOpenProject={() => setDetailView("open-project")}
+          onReviewPr={() => setDetailView("review-pr")}
         />
         {/* Notification toggle at bottom of sidebar */}
         {onToggleNotifications && notificationPermission && (
@@ -259,7 +263,7 @@ export function Dashboard({
             watchSubmitted={false}
             hasUnreviewedChanges={true}
           />
-        ) : showOpenProject ? (
+        ) : detailView === "open-project" ? (
           <div className="flex flex-col items-center justify-center h-full px-8">
             <div className="max-w-sm w-full">
               <div className="flex items-center gap-2 mb-4">
@@ -267,10 +271,28 @@ export function Dashboard({
                 <h2 className="text-text-primary text-lg font-semibold">Open Project</h2>
               </div>
               <div className="bg-surface border border-border rounded-lg p-5">
-                <OpenProjectForm onSuccess={() => setShowOpenProject(false)} />
+                <OpenProjectForm onSuccess={() => setDetailView("none")} />
               </div>
               <button
-                onClick={() => setShowOpenProject(false)}
+                onClick={() => setDetailView("none")}
+                className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : detailView === "review-pr" ? (
+          <div className="flex flex-col items-center justify-center h-full px-8">
+            <div className="max-w-sm w-full">
+              <div className="flex items-center gap-2 mb-4">
+                <GitPullRequest className="w-5 h-5 text-accent" />
+                <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
+              </div>
+              <div className="bg-surface border border-border rounded-lg p-5">
+                <PrInput onSuccess={() => setDetailView("none")} />
+              </div>
+              <button
+                onClick={() => setDetailView("none")}
                 className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
               >
                 Cancel
@@ -278,14 +300,18 @@ export function Dashboard({
             </div>
           </div>
         ) : (
-          <EmptyDetailPane hasAnySessions={sessions.length > 0} onOpenProject={() => setShowOpenProject(true)} />
+          <EmptyDetailPane
+            hasAnySessions={sessions.length > 0}
+            onOpenProject={() => setDetailView("open-project")}
+            onReviewPr={() => setDetailView("review-pr")}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function EmptyDetailPane({ hasAnySessions, onOpenProject }: { hasAnySessions: boolean; onOpenProject: () => void }) {
+function EmptyDetailPane({ hasAnySessions, onOpenProject, onReviewPr }: { hasAnySessions: boolean; onOpenProject: () => void; onReviewPr: () => void }) {
   if (hasAnySessions) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center px-8">
@@ -298,21 +324,30 @@ function EmptyDetailPane({ hasAnySessions, onOpenProject }: { hasAnySessions: bo
         <p className="text-text-secondary text-sm max-w-sm mb-4">
           Click a session in the sidebar to view its diff, annotations, and submit your review.
         </p>
-        <button
-          onClick={onOpenProject}
-          className="flex items-center gap-1.5 text-accent text-xs font-medium hover:text-accent/80 transition-colors"
-        >
-          <FolderOpen className="w-3.5 h-3.5" />
-          Open Project
-        </button>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onReviewPr}
+            className="flex items-center gap-1.5 text-accent text-xs font-medium hover:text-accent/80 transition-colors"
+          >
+            <GitPullRequest className="w-3.5 h-3.5" />
+            Review PR
+          </button>
+          <button
+            onClick={onOpenProject}
+            className="flex items-center gap-1.5 text-text-secondary text-xs font-medium hover:text-text-primary transition-colors"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            Open Project
+          </button>
+        </div>
       </div>
     );
   }
 
-  return <OnboardingPane onOpenProject={onOpenProject} />;
+  return <OnboardingPane onOpenProject={onOpenProject} onReviewPr={onReviewPr} />;
 }
 
-function OnboardingPane({ onOpenProject }: { onOpenProject: () => void }) {
+function OnboardingPane({ onOpenProject, onReviewPr }: { onOpenProject: () => void; onReviewPr: () => void }) {
   const [serverStatus, setServerStatus] = useState<{
     pid: number;
     uptime: number;
@@ -350,14 +385,23 @@ function OnboardingPane({ onOpenProject }: { onOpenProject: () => void }) {
           </p>
         </div>
 
-        {/* Open Project button */}
-        <button
-          onClick={onOpenProject}
-          className="w-full flex items-center justify-center gap-2 bg-accent/15 text-accent text-sm font-medium rounded-lg px-4 py-3 hover:bg-accent/25 transition-colors mb-4"
-        >
-          <FolderOpen className="w-4 h-4" />
-          Open Project
-        </button>
+        {/* Action buttons */}
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={onReviewPr}
+            className="flex-1 flex items-center justify-center gap-2 bg-accent/15 text-accent text-sm font-medium rounded-lg px-4 py-3 hover:bg-accent/25 transition-colors"
+          >
+            <GitPullRequest className="w-4 h-4" />
+            Review PR
+          </button>
+          <button
+            onClick={onOpenProject}
+            className="flex-1 flex items-center justify-center gap-2 bg-surface border border-border text-text-primary text-sm font-medium rounded-lg px-4 py-3 hover:bg-border/30 transition-colors"
+          >
+            <FolderOpen className="w-4 h-4" />
+            Open Project
+          </button>
+        </div>
 
         {/* Getting Started card */}
         <div className="bg-surface border border-border rounded-lg p-6">
