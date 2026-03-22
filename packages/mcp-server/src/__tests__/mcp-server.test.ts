@@ -22,22 +22,10 @@ vi.mock("@diffprism/analysis", () => ({
 }));
 
 const mockIsPrRef = vi.fn();
-const mockResolveGitHubToken = vi.fn();
 const mockParsePrRef = vi.fn();
-const mockCreateGitHubClient = vi.fn();
-const mockFetchPullRequest = vi.fn();
-const mockFetchPullRequestDiff = vi.fn();
-const mockNormalizePr = vi.fn();
-const mockSubmitGitHubReview = vi.fn();
 vi.mock("@diffprism/github", () => ({
   isPrRef: (...args: unknown[]) => mockIsPrRef(...args),
-  resolveGitHubToken: (...args: unknown[]) => mockResolveGitHubToken(...args),
   parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
-  createGitHubClient: (...args: unknown[]) => mockCreateGitHubClient(...args),
-  fetchPullRequest: (...args: unknown[]) => mockFetchPullRequest(...args),
-  fetchPullRequestDiff: (...args: unknown[]) => mockFetchPullRequestDiff(...args),
-  normalizePr: (...args: unknown[]) => mockNormalizePr(...args),
-  submitGitHubReview: (...args: unknown[]) => mockSubmitGitHubReview(...args),
 }));
 
 const mockToolFn = vi.fn();
@@ -254,43 +242,39 @@ describe("mcp-server", () => {
 
     it("routes to PR flow when diff_ref is a PR reference", async () => {
       mockIsPrRef.mockReturnValue(true);
-      mockResolveGitHubToken.mockReturnValue("gh-token");
       mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 99 });
-      mockCreateGitHubClient.mockReturnValue("client");
-      mockFetchPullRequest.mockResolvedValue({
-        owner: "acme", repo: "app", number: 99,
-        title: "Add feature", author: "dev",
-        url: "https://github.com/acme/app/pull/99",
-        baseBranch: "main", headBranch: "feat", body: null,
+
+      // Mock fetch for /api/pr/open
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sessionId: "session-pr-99",
+          fileCount: 2,
+          localRepoPath: "/tmp/app",
+          pr: { title: "Add feature", author: "dev", url: "https://github.com/acme/app/pull/99" },
+        }),
       });
-      mockFetchPullRequestDiff.mockResolvedValue("diff --git a/x.ts b/x.ts\n");
-      mockNormalizePr.mockReturnValue({
-        payload: { diffSet: { files: [] }, rawDiff: "" },
-        diffSet: { files: [] },
-      });
-      mockSubmitReviewToServer.mockResolvedValue({
-        result: null,
-        sessionId: "session-pr-99",
-      });
+      vi.stubGlobal("fetch", mockFetch);
 
       const handler = await getToolHandler();
       const result = await handler({ diff_ref: "acme/app#99" });
 
       expect(mockIsPrRef).toHaveBeenCalledWith("acme/app#99");
-      expect(mockResolveGitHubToken).toHaveBeenCalled();
-      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
-        defaultServerInfo,
-        "PR #99",
+      expect(mockEnsureServer).toHaveBeenCalledWith({ silent: true });
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:${defaultServerInfo.httpPort}/api/pr/open`,
         expect.objectContaining({
-          injectedPayload: expect.any(Object),
-          projectPath: "github:acme/app",
-          timeoutMs: 0,
+          method: "POST",
+          body: JSON.stringify({ prUrl: "acme/app#99" }),
         }),
       );
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.status).toBe("session_created");
       expect(parsed.sessionId).toBe("session-pr-99");
+      expect(parsed.localRepoConnected).toBe(true);
+
+      vi.unstubAllGlobals();
     });
   });
 });

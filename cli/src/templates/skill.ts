@@ -5,7 +5,7 @@ description: Open current code changes in DiffPrism's browser-based review UI fo
 
 # DiffPrism Review
 
-You have 9 DiffPrism MCP tools available. Use them proactively — don't wait for the user to ask.
+You have 14 DiffPrism MCP tools available. Use them proactively — don't wait for the user to ask.
 
 ## Workflow 1: Self-Review Before Human Review
 
@@ -44,22 +44,32 @@ Handle the review result:
 - If \`postReviewAction\` is \`"commit"\` — commit the changes.
 - If \`postReviewAction\` is \`"commit_and_pr"\` — commit and open a PR.
 
-## Workflow 3: PR Review
+## Workflow 3: PR Super Review
 
-To review a GitHub pull request:
+When the user opens a GitHub PR for review (via \`diffprism review <PR URL>\` or the DiffPrism UI), you become their AI-powered code reviewer. The diff is visible in the browser; you provide the intelligence.
 
-1. Call \`mcp__diffprism__review_pr\` with \`pr: "owner/repo#123"\` or a full GitHub PR URL
-2. Set \`post_to_github: true\` to post the review back to GitHub after the human submits
-3. The tool fetches the PR diff, runs analysis, and opens the review UI
+### Getting oriented
+1. Call \`mcp__diffprism__get_pr_context\` to understand the PR: title, author, branches, file list, briefing summary, and whether a local repo is connected.
+
+### Investigating changes
+2. Call \`mcp__diffprism__get_file_diff\` for specific files to see their hunks and triage category (critical/notable/mechanical).
+3. Call \`mcp__diffprism__get_file_context\` to read full files from the local repo — this gives you surrounding code, not just diff hunks. Use this to understand how changed code fits into the broader file.
+4. Call \`mcp__diffprism__get_user_focus\` to see what file/line the user is currently viewing in the browser. Proactively offer context about what they're looking at.
+
+### Leaving findings
+5. Call \`mcp__diffprism__add_review_comment\` to post findings directly to the browser UI. Comments appear as inline annotations on the diff in real-time. Use this to flag issues, suggest improvements, or answer the user's questions visually.
+6. Call \`mcp__diffprism__get_review_comments\` to see what's already been noted before adding your own.
+
+### Key principle
+The user sees the diff in the browser. You see it through MCP tools. Work together — they spot visual patterns, you analyze logic and context.
 
 ## Tool Reference
 
 ### Review Lifecycle
 | Tool | Purpose |
 |------|---------|
-| \`open_review\` | Open browser review UI for local changes. Blocks until submitted. |
-| \`review_pr\` | Open browser review UI for a GitHub PR. Blocks until submitted. |
-| \`get_review_result\` | Fetch result from a previous review (advanced — \`open_review\` already returns it). |
+| \`open_review\` | Open browser review UI for local changes or a GitHub PR. |
+| \`get_review_result\` | Fetch result from a previous review. |
 | \`update_review_context\` | Push updated reasoning/description to a running review session. |
 
 ### Headless Analysis
@@ -68,10 +78,20 @@ To review a GitHub pull request:
 | \`analyze_diff\` | Returns analysis JSON (patterns, complexity, test gaps) without opening a browser. |
 | \`get_diff\` | Returns structured diff JSON (file-level and hunk-level changes). |
 
-### Annotation & Flagging
+### PR Super Review
 | Tool | Purpose |
 |------|---------|
-| \`add_annotation\` | Post a finding/suggestion/question on a specific line in a running review. |
+| \`get_pr_context\` | High-level PR overview: metadata, briefing, file list, local repo status. |
+| \`get_file_diff\` | Diff hunks for a specific file with triage category. |
+| \`get_file_context\` | Full file content from local repo via \`git show\`. |
+| \`get_user_focus\` | What file/line the user is currently viewing in the browser UI. |
+
+### Annotation & Commenting
+| Tool | Purpose |
+|------|---------|
+| \`add_review_comment\` | Post a comment that appears inline in the browser diff. |
+| \`get_review_comments\` | Read all comments and annotations on the session. |
+| \`add_annotation\` | Post a structured finding (finding/suggestion/question/warning). |
 | \`flag_for_attention\` | Mark files for human attention with warning annotations. |
 | \`get_review_state\` | Get current state of a review session including all annotations. |
 
@@ -80,4 +100,5 @@ To review a GitHub pull request:
 - **Self-review is proactive** — run \`analyze_diff\` after significant changes without being asked.
 - **Human review requires explicit request** — only open \`open_review\` when the user asks (\`/review\`, "review my changes", or as part of a defined workflow like PR creation).
 - **Annotate generously** — the more context you provide in annotations, the faster the reviewer can make decisions.
+- **PR review is conversational** — when a PR is open, use the super review tools to answer questions and post findings without being asked to use specific tools.
 `;

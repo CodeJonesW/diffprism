@@ -15,13 +15,7 @@ import { getDiff } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 import {
   isPrRef,
-  resolveGitHubToken,
   parsePrRef,
-  createGitHubClient,
-  fetchPullRequest,
-  fetchPullRequestDiff,
-  normalizePr,
-  submitGitHubReview,
 } from "@diffprism/github";
 
 declare const DIFFPRISM_VERSION: string;
@@ -105,98 +99,82 @@ async function handlePrReview(
     timeoutMs?: number;
   },
 ): Promise<{ mcpResult: McpToolResult; sessionId: string; serverInfo: GlobalServerInfo }> {
-  // 1. Resolve GitHub token
-  const token = resolveGitHubToken();
-
-  // 2. Parse PR ref
   const { owner, repo, number } = parsePrRef(pr);
 
-  // 3. Fetch PR data
-  const client = createGitHubClient(token);
-  const [prMetadata, rawDiff] = await Promise.all([
-    fetchPullRequest(client, owner, repo, number),
-    fetchPullRequestDiff(client, owner, repo, number),
-  ]);
-
-  if (!rawDiff.trim()) {
-    return {
-      mcpResult: {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            decision: "approved",
-            comments: [],
-            summary: "PR has no changes to review.",
-          }, null, 2),
-        }],
-      },
-      sessionId: "",
-      serverInfo: { httpPort: 0, wsPort: 0, pid: 0, startedAt: 0 },
-    };
-  }
-
-  // 4. Normalize to DiffPrism types
-  const { payload } = normalizePr(rawDiff, prMetadata, {
-    title: options.title,
-    reasoning: options.reasoning,
-  });
-
-  // 5. Route through global server (auto-start if needed)
+  // Auto-start server, then use /api/pr/open for local repo auto-detection
   const serverInfo = await ensureServer({ silent: true });
-  const { result, sessionId } = await submitReviewToServer(
-    serverInfo,
-    `PR #${number}`,
+
+  const response = await fetch(
+    `http://localhost:${serverInfo.httpPort}/api/pr/open`,
     {
-      injectedPayload: payload,
-      projectPath: `github:${owner}/${repo}`,
-      diffRef: `PR #${number}`,
-      timeoutMs: options.timeoutMs ?? 0,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prUrl: pr }),
     },
   );
 
-  // Non-blocking: return session info immediately
-  if (!result) {
+  const data = await response.json() as {
+    sessionId?: string;
+    fileCount?: number;
+    localRepoPath?: string | null;
+    pr?: { title: string; author: string; url: string };
+    error?: string;
+  };
+
+  if (!response.ok || !data.sessionId) {
     return {
       mcpResult: {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            status: "session_created",
-            sessionId,
-            pr: `${owner}/${repo}#${number}`,
-            message: "Review session opened in DiffPrism dashboard. Use get_review_result to check for a decision.",
-          }, null, 2),
-        }],
+        content: [{ type: "text" as const, text: `Error: ${data.error ?? "Failed to open PR"}` }],
+        isError: true,
       },
-      sessionId,
+      sessionId: "",
       serverInfo,
     };
   }
 
-  // 6. Optionally post review back to GitHub
-  if ((options.post_to_github || result.postToGithub) && result.decision !== "dismissed") {
-    const posted = await submitGitHubReview(client, owner, repo, number, result);
-    if (posted) {
-      return {
-        mcpResult: {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              ...result,
-              githubReviewId: posted.reviewId,
-              githubReviewUrl: `${prMetadata.url}#pullrequestreview-${posted.reviewId}`,
-            }, null, 2),
-          }],
-        },
-        sessionId,
-        serverInfo,
-      };
+  const sessionId = data.sessionId;
+
+  // If caller wants to block, poll for result
+  if (options.timeoutMs && options.timeoutMs > 0) {
+    const start = Date.now();
+    while (Date.now() - start < options.timeoutMs) {
+      const resultResponse = await fetch(
+        `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
+      );
+      if (resultResponse.ok) {
+        const resultData = (await resultResponse.json()) as {
+          result: import("@diffprism/core").ReviewResult | null;
+          status: string;
+        };
+        if (resultData.result) {
+          return {
+            mcpResult: {
+              content: [{ type: "text" as const, text: JSON.stringify(resultData.result, null, 2) }],
+            },
+            sessionId,
+            serverInfo,
+          };
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
 
+  // Non-blocking: return session info
   return {
     mcpResult: {
-      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          status: "session_created",
+          sessionId,
+          pr: `${owner}/${repo}#${number}`,
+          fileCount: data.fileCount,
+          localRepoConnected: !!data.localRepoPath,
+          localRepoPath: data.localRepoPath,
+          message: "PR review session opened in DiffPrism. Use get_pr_context, get_file_diff, get_file_context to explore the changes. Use add_review_comment to post findings.",
+        }, null, 2),
+      }],
     },
     sessionId,
     serverInfo,

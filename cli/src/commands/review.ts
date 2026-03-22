@@ -1,15 +1,5 @@
-import readline from "node:readline";
 import { ensureServer, submitReviewToServer } from "@diffprism/core";
-import {
-  isPrRef,
-  resolveGitHubToken,
-  parsePrRef,
-  createGitHubClient,
-  fetchPullRequest,
-  fetchPullRequestDiff,
-  normalizePr,
-  submitGitHubReview,
-} from "@diffprism/github";
+import { isPrRef, parsePrRef } from "@diffprism/github";
 
 interface ReviewFlags {
   staged?: boolean;
@@ -73,72 +63,44 @@ async function reviewPrFlow(
   pr: string,
   flags: ReviewFlags,
 ): Promise<void> {
-  // 1. Resolve token
-  const token = resolveGitHubToken();
-
-  // 2. Parse PR ref
   const { owner, repo, number } = parsePrRef(pr);
   console.log(`Fetching PR #${number} from ${owner}/${repo}...`);
 
-  // 3. Fetch PR data
-  const client = createGitHubClient(token);
-  const [prMetadata, rawDiff] = await Promise.all([
-    fetchPullRequest(client, owner, repo, number),
-    fetchPullRequestDiff(client, owner, repo, number),
-  ]);
+  // Auto-start server if needed
+  const serverInfo = await ensureServer({ dev: flags.dev });
 
-  if (!rawDiff.trim()) {
-    console.log("PR has no changes to review.");
-    return;
-  }
-
-  // 4. Normalize to DiffPrism types
-  const { payload, diffSet } = normalizePr(rawDiff, prMetadata, {
-    title: flags.title,
-    reasoning: flags.reasoning,
-  });
-
-  console.log(
-    `${diffSet.files.length} files, +${diffSet.files.reduce((s, f) => s + f.additions, 0)} -${diffSet.files.reduce((s, f) => s + f.deletions, 0)}`,
+  // Use /api/pr/open — handles GitHub fetch + local repo auto-detection
+  const response = await fetch(
+    `http://localhost:${serverInfo.httpPort}/api/pr/open`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prUrl: pr }),
+    },
   );
 
-  // 5. Route through global server (auto-start if needed)
-  const serverInfo = await ensureServer({ dev: flags.dev });
-  const { result } = await submitReviewToServer(serverInfo, `PR #${number}`, {
-    injectedPayload: payload,
-    projectPath: `github:${owner}/${repo}`,
-    diffRef: `PR #${number}`,
-  });
+  const data = await response.json() as {
+    sessionId?: string;
+    fileCount?: number;
+    localRepoPath?: string | null;
+    pr?: { title: string; author: string; url: string; baseBranch: string; headBranch: string };
+    error?: string;
+  };
 
-  console.log(JSON.stringify(result, null, 2));
-
-  // 6. Offer to post review back to GitHub
-  if (result && (flags.postToGithub || (result.decision !== "dismissed" && await promptPostToGithub()))) {
-    console.log("Posting review to GitHub...");
-    const posted = await submitGitHubReview(client, owner, repo, number, result);
-    if (posted) {
-      console.log(`Review posted: ${prMetadata.url}#pullrequestreview-${posted.reviewId}`);
-    }
+  if (!response.ok || !data.sessionId) {
+    console.error(`Error: ${data.error ?? "Failed to open PR"}`);
+    process.exit(1);
   }
 
-  process.exit(0);
-}
+  console.log(`${data.pr?.title ?? `PR #${number}`}`);
+  console.log(`${data.fileCount} file${data.fileCount !== 1 ? "s" : ""} changed`);
 
-async function promptPostToGithub(): Promise<boolean> {
-  // Non-interactive mode (piped stdin)
-  if (!process.stdin.isTTY) {
-    return false;
+  if (data.localRepoPath) {
+    console.log(`Local repo: ${data.localRepoPath}`);
+  } else {
+    console.log("No local clone detected — file context unavailable");
   }
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question("Post this review to GitHub? (y/N) ", (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase() === "y");
-    });
-  });
+  console.log(`\nReview open in browser. Use Claude Code to ask questions about this PR.`);
+  console.log(`MCP tools available: get_pr_context, get_file_diff, get_file_context, add_review_comment`);
 }
