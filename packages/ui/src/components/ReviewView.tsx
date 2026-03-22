@@ -19,7 +19,8 @@ interface ReviewViewProps {
 }
 
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
-  const { annotations, dismissAnnotation, selectFile, diffSet } = useReviewStore();
+  const { annotations, dismissAnnotation, selectFile, diffSet, metadata } = useReviewStore();
+  const isPrReview = !!metadata?.githubPr;
 
   // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
   const navigateToFile = (filePath: string) => {
@@ -58,14 +59,16 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
         <DiffViewer />
       </div>
 
-      {/* Bottom — Action Bar */}
-      <ActionBar
-        onSubmit={onSubmit}
-        onDismiss={onDismiss}
-        isWatchMode={isWatchMode}
-        watchSubmitted={watchSubmitted}
-        hasUnreviewedChanges={hasUnreviewedChanges}
-      />
+      {/* Bottom — Action Bar (hidden for PR reviews) */}
+      {!isPrReview && (
+        <ActionBar
+          onSubmit={onSubmit}
+          onDismiss={onDismiss}
+          isWatchMode={isWatchMode}
+          watchSubmitted={watchSubmitted}
+          hasUnreviewedChanges={hasUnreviewedChanges}
+        />
+      )}
       <HotkeyGuide />
       <WorkflowTips />
     </div>
