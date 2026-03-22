@@ -30,6 +30,45 @@ type McpToolResult = {
   isError?: boolean;
 };
 
+interface SessionSummary {
+  id: string;
+  projectPath: string;
+  title?: string;
+  status: string;
+  createdAt: number;
+}
+
+/**
+ * Resolve a session ID for the super review tools.
+ * Priority: explicit session_id > lastGlobalSessionId > most recent session from server.
+ * This ensures tools work even when the PR was opened by the CLI (not the MCP server).
+ */
+async function resolveSessionId(
+  explicitId: string | undefined,
+  serverInfo: GlobalServerInfo,
+): Promise<string | null> {
+  if (explicitId) return explicitId;
+  if (lastGlobalSessionId) return lastGlobalSessionId;
+
+  // Query server for the most recent session
+  try {
+    const response = await fetch(
+      `http://localhost:${serverInfo.httpPort}/api/reviews`,
+    );
+    if (response.ok) {
+      const data = (await response.json()) as { sessions: SessionSummary[] };
+      if (data.sessions.length > 0) {
+        // Return the most recently created session
+        const sorted = [...data.sessions].sort((a, b) => b.createdAt - a.createdAt);
+        return sorted[0].id;
+      }
+    }
+  } catch {
+    // Server unreachable
+  }
+  return null;
+}
+
 async function handleLocalReview(
   diffRef: string,
   options: {
@@ -915,18 +954,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
-          return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available. Open a PR review first." }],
-            isError: true,
-          };
-        }
-
         const serverInfo = await isServerAlive();
         if (!serverInfo) {
           return {
             content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
@@ -991,18 +1030,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ file, session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
           return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available." }],
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
             isError: true,
           };
         }
 
-        const serverInfo = await isServerAlive();
-        if (!serverInfo) {
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
           return {
-            content: [{ type: "text" as const, text: "No global server running." }],
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
@@ -1077,18 +1116,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ file, ref, session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
           return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available." }],
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
             isError: true,
           };
         }
 
-        const serverInfo = await isServerAlive();
-        if (!serverInfo) {
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
           return {
-            content: [{ type: "text" as const, text: "No global server running." }],
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
@@ -1182,18 +1221,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ file, line, body, type, session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
           return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available." }],
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
             isError: true,
           };
         }
 
-        const serverInfo = await isServerAlive();
-        if (!serverInfo) {
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
           return {
-            content: [{ type: "text" as const, text: "No global server running." }],
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
@@ -1254,18 +1293,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
           return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available." }],
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
             isError: true,
           };
         }
 
-        const serverInfo = await isServerAlive();
-        if (!serverInfo) {
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
           return {
-            content: [{ type: "text" as const, text: "No global server running." }],
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
@@ -1305,18 +1344,18 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ session_id }) => {
       try {
-        const sessionId = session_id ?? lastGlobalSessionId;
-        if (!sessionId) {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
           return {
-            content: [{ type: "text" as const, text: "No session ID provided and no recent session available." }],
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
             isError: true,
           };
         }
 
-        const serverInfo = await isServerAlive();
-        if (!serverInfo) {
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
           return {
-            content: [{ type: "text" as const, text: "No global server running." }],
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
             isError: true,
           };
         }
