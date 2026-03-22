@@ -86,6 +86,9 @@ importers:
       '@diffprism/git':
         specifier: workspace:*
         version: link:../git
+      '@diffprism/github':
+        specifier: workspace:*
+        version: link:../github
       get-port:
         specifier: ^7.1.0
         version: 7.1.0

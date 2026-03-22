@@ -1,4 +1,4 @@
-import { GitBranch, Clock, X, AlertCircle, FolderOpen, Plus } from "lucide-react";
+import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus } from "lucide-react";
 import type { SessionSummary } from "../../types";
 import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
 
@@ -8,6 +8,7 @@ interface SessionSidebarProps {
   onSelect: (sessionId: string) => void;
   onClose: (sessionId: string) => void;
   onOpenProject?: () => void;
+  onReviewPr?: () => void;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -24,6 +25,10 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 function getProjectName(projectPath: string): string {
+  // GitHub PR sessions: "github:owner/repo#123" → "owner/repo#123"
+  if (projectPath.startsWith("github:")) {
+    return projectPath.slice(7);
+  }
   const parts = projectPath.split("/");
   return parts[parts.length - 1] || projectPath;
 }
@@ -51,7 +56,7 @@ function statusBadge(session: SessionSummary) {
   );
 }
 
-export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, onOpenProject }: SessionSidebarProps) {
+export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, onOpenProject, onReviewPr }: SessionSidebarProps) {
   return (
     <div className="flex flex-col h-full bg-surface border-r border-border">
       {/* Header */}
@@ -64,15 +69,26 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
             {sessions.length} session{sessions.length !== 1 ? "s" : ""}
           </span>
         </div>
-        {onOpenProject && (
-          <button
-            onClick={onOpenProject}
-            className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
-            title="Open project"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onReviewPr && (
+            <button
+              onClick={onReviewPr}
+              className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-accent transition-colors"
+              title="Review GitHub PR"
+            >
+              <GitPullRequest className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onOpenProject && (
+            <button
+              onClick={onOpenProject}
+              className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+              title="Open project"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Session entries */}
@@ -88,6 +104,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
             {sessions.map((session) => {
               const isActive = session.id === activeSessionId;
               const isManual = session.source === "manual";
+              const isGitHubPr = session.projectPath.startsWith("github:");
 
               return (
                 <div
@@ -125,9 +142,11 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
                       {session.needsAttention && (
                         <AlertCircle className="w-3.5 h-3.5 text-warning flex-shrink-0 animate-pulse" />
                       )}
-                      {isManual && (
+                      {isGitHubPr ? (
+                        <GitPullRequest className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+                      ) : isManual ? (
                         <FolderOpen className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
-                      )}
+                      ) : null}
                       <span className="text-text-primary text-xs font-medium truncate">
                         {session.title || getProjectName(session.projectPath)}
                       </span>

@@ -15,13 +15,7 @@ import { getDiff } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 import {
   isPrRef,
-  resolveGitHubToken,
   parsePrRef,
-  createGitHubClient,
-  fetchPullRequest,
-  fetchPullRequestDiff,
-  normalizePr,
-  submitGitHubReview,
 } from "@diffprism/github";
 
 declare const DIFFPRISM_VERSION: string;
@@ -35,6 +29,45 @@ type McpToolResult = {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
 };
+
+interface SessionSummary {
+  id: string;
+  projectPath: string;
+  title?: string;
+  status: string;
+  createdAt: number;
+}
+
+/**
+ * Resolve a session ID for the super review tools.
+ * Priority: explicit session_id > lastGlobalSessionId > most recent session from server.
+ * This ensures tools work even when the PR was opened by the CLI (not the MCP server).
+ */
+async function resolveSessionId(
+  explicitId: string | undefined,
+  serverInfo: GlobalServerInfo,
+): Promise<string | null> {
+  if (explicitId) return explicitId;
+  if (lastGlobalSessionId) return lastGlobalSessionId;
+
+  // Query server for the most recent session
+  try {
+    const response = await fetch(
+      `http://localhost:${serverInfo.httpPort}/api/reviews`,
+    );
+    if (response.ok) {
+      const data = (await response.json()) as { sessions: SessionSummary[] };
+      if (data.sessions.length > 0) {
+        // Return the most recently created session
+        const sorted = [...data.sessions].sort((a, b) => b.createdAt - a.createdAt);
+        return sorted[0].id;
+      }
+    }
+  } catch {
+    // Server unreachable
+  }
+  return null;
+}
 
 async function handleLocalReview(
   diffRef: string,
@@ -105,98 +138,82 @@ async function handlePrReview(
     timeoutMs?: number;
   },
 ): Promise<{ mcpResult: McpToolResult; sessionId: string; serverInfo: GlobalServerInfo }> {
-  // 1. Resolve GitHub token
-  const token = resolveGitHubToken();
-
-  // 2. Parse PR ref
   const { owner, repo, number } = parsePrRef(pr);
 
-  // 3. Fetch PR data
-  const client = createGitHubClient(token);
-  const [prMetadata, rawDiff] = await Promise.all([
-    fetchPullRequest(client, owner, repo, number),
-    fetchPullRequestDiff(client, owner, repo, number),
-  ]);
-
-  if (!rawDiff.trim()) {
-    return {
-      mcpResult: {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            decision: "approved",
-            comments: [],
-            summary: "PR has no changes to review.",
-          }, null, 2),
-        }],
-      },
-      sessionId: "",
-      serverInfo: { httpPort: 0, wsPort: 0, pid: 0, startedAt: 0 },
-    };
-  }
-
-  // 4. Normalize to DiffPrism types
-  const { payload } = normalizePr(rawDiff, prMetadata, {
-    title: options.title,
-    reasoning: options.reasoning,
-  });
-
-  // 5. Route through global server (auto-start if needed)
+  // Auto-start server, then use /api/pr/open for local repo auto-detection
   const serverInfo = await ensureServer({ silent: true });
-  const { result, sessionId } = await submitReviewToServer(
-    serverInfo,
-    `PR #${number}`,
+
+  const response = await fetch(
+    `http://localhost:${serverInfo.httpPort}/api/pr/open`,
     {
-      injectedPayload: payload,
-      projectPath: `github:${owner}/${repo}`,
-      diffRef: `PR #${number}`,
-      timeoutMs: options.timeoutMs ?? 0,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prUrl: pr }),
     },
   );
 
-  // Non-blocking: return session info immediately
-  if (!result) {
+  const data = await response.json() as {
+    sessionId?: string;
+    fileCount?: number;
+    localRepoPath?: string | null;
+    pr?: { title: string; author: string; url: string };
+    error?: string;
+  };
+
+  if (!response.ok || !data.sessionId) {
     return {
       mcpResult: {
-        content: [{
-          type: "text" as const,
-          text: JSON.stringify({
-            status: "session_created",
-            sessionId,
-            pr: `${owner}/${repo}#${number}`,
-            message: "Review session opened in DiffPrism dashboard. Use get_review_result to check for a decision.",
-          }, null, 2),
-        }],
+        content: [{ type: "text" as const, text: `Error: ${data.error ?? "Failed to open PR"}` }],
+        isError: true,
       },
-      sessionId,
+      sessionId: "",
       serverInfo,
     };
   }
 
-  // 6. Optionally post review back to GitHub
-  if ((options.post_to_github || result.postToGithub) && result.decision !== "dismissed") {
-    const posted = await submitGitHubReview(client, owner, repo, number, result);
-    if (posted) {
-      return {
-        mcpResult: {
-          content: [{
-            type: "text" as const,
-            text: JSON.stringify({
-              ...result,
-              githubReviewId: posted.reviewId,
-              githubReviewUrl: `${prMetadata.url}#pullrequestreview-${posted.reviewId}`,
-            }, null, 2),
-          }],
-        },
-        sessionId,
-        serverInfo,
-      };
+  const sessionId = data.sessionId;
+
+  // If caller wants to block, poll for result
+  if (options.timeoutMs && options.timeoutMs > 0) {
+    const start = Date.now();
+    while (Date.now() - start < options.timeoutMs) {
+      const resultResponse = await fetch(
+        `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
+      );
+      if (resultResponse.ok) {
+        const resultData = (await resultResponse.json()) as {
+          result: import("@diffprism/core").ReviewResult | null;
+          status: string;
+        };
+        if (resultData.result) {
+          return {
+            mcpResult: {
+              content: [{ type: "text" as const, text: JSON.stringify(resultData.result, null, 2) }],
+            },
+            sessionId,
+            serverInfo,
+          };
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
 
+  // Non-blocking: return session info
   return {
     mcpResult: {
-      content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+      content: [{
+        type: "text" as const,
+        text: JSON.stringify({
+          status: "session_created",
+          sessionId,
+          pr: `${owner}/${repo}#${number}`,
+          fileCount: data.fileCount,
+          localRepoConnected: !!data.localRepoPath,
+          localRepoPath: data.localRepoPath,
+          message: "PR review session opened in DiffPrism. Use get_pr_context, get_file_diff, get_file_context to explore the changes. Use add_review_comment to post findings.",
+        }, null, 2),
+      }],
     },
     sessionId,
     serverInfo,
@@ -918,6 +935,449 @@ export async function startMcpServer(): Promise<void> {
               text: `Error: ${message}`,
             },
           ],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  // ─── Super Review Tools ───
+
+  server.tool(
+    "get_pr_context",
+    "Get a high-level overview of the active PR review session. Returns PR metadata (title, author, branches, URL), review briefing summary, file list with stats, and local repo path. Use this to orient yourself before diving into specific files.",
+    {
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/payload`,
+        );
+        if (!response.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Session not found: ${sessionId}` }],
+            isError: true,
+          };
+        }
+
+        const data = await response.json() as {
+          payload: { diffSet: { files: Array<{ path: string; status: string; additions: number; deletions: number; language: string }> }; briefing: { summary: string; triage: unknown }; metadata: { title?: string; description?: string; githubPr?: { owner: string; repo: string; number: number; title: string; author: string; url: string; baseBranch: string; headBranch: string } } };
+          projectPath: string;
+        };
+
+        const { payload, projectPath } = data;
+        const result = {
+          sessionId,
+          projectPath,
+          localRepoConnected: !projectPath.startsWith("github:"),
+          pr: payload.metadata.githubPr ?? null,
+          title: payload.metadata.title,
+          description: payload.metadata.description,
+          briefingSummary: payload.briefing.summary,
+          triage: payload.briefing.triage,
+          files: payload.diffSet.files.map((f) => ({
+            path: f.path,
+            status: f.status,
+            additions: f.additions,
+            deletions: f.deletions,
+            language: f.language,
+          })),
+          totalFiles: payload.diffSet.files.length,
+        };
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_file_diff",
+    "Get the diff hunks for a specific file in the active review session. Returns the file's changes (additions, deletions, hunks with line-level detail) and its briefing categorization. Use this to focus on one file at a time.",
+    {
+      file: z.string().describe("File path within the diff (e.g., 'src/index.ts')"),
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ file, session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/payload`,
+        );
+        if (!response.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Session not found: ${sessionId}` }],
+            isError: true,
+          };
+        }
+
+        const data = await response.json() as {
+          payload: {
+            diffSet: { files: Array<{ path: string; status: string; additions: number; deletions: number; language: string; hunks: unknown[]; oldPath?: string }> };
+            briefing: { triage: { critical: Array<{ file: string }>; notable: Array<{ file: string }>; mechanical: Array<{ file: string }> }; fileStats: Array<{ path: string; language: string; status: string; additions: number; deletions: number }> };
+          };
+        };
+
+        const diffFile = data.payload.diffSet.files.find((f) => f.path === file);
+        if (!diffFile) {
+          const available = data.payload.diffSet.files.map((f) => f.path);
+          return {
+            content: [{ type: "text" as const, text: `File not found in diff: "${file}". Available files:\n${available.join("\n")}` }],
+            isError: true,
+          };
+        }
+
+        // Determine triage category
+        const { triage } = data.payload.briefing;
+        let category = "mechanical";
+        if (triage.critical.some((c: { file: string }) => c.file === file)) category = "critical";
+        else if (triage.notable.some((n: { file: string }) => n.file === file)) category = "notable";
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            path: diffFile.path,
+            oldPath: diffFile.oldPath,
+            status: diffFile.status,
+            language: diffFile.language,
+            additions: diffFile.additions,
+            deletions: diffFile.deletions,
+            triageCategory: category,
+            hunks: diffFile.hunks,
+          }, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_file_context",
+    "Get the full content of a file from the local repository. Uses `git show` to read the file at the PR's head branch without switching branches. Requires the review session to be connected to a local repo (server must be running from within the repo clone).",
+    {
+      file: z.string().describe("File path relative to repo root (e.g., 'src/index.ts')"),
+      ref: z
+        .string()
+        .optional()
+        .describe("Git ref to read from (e.g., 'origin/main', 'HEAD'). Defaults to the PR's head branch if available, otherwise HEAD."),
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ file, ref, session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/payload`,
+        );
+        if (!response.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Session not found: ${sessionId}` }],
+            isError: true,
+          };
+        }
+
+        const data = await response.json() as {
+          projectPath: string;
+          payload: { metadata: { githubPr?: { headBranch: string } } };
+        };
+
+        if (data.projectPath.startsWith("github:")) {
+          return {
+            content: [{ type: "text" as const, text: "No local repo connected. Run the server from within a local clone of the repository to enable file context." }],
+            isError: true,
+          };
+        }
+
+        // Determine the ref to read from
+        const gitRef = ref ?? (data.payload.metadata.githubPr?.headBranch
+          ? `origin/${data.payload.metadata.githubPr.headBranch}`
+          : "HEAD");
+
+        const { execSync } = await import("node:child_process");
+
+        let content: string;
+        try {
+          content = execSync(`git show ${gitRef}:${file}`, {
+            cwd: data.projectPath,
+            encoding: "utf-8",
+            stdio: ["pipe", "pipe", "pipe"],
+            maxBuffer: 10 * 1024 * 1024, // 10MB
+          });
+        } catch {
+          // Fallback: try reading from working tree
+          const fs = await import("node:fs");
+          const path = await import("node:path");
+          const filePath = path.join(data.projectPath, file);
+          try {
+            content = fs.readFileSync(filePath, "utf-8");
+          } catch {
+            return {
+              content: [{ type: "text" as const, text: `File not found: "${file}" (tried git show ${gitRef}:${file} and working tree)` }],
+              isError: true,
+            };
+          }
+        }
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({
+            file,
+            ref: gitRef,
+            projectPath: data.projectPath,
+            content,
+            lineCount: content.split("\n").length,
+          }, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "add_review_comment",
+    "Post a review comment to the active session. The comment appears in the DiffPrism browser UI in real-time as an inline annotation on the diff. Use this to leave findings, suggestions, or questions about specific lines of code.",
+    {
+      file: z.string().describe("File path within the diff"),
+      line: z.number().describe("Line number to comment on"),
+      body: z.string().describe("The comment text"),
+      type: z
+        .enum(["comment", "suggestion", "concern"])
+        .optional()
+        .describe("Type of comment (default: 'comment')"),
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ file, line, body, type, session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        // Map comment type to annotation type
+        const annotationType = type === "concern" ? "warning" : type === "suggestion" ? "suggestion" : "finding";
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              file,
+              line,
+              body,
+              type: annotationType,
+              confidence: 1,
+              category: "other",
+              source: {
+                agent: "ai-reviewer",
+                tool: "add_review_comment",
+              },
+            }),
+          },
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          return {
+            content: [{ type: "text" as const, text: `Error: ${(errorData as Record<string, string>).error ?? `Server returned ${response.status}`}` }],
+            isError: true,
+          };
+        }
+
+        const data = (await response.json()) as { annotationId: string };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ annotationId: data.annotationId, sessionId }, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_review_comments",
+    "Get all comments and annotations on the active review session. Returns findings from agents and inline comments from human reviewers. Use this to see what has already been noted before adding your own comments.",
+    {
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+        );
+        if (!response.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Session not found: ${sessionId}` }],
+            isError: true,
+          };
+        }
+
+        const data = (await response.json()) as { annotations: unknown[] };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ sessionId, annotations: data.annotations }, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
+      }
+    },
+  );
+
+  server.tool(
+    "get_user_focus",
+    "Get what the user is currently looking at in the DiffPrism review UI. Returns the file they have selected and any line range they are focused on. Use this to provide context-aware help — answer questions about the code the user is actively reviewing.",
+    {
+      session_id: z
+        .string()
+        .optional()
+        .describe("Review session ID. If omitted, uses the most recently created session."),
+    },
+    async ({ session_id }) => {
+      try {
+        const serverInfo = await isServerAlive();
+        if (!serverInfo) {
+          return {
+            content: [{ type: "text" as const, text: "No global server running. Start one with `diffprism server`." }],
+            isError: true,
+          };
+        }
+
+        const sessionId = await resolveSessionId(session_id, serverInfo);
+        if (!sessionId) {
+          return {
+            content: [{ type: "text" as const, text: "No review session found. Open a PR review first with `diffprism review <PR URL>`." }],
+            isError: true,
+          };
+        }
+
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/focus`,
+        );
+        if (!response.ok) {
+          return {
+            content: [{ type: "text" as const, text: `Session not found: ${sessionId}` }],
+            isError: true,
+          };
+        }
+
+        const data = (await response.json()) as { focus: { file: string | null; lineStart?: number; lineEnd?: number; updatedAt: number } | null };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ sessionId, ...data }, null, 2) }],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
           isError: true,
         };
       }

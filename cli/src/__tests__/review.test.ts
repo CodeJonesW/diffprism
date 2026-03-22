@@ -11,22 +11,10 @@ vi.mock("@diffprism/core", () => ({
 
 // Mock @diffprism/github
 const mockIsPrRef = vi.fn();
-const mockResolveGitHubToken = vi.fn();
 const mockParsePrRef = vi.fn();
-const mockCreateGitHubClient = vi.fn();
-const mockFetchPullRequest = vi.fn();
-const mockFetchPullRequestDiff = vi.fn();
-const mockNormalizePr = vi.fn();
-const mockSubmitGitHubReview = vi.fn();
 vi.mock("@diffprism/github", () => ({
   isPrRef: (...args: unknown[]) => mockIsPrRef(...args),
-  resolveGitHubToken: (...args: unknown[]) => mockResolveGitHubToken(...args),
   parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
-  createGitHubClient: (...args: unknown[]) => mockCreateGitHubClient(...args),
-  fetchPullRequest: (...args: unknown[]) => mockFetchPullRequest(...args),
-  fetchPullRequestDiff: (...args: unknown[]) => mockFetchPullRequestDiff(...args),
-  normalizePr: (...args: unknown[]) => mockNormalizePr(...args),
-  submitGitHubReview: (...args: unknown[]) => mockSubmitGitHubReview(...args),
 }));
 
 import { review } from "../commands/review.js";
@@ -184,68 +172,62 @@ describe("review command", () => {
   describe("PR detection routing", () => {
     it("routes to PR flow when isPrRef returns true", async () => {
       mockIsPrRef.mockReturnValue(true);
-      mockResolveGitHubToken.mockReturnValue("gh-token");
       mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 42 });
-      mockCreateGitHubClient.mockReturnValue("client");
-      mockFetchPullRequest.mockResolvedValue({
-        owner: "acme", repo: "app", number: 42,
-        title: "Fix bug", author: "dev", url: "https://github.com/acme/app/pull/42",
-        baseBranch: "main", headBranch: "fix-bug", body: null,
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sessionId: "session-pr-42",
+          fileCount: 1,
+          localRepoPath: "/tmp/app",
+          pr: { title: "Fix bug", author: "dev", url: "https://github.com/acme/app/pull/42", baseBranch: "main", headBranch: "fix-bug" },
+        }),
       });
-      mockFetchPullRequestDiff.mockResolvedValue("diff --git a/file.ts b/file.ts\n");
-      mockNormalizePr.mockReturnValue({
-        payload: { diffSet: { files: [] }, rawDiff: "" },
-        diffSet: { files: [{ additions: 5, deletions: 2 }] },
-      });
-      mockSubmitReviewToServer.mockResolvedValue({
-        result: { decision: "approved", comments: [] },
-        sessionId: "session-pr",
-      });
+      vi.stubGlobal("fetch", mockFetch);
 
       await review("acme/app#42", {});
 
       expect(mockIsPrRef).toHaveBeenCalledWith("acme/app#42");
-      expect(mockResolveGitHubToken).toHaveBeenCalled();
       expect(mockParsePrRef).toHaveBeenCalledWith("acme/app#42");
-      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
-        defaultServerInfo,
-        "PR #42",
-        expect.objectContaining({
-          injectedPayload: expect.any(Object),
-          projectPath: "github:acme/app",
-        }),
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:${defaultServerInfo.httpPort}/api/pr/open`,
+        expect.objectContaining({ method: "POST" }),
       );
-      expect(process.exit).toHaveBeenCalledWith(0);
+
+      vi.unstubAllGlobals();
     });
 
-    it("exits 1 when GitHub token is missing", async () => {
+    it("exits 1 when server returns error", async () => {
       mockIsPrRef.mockReturnValue(true);
-      mockResolveGitHubToken.mockImplementation(() => {
-        throw new Error("GITHUB_TOKEN not set");
+      mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 42 });
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        json: () => Promise.resolve({ error: "GitHub token not found" }),
       });
+      vi.stubGlobal("fetch", mockFetch);
 
       await review("acme/app#42", {});
 
-      expect(console.error).toHaveBeenCalledWith("Error: GITHUB_TOKEN not set");
+      expect(console.error).toHaveBeenCalledWith("Error: GitHub token not found");
       expect(process.exit).toHaveBeenCalledWith(1);
+
+      vi.unstubAllGlobals();
     });
 
-    it("handles empty PR diff", async () => {
+    it("handles server connection failure", async () => {
       mockIsPrRef.mockReturnValue(true);
-      mockResolveGitHubToken.mockReturnValue("gh-token");
       mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 1 });
-      mockCreateGitHubClient.mockReturnValue("client");
-      mockFetchPullRequest.mockResolvedValue({
-        owner: "acme", repo: "app", number: 1,
-        title: "Empty", author: "dev", url: "https://github.com/acme/app/pull/1",
-        baseBranch: "main", headBranch: "empty", body: null,
-      });
-      mockFetchPullRequestDiff.mockResolvedValue("   ");
+
+      const mockFetch = vi.fn().mockRejectedValue(new Error("Connection refused"));
+      vi.stubGlobal("fetch", mockFetch);
 
       await review("acme/app#1", {});
 
-      expect(console.log).toHaveBeenCalledWith("PR has no changes to review.");
-      expect(mockSubmitReviewToServer).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledWith("Error: Connection refused");
+      expect(process.exit).toHaveBeenCalledWith(1);
+
+      vi.unstubAllGlobals();
     });
 
     it("does not route to PR flow for local refs", async () => {
@@ -257,7 +239,7 @@ describe("review command", () => {
 
       await review("HEAD~3..HEAD", {});
 
-      expect(mockResolveGitHubToken).not.toHaveBeenCalled();
+      expect(mockParsePrRef).not.toHaveBeenCalled();
       expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
         defaultServerInfo,
         "HEAD~3..HEAD",

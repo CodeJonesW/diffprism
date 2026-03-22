@@ -22,22 +22,10 @@ vi.mock("@diffprism/analysis", () => ({
 }));
 
 const mockIsPrRef = vi.fn();
-const mockResolveGitHubToken = vi.fn();
 const mockParsePrRef = vi.fn();
-const mockCreateGitHubClient = vi.fn();
-const mockFetchPullRequest = vi.fn();
-const mockFetchPullRequestDiff = vi.fn();
-const mockNormalizePr = vi.fn();
-const mockSubmitGitHubReview = vi.fn();
 vi.mock("@diffprism/github", () => ({
   isPrRef: (...args: unknown[]) => mockIsPrRef(...args),
-  resolveGitHubToken: (...args: unknown[]) => mockResolveGitHubToken(...args),
   parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
-  createGitHubClient: (...args: unknown[]) => mockCreateGitHubClient(...args),
-  fetchPullRequest: (...args: unknown[]) => mockFetchPullRequest(...args),
-  fetchPullRequestDiff: (...args: unknown[]) => mockFetchPullRequestDiff(...args),
-  normalizePr: (...args: unknown[]) => mockNormalizePr(...args),
-  submitGitHubReview: (...args: unknown[]) => mockSubmitGitHubReview(...args),
 }));
 
 const mockToolFn = vi.fn();
@@ -77,7 +65,7 @@ describe("mcp-server", () => {
     const { startMcpServer } = await import("../index.js");
     await startMcpServer();
 
-    expect(mockToolFn).toHaveBeenCalledTimes(8);
+    expect(mockToolFn).toHaveBeenCalledTimes(14);
     expect(mockToolFn.mock.calls[0][0]).toBe("open_review");
     expect(mockToolFn.mock.calls[1][0]).toBe("update_review_context");
     expect(mockToolFn.mock.calls[2][0]).toBe("get_review_result");
@@ -86,6 +74,13 @@ describe("mcp-server", () => {
     expect(mockToolFn.mock.calls[5][0]).toBe("add_annotation");
     expect(mockToolFn.mock.calls[6][0]).toBe("get_review_state");
     expect(mockToolFn.mock.calls[7][0]).toBe("flag_for_attention");
+    // Super Review tools
+    expect(mockToolFn.mock.calls[8][0]).toBe("get_pr_context");
+    expect(mockToolFn.mock.calls[9][0]).toBe("get_file_diff");
+    expect(mockToolFn.mock.calls[10][0]).toBe("get_file_context");
+    expect(mockToolFn.mock.calls[11][0]).toBe("add_review_comment");
+    expect(mockToolFn.mock.calls[12][0]).toBe("get_review_comments");
+    expect(mockToolFn.mock.calls[13][0]).toBe("get_user_focus");
   });
 
   it("connects the stdio transport", async () => {
@@ -247,43 +242,39 @@ describe("mcp-server", () => {
 
     it("routes to PR flow when diff_ref is a PR reference", async () => {
       mockIsPrRef.mockReturnValue(true);
-      mockResolveGitHubToken.mockReturnValue("gh-token");
       mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 99 });
-      mockCreateGitHubClient.mockReturnValue("client");
-      mockFetchPullRequest.mockResolvedValue({
-        owner: "acme", repo: "app", number: 99,
-        title: "Add feature", author: "dev",
-        url: "https://github.com/acme/app/pull/99",
-        baseBranch: "main", headBranch: "feat", body: null,
+
+      // Mock fetch for /api/pr/open
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          sessionId: "session-pr-99",
+          fileCount: 2,
+          localRepoPath: "/tmp/app",
+          pr: { title: "Add feature", author: "dev", url: "https://github.com/acme/app/pull/99" },
+        }),
       });
-      mockFetchPullRequestDiff.mockResolvedValue("diff --git a/x.ts b/x.ts\n");
-      mockNormalizePr.mockReturnValue({
-        payload: { diffSet: { files: [] }, rawDiff: "" },
-        diffSet: { files: [] },
-      });
-      mockSubmitReviewToServer.mockResolvedValue({
-        result: null,
-        sessionId: "session-pr-99",
-      });
+      vi.stubGlobal("fetch", mockFetch);
 
       const handler = await getToolHandler();
       const result = await handler({ diff_ref: "acme/app#99" });
 
       expect(mockIsPrRef).toHaveBeenCalledWith("acme/app#99");
-      expect(mockResolveGitHubToken).toHaveBeenCalled();
-      expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
-        defaultServerInfo,
-        "PR #99",
+      expect(mockEnsureServer).toHaveBeenCalledWith({ silent: true });
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:${defaultServerInfo.httpPort}/api/pr/open`,
         expect.objectContaining({
-          injectedPayload: expect.any(Object),
-          projectPath: "github:acme/app",
-          timeoutMs: 0,
+          method: "POST",
+          body: JSON.stringify({ prUrl: "acme/app#99" }),
         }),
       );
       expect(result.isError).toBeUndefined();
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.status).toBe("session_created");
       expect(parsed.sessionId).toBe("session-pr-99");
+      expect(parsed.localRepoConnected).toBe(true);
+
+      vi.unstubAllGlobals();
     });
   });
 });

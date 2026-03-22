@@ -75,7 +75,7 @@ Create or edit `.mcp.json` in your project root:
 }
 ```
 
-This tells Claude Code to start DiffPrism's MCP server, which exposes 9 review tools.
+This tells Claude Code to start DiffPrism's MCP server, which exposes 14 review tools.
 
 > **Local dev setup:** If you cloned the repo and want to run from source, use:
 > ```json
@@ -162,7 +162,7 @@ Claude will call the `open_review` MCP tool. The DiffPrism server auto-starts as
 
 ## Tool Reference
 
-The MCP server exposes 9 tools:
+The MCP server exposes 14 tools:
 
 ### `open_review`
 

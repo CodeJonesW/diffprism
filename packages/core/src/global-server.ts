@@ -48,6 +48,13 @@ const CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
 
 // ─── In-memory session store ───
 
+interface UserFocus {
+  file: string | null;
+  lineStart?: number;
+  lineEnd?: number;
+  updatedAt: number;
+}
+
 interface Session {
   id: string;
   payload: ReviewInitPayload;
@@ -61,6 +68,7 @@ interface Session {
   lastDiffSet?: DiffSet;
   hasNewChanges: boolean;
   annotations: Annotation[];
+  userFocus?: UserFocus;
 }
 
 const sessions = new Map<string, Session>();
@@ -558,6 +566,114 @@ async function handleApiRequest(
     return true;
   }
 
+  // POST /api/pr/open — open a GitHub PR as a review session
+  if (method === "POST" && url === "/api/pr/open") {
+    try {
+      const body = await readBody(req);
+      const { prUrl } = JSON.parse(body) as { prUrl: string };
+
+      if (!prUrl) {
+        jsonResponse(res, 400, { error: "Missing prUrl" });
+        return true;
+      }
+
+      // Dynamic import to keep core lightweight
+      const {
+        isPrRef,
+        parsePrRef,
+        resolveGitHubToken,
+        createGitHubClient,
+        fetchPullRequest,
+        fetchPullRequestDiff,
+        normalizePr,
+      } = await import("@diffprism/github");
+
+      if (!isPrRef(prUrl)) {
+        jsonResponse(res, 400, {
+          error: "Invalid PR URL. Expected https://github.com/owner/repo/pull/123 or owner/repo#123",
+        });
+        return true;
+      }
+
+      let token: string;
+      try {
+        token = resolveGitHubToken();
+      } catch (err) {
+        jsonResponse(res, 401, {
+          error: err instanceof Error ? err.message : "GitHub token not found",
+        });
+        return true;
+      }
+
+      const { owner, repo, number: prNumber } = parsePrRef(prUrl);
+      const client = createGitHubClient(token);
+
+      const [prMetadata, rawDiff] = await Promise.all([
+        fetchPullRequest(client, owner, repo, prNumber),
+        fetchPullRequestDiff(client, owner, repo, prNumber),
+      ]);
+
+      const normalized = normalizePr(rawDiff, prMetadata);
+
+      // Auto-detect local repo by checking git remotes in cwd
+      let localRepoPath: string | null = null;
+      try {
+        const { execSync } = await import("node:child_process");
+        const remoteOutput = execSync("git remote -v", {
+          cwd: process.cwd(),
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        const repoPattern = new RegExp(`github\\.com[:/]${owner}/${repo}(\\.git)?\\s`, "i");
+        if (repoPattern.test(remoteOutput)) {
+          localRepoPath = process.cwd();
+        }
+      } catch {
+        // Not in a git repo or git not available — no local context
+      }
+
+      const sessionId = `session-${randomUUID().slice(0, 8)}`;
+      normalized.payload.reviewId = sessionId;
+
+      const session: Session = {
+        id: sessionId,
+        payload: normalized.payload,
+        projectPath: localRepoPath ?? `github:${owner}/${repo}#${prNumber}`,
+        source: "manual",
+        status: "pending",
+        createdAt: Date.now(),
+        result: null,
+        hasNewChanges: false,
+        annotations: [],
+      };
+
+      sessions.set(sessionId, session);
+
+      broadcastToAll({
+        type: "session:added",
+        payload: toSummary(session),
+      });
+
+      jsonResponse(res, 201, {
+        sessionId,
+        fileCount: normalized.diffSet.files.length,
+        localRepoPath,
+        pr: {
+          title: prMetadata.title,
+          author: prMetadata.author,
+          url: prMetadata.url,
+          baseBranch: prMetadata.baseBranch,
+          headBranch: prMetadata.headBranch,
+        },
+      });
+    } catch (err) {
+      jsonResponse(res, 500, {
+        error: err instanceof Error ? err.message : "Failed to fetch PR",
+      });
+    }
+    return true;
+  }
+
   // GET /api/fs/list?path=<dir> — list directory contents for the path picker
   if (method === "GET" && req.url) {
     const parsedUrl = new URL(req.url, "http://localhost");
@@ -621,6 +737,22 @@ async function handleApiRequest(
       return true;
     }
     jsonResponse(res, 200, toSummary(session));
+    return true;
+  }
+
+  // GET /api/reviews/:id/payload — full session data (diffSet, briefing, metadata)
+  const getPayloadParams = matchRoute(method, url, "GET", "/api/reviews/:id/payload");
+  if (getPayloadParams) {
+    const session = sessions.get(getPayloadParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    jsonResponse(res, 200, {
+      payload: session.payload,
+      projectPath: session.projectPath,
+      annotations: session.annotations,
+    });
     return true;
   }
 
@@ -792,6 +924,50 @@ async function handleApiRequest(
     });
 
     jsonResponse(res, 200, { ok: true });
+    return true;
+  }
+
+  // POST /api/reviews/:id/focus — update user focus state
+  const postFocusParams = matchRoute(method, url, "POST", "/api/reviews/:id/focus");
+  if (postFocusParams) {
+    const session = sessions.get(postFocusParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    try {
+      const body = await readBody(req);
+      const { file, lineStart, lineEnd } = JSON.parse(body) as {
+        file: string | null;
+        lineStart?: number;
+        lineEnd?: number;
+      };
+
+      session.userFocus = {
+        file,
+        lineStart,
+        lineEnd,
+        updatedAt: Date.now(),
+      };
+
+      jsonResponse(res, 200, { ok: true });
+    } catch {
+      jsonResponse(res, 400, { error: "Invalid request body" });
+    }
+    return true;
+  }
+
+  // GET /api/reviews/:id/focus — get user focus state
+  const getFocusParams = matchRoute(method, url, "GET", "/api/reviews/:id/focus");
+  if (getFocusParams) {
+    const session = sessions.get(getFocusParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+
+    jsonResponse(res, 200, { focus: session.userFocus ?? null });
     return true;
   }
 

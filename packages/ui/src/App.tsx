@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useNotifications } from "./hooks/useNotifications";
+import { useFocusReporter } from "./hooks/useFocusReporter";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
 import { Dashboard } from "./components/Dashboard";
@@ -27,6 +28,9 @@ export default function App() {
   } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
+
+  // Report file focus to server for MCP get_user_focus tool
+  useFocusReporter();
 
   // Sync dark class on <html> with store theme
   useEffect(() => {

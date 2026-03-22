@@ -410,6 +410,7 @@
   transform: translateY(-50%);
 }
 
+
 /* Blue dot for lines with existing comments */
 .diff-comment-indicator {
   display: inline-block;

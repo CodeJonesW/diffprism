@@ -180,7 +180,10 @@ export function DiffViewer() {
     setHunkCount,
     annotations,
     dismissAnnotation,
+    metadata,
   } = useReviewStore();
+
+  const isPrReview = !!metadata?.githubPr;
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -282,16 +285,16 @@ export function DiffViewer() {
     return map;
   }, [fileAnnotations]);
 
-  // Gutter click handler — toggle comment form for the clicked line
+  // Gutter click handler — toggle comment form for the clicked line (disabled for PR reviews)
   const gutterEvents: EventMap = useMemo(
-    () => ({
+    () => isPrReview ? {} : ({
       onClick({ change }: ChangeEventArgs) {
         if (!change) return;
         const key = getChangeKey(change);
         setActiveCommentKey(activeCommentKey === key ? null : key);
       },
     }),
-    [activeCommentKey, setActiveCommentKey],
+    [activeCommentKey, setActiveCommentKey, isPrReview],
   );
 
   // Custom gutter renderer — show "+" on hover, indicators for comments/annotations
@@ -299,11 +302,11 @@ export function DiffViewer() {
     ({ change, inHoverState, renderDefault }: GutterOptions) => {
       const line = getLineFromChange(change);
       const hasComments =
-        selectedFile &&
+        !isPrReview && selectedFile &&
         fileComments.some((c) => c.comment.line === line);
       const hasAnnotations = annotationsByLine.has(line);
 
-      if (inHoverState) {
+      if (inHoverState && !isPrReview) {
         return (
           <>
             <span className="diff-gutter-add-comment">+</span>
@@ -332,20 +335,22 @@ export function DiffViewer() {
 
       return renderDefault();
     },
-    [selectedFile, fileComments, annotationsByLine],
+    [selectedFile, fileComments, annotationsByLine, isPrReview],
   );
 
-  // Build widgets — inline comment threads, annotation threads, and/or open forms
+  // Build widgets — inline annotation threads (+ comment threads for non-PR reviews)
   const widgets = useMemo(() => {
     if (!selectedFile) return {};
     const w: Record<string, ReactNode> = {};
 
-    // Group file comments by line
+    // Group file comments by line (skip for PR reviews)
     const commentsByLine = new Map<number, { comment: typeof comments[0]; index: number }[]>();
-    for (const fc of fileComments) {
-      const line = fc.comment.line;
-      if (!commentsByLine.has(line)) commentsByLine.set(line, []);
-      commentsByLine.get(line)!.push(fc);
+    if (!isPrReview) {
+      for (const fc of fileComments) {
+        const line = fc.comment.line;
+        if (!commentsByLine.has(line)) commentsByLine.set(line, []);
+        commentsByLine.get(line)!.push(fc);
+      }
     }
 
     // Collect all lines that have either comments or annotations
@@ -370,7 +375,7 @@ export function DiffViewer() {
               onDismiss={dismissAnnotation}
             />
           )}
-          {lineComments && lineComments.length > 0 && (
+          {!isPrReview && lineComments && lineComments.length > 0 && (
             <InlineCommentThread
               comments={lineComments}
               isFormOpen={activeCommentKey === changeKey}
@@ -391,8 +396,8 @@ export function DiffViewer() {
       );
     }
 
-    // Render standalone form for active key with no existing content
-    if (activeCommentKey && !w[activeCommentKey]) {
+    // Render standalone form for active key with no existing content (skip for PR reviews)
+    if (!isPrReview && activeCommentKey && !w[activeCommentKey]) {
       const line = keyToLineMap[activeCommentKey];
       if (line !== undefined) {
         w[activeCommentKey] = (
@@ -425,6 +430,7 @@ export function DiffViewer() {
     deleteComment,
     dismissAnnotation,
     setActiveCommentKey,
+    isPrReview,
   ]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
