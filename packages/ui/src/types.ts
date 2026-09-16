@@ -273,6 +273,8 @@ export interface SessionSummary {
   createdAt: number;
   hasNewChanges?: boolean;
   needsAttention?: boolean;
+  /** The diff ref this session currently shows, e.g. "working-copy" or "staged". */
+  diffRef?: string;
   source?: SessionSource;
 }
 

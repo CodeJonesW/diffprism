@@ -34,6 +34,7 @@ vi.mock("node:readline", () => ({
   },
 }));
 
+import { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "@diffprism/core";
 import { teardown } from "../commands/teardown.js";
 import { GITIGNORE_ENTRIES } from "../commands/setup.js";
 
@@ -231,6 +232,45 @@ describe("teardown command", () => {
       const written = JSON.parse(settingsWrite![1] as string);
       expect(written.permissions.allow).toEqual(["some_other_tool"]);
       expect(written.permissions.allow).not.toContain("mcp__diffprism__open_review");
+    });
+
+    it("removes permissions for every DiffPrism tool, including ones since retired", async () => {
+      // Regression: teardown kept its own tool list, which never included
+      // review_pr — so uninstalling left that permission behind. Settings
+      // written by older versions name tools this one no longer registers,
+      // and all of them have to go.
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s.includes("settings.json")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: {
+              allow: [
+                "some_other_tool",
+                ...MCP_TOOL_NAMES.map(mcpToolPermission),
+                ...RETIRED_MCP_TOOL_NAMES.map(mcpToolPermission),
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      await teardown({ quiet: true });
+
+      const settingsWrite = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().includes("settings.json") &&
+          !call[0].toString().includes("(hooks)"),
+      );
+      expect(settingsWrite).toBeDefined();
+      const written = JSON.parse(settingsWrite![1] as string);
+      expect(written.permissions.allow).toEqual(["some_other_tool"]);
     });
 
     it("removes permissions object when all diffprism entries removed", async () => {

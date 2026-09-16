@@ -5,7 +5,13 @@ description: Open current code changes in DiffPrism's browser-based review UI fo
 
 # DiffPrism Review
 
-You have 14 DiffPrism MCP tools available. Use them proactively — don't wait for the user to ask.
+You have 12 DiffPrism MCP tools. Use the analysis tools proactively; open a human review only when asked.
+
+## How reviews work
+
+- **One review per repo.** Opening a review for a repo that already has one updates it — new diff, same session, existing annotations kept. A git worktree is its own repo.
+- **`open_review` waits for the decision.** It blocks until the reviewer approves, requests changes, or dismisses, and returns their `ReviewResult`. Pass `wait: false` to get the session id back immediately instead.
+- **Tools act on the review for your repo.** Every tool that works on an open review takes `session_id` or `repo_path`, and otherwise uses the repo you are running in. If that is ambiguous the tool says so and lists the sessions — pass `session_id`. It never guesses.
 
 ## Workflow 1: Self-Review Before Human Review
 
@@ -17,87 +23,74 @@ After making multi-file changes, **proactively self-review before requesting hum
    - **Test coverage gaps** — new code paths without corresponding tests
    - **High complexity scores** — functions or files with elevated complexity
 3. **Fix any issues found** — remove debug logs, add missing tests, simplify complex code
-4. Only then open a human review with `mcp__diffprism__open_review`
+4. Only then open a human review
 
 This should happen automatically after significant changes. You don't need the user to ask.
 
 ## Workflow 2: Annotated Human Review
 
-When opening a review, help the reviewer by flagging what matters:
-
 1. Call `mcp__diffprism__open_review` with:
    - `diff_ref`: `"working-copy"` (or what the user specified, e.g. `"staged"`, `"HEAD~3..HEAD"`)
    - `title`: Brief summary of the changes
-   - `reasoning`: Your reasoning about implementation decisions
-   - `annotations`: Array of inline findings to pre-populate the review (see tool schema)
-2. Use annotations to flag:
+   - `reasoning`: What you were trying to accomplish — this is how the reviewer tells sessions apart
+   - `annotations`: Findings to show when the review opens
+2. Annotate what matters:
    - Areas of uncertainty ("I chose approach X over Y because...")
    - Security-sensitive changes
    - Performance implications
-   - Anything the reviewer should look at closely
-3. After opening, use `mcp__diffprism__flag_for_attention` to highlight files that need careful review (e.g. auth logic, data migrations, public API changes)
-4. Use `mcp__diffprism__add_annotation` to post additional findings about specific lines if you discover issues while the review is open
+   - Use `type: "warning"` for anything the reviewer must look at — warnings flag the session in the sidebar
+3. `open_review` returns the decision when the reviewer submits:
+   - **`approved`** / **`approved_with_comments`** — proceed. Read any comments or summary.
+   - **`changes_requested`** — read the `summary` and `comments`, make the fixes, and offer to re-review.
+   - **`dismissed`** — the reviewer closed it without deciding. Ask before continuing.
+   - If `postReviewAction` is `"commit"` — commit the changes. If `"commit_and_pr"` — commit and open a PR.
+4. If it returns `status: "timed_out"`, the review is still open. Check again with `mcp__diffprism__get_review_result` rather than opening another.
 
-Handle the review result:
-- **`approved`** — Proceed with the task.
-- **`changes_requested`** — Read comments, make fixes, offer to re-review.
-- If `postReviewAction` is `"commit"` — commit the changes.
-- If `postReviewAction` is `"commit_and_pr"` — commit and open a PR.
+To add findings while a review is open, call `mcp__diffprism__annotate`.
 
-## Workflow 3: PR Super Review
+## Workflow 3: PR Review
 
-When the user opens a GitHub PR for review (via `diffprism review <PR URL>` or the DiffPrism UI), you become their AI-powered code reviewer. The diff is visible in the browser; you provide the intelligence.
+Pull requests are opened by the user — `diffprism review <PR URL>` or "Review PR" in the dashboard — not by `open_review`. You then work inside that review:
 
-### Getting oriented
-1. Call `mcp__diffprism__get_pr_context` to understand the PR: title, author, branches, file list, briefing summary, and whether a local repo is connected.
+1. `mcp__diffprism__get_pr_context` — title, author, branches, file list, briefing summary, and whether a local clone is connected.
+2. `mcp__diffprism__get_file_diff` — one file's hunks and triage category (critical/notable/mechanical).
+3. `mcp__diffprism__get_file_context` — the full file from the local clone, so you see surrounding code rather than just the hunks.
+4. `mcp__diffprism__get_user_focus` — what the user is looking at right now. Offer context about it.
+5. `mcp__diffprism__get_review_comments` — what has already been said, before you add to it.
+6. `mcp__diffprism__annotate` — post findings inline on the diff.
 
-### Investigating changes
-2. Call `mcp__diffprism__get_file_diff` for specific files to see their hunks and triage category (critical/notable/mechanical).
-3. Call `mcp__diffprism__get_file_context` to read full files from the local repo — this gives you surrounding code, not just diff hunks. Use this to understand how changed code fits into the broader file.
-4. Call `mcp__diffprism__get_user_focus` to see what file/line the user is currently viewing in the browser. Proactively offer context about what they're looking at.
-
-### Leaving findings
-5. Call `mcp__diffprism__add_review_comment` to post findings directly to the browser UI. Comments appear as inline annotations on the diff in real-time. Use this to flag issues, suggest improvements, or answer the user's questions visually.
-6. Call `mcp__diffprism__get_review_comments` to see what's already been noted before adding your own.
-
-### Key principle
-The user sees the diff in the browser. You see it through MCP tools. Work together — they spot visual patterns, you analyze logic and context.
+A PR review and a working-copy review can be open for the same clone at once. If a tool reports more than one session, pass the `session_id` of the one you mean.
 
 ## Tool Reference
 
-### Review Lifecycle
+### Opening and deciding
 | Tool | Purpose |
 |------|---------|
-| `open_review` | Open browser review UI for local changes or a GitHub PR. |
-| `get_review_result` | Fetch result from a previous review. |
-| `update_review_context` | Push updated reasoning/description to a running review session. |
+| `open_review` | Open a review of local changes and wait for the decision. |
+| `get_review_result` | Check the decision on a review already open (after `wait: false` or a timeout). |
+| `update_review_context` | Update reasoning, title, or description on an open review. |
 
-### Headless Analysis
+### Headless analysis
 | Tool | Purpose |
 |------|---------|
-| `analyze_diff` | Returns analysis JSON (patterns, complexity, test gaps) without opening a browser. |
-| `get_diff` | Returns structured diff JSON (file-level and hunk-level changes). |
+| `analyze_diff` | Analysis JSON (patterns, complexity, test gaps) without opening a browser. |
+| `get_diff` | Structured diff JSON (file-level and hunk-level changes). |
 
-### PR Super Review
+### Working in an open review
 | Tool | Purpose |
 |------|---------|
-| `get_pr_context` | High-level PR overview: metadata, briefing, file list, local repo status. |
-| `get_file_diff` | Diff hunks for a specific file with triage category. |
-| `get_file_context` | Full file content from local repo via `git show`. |
-| `get_user_focus` | What file/line the user is currently viewing in the browser UI. |
-
-### Annotation & Commenting
-| Tool | Purpose |
-|------|---------|
-| `add_review_comment` | Post a comment that appears inline in the browser diff. |
-| `get_review_comments` | Read all comments and annotations on the session. |
-| `add_annotation` | Post a structured finding (finding/suggestion/question/warning). |
-| `flag_for_attention` | Mark files for human attention with warning annotations. |
-| `get_review_state` | Get current state of a review session including all annotations. |
+| `annotate` | Post one or more findings. `warning` flags the session for attention. |
+| `get_review_comments` | Every comment and annotation on the review. |
+| `get_review_state` | Session status, attention and new-changes flags, and annotations. |
+| `get_user_focus` | What the user is currently looking at. |
+| `get_pr_context` | PR overview: metadata, briefing, file list, local clone status. |
+| `get_file_diff` | Hunks for one file, with triage category. |
+| `get_file_context` | Full file content from the local clone. |
 
 ## Rules
 
 - **Self-review is proactive** — run `analyze_diff` after significant changes without being asked.
-- **Human review requires explicit request** — only open `open_review` when the user asks (`/review`, "review my changes", or as part of a defined workflow like PR creation).
-- **Annotate generously** — the more context you provide in annotations, the faster the reviewer can make decisions.
-- **PR review is conversational** — when a PR is open, use the super review tools to answer questions and post findings without being asked to use specific tools.
+- **Human review requires explicit request** — only call `open_review` when the user asks (`/review`, "review my changes", or as part of a defined workflow like PR creation).
+- **Don't open a second review to check on the first** — use `get_review_result`.
+- **Annotate generously** — the more context you provide, the faster the reviewer can decide.
+- **PR review is conversational** — when a PR is open, use the PR tools to answer questions and post findings without being asked to use specific tools.

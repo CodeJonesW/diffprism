@@ -11,7 +11,7 @@ packages/core       — Shared types (types.ts), server-client utilities, global
 packages/git        — Git diff execution + unified diff parser (no deps beyond Node built-ins)
 packages/analysis   — Deterministic review briefing (no deps beyond core types)
 packages/ui         — React 19 + Vite 6 + Tailwind 3 + Zustand 5 + react-diff-view + refractor
-packages/mcp-server — MCP tool server (14 tools), all reviews route through global server
+packages/mcp-server — MCP tool server (12 tools), all reviews route through global server
 packages/github     — GitHub PR fetching, normalization, and review submission
 cli/                — Commander CLI (review, serve, setup, server commands), bin shim using tsx
 ```
@@ -34,7 +34,7 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 | `packages/ui/src/store/review.ts` | Zustand store (all UI state) |
 | `packages/ui/src/hooks/useWebSocket.ts` | WS connection + state dispatch |
 | `packages/ui/vite.config.ts` | Vite config with inline PostCSS (Tailwind path fix) |
-| `packages/mcp-server/src/index.ts` | MCP server — 14 tools, all routed through global server |
+| `packages/mcp-server/src/index.ts` | MCP server — 12 tools, all routed through global server; `resolveTarget()` picks the session |
 | `cli/src/commands/setup.ts` | `diffprism setup` — one-command Claude Code integration |
 | `cli/src/commands/hook.ts` | `diffprism hook` — pre-commit review gate, plus its install/uninstall |
 | `cli/src/commands/server.ts` | `diffprism server` — start/status/stop global server |
@@ -273,13 +273,15 @@ Both must pass. Fix any failures before proceeding.
 
 ### 5. Review with diffprism
 
-Before committing, **always** use the diffprism MCP tool to open a review for the user. Call `mcp__diffprism__open_review` with:
-- `diff_ref`: the appropriate ref (e.g. `"unstaged"`, `"staged"`, or a range like `"HEAD~3..HEAD"`)
+Before committing, **always** open a review for the user with `mcp__diffprism__open_review`:
+- `diff_ref`: the appropriate ref (e.g. `"working-copy"`, `"staged"`, or a range like `"HEAD~3..HEAD"`)
 - `title`: short description of the changes
 - `description`: summary of what changed and why
 - `reasoning`: your reasoning about the implementation decisions
 
-This opens the diffprism review UI in the browser and **blocks until the user submits their review**. The tool returns the user's decision (approved, changes requested, etc.) and any comments. Fix anything they flag before proceeding.
+`open_review` **blocks until the user submits** and returns their decision (approved, changes requested, dismissed) with any comments and summary. There is no second call to poll for it. Fix anything they flag before proceeding.
+
+If it returns `status: "timed_out"`, the review is still open in the browser — check it with `mcp__diffprism__get_review_result` rather than opening another. Reviews are one per repo, so opening again would only update the same session.
 
 This is critical for dogfooding — we use our own tool to review every change to this repo.
 

@@ -24,7 +24,6 @@ export default function App() {
     selectSession,
     removeSession,
     clearReview,
-    clearSessionAttention,
   } = useReviewStore();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
@@ -67,7 +66,7 @@ export default function App() {
 
   function handleSelectSession(sessionId: string) {
     selectSession(sessionId);
-    clearSessionAttention(sessionId);
+    // Selecting tells the server, which clears attention and pushes the update.
     wsSelectSession(sessionId);
   }
 

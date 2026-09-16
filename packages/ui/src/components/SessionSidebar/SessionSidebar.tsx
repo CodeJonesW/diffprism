@@ -1,4 +1,4 @@
-import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus } from "lucide-react";
+import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus, Radio } from "lucide-react";
 import type { SessionSummary } from "../../types";
 import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
 
@@ -141,6 +141,14 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
                       {session.needsAttention && (
                         <AlertCircle className="w-3.5 h-3.5 text-warning flex-shrink-0 animate-pulse" />
+                      )}
+                      {session.hasNewChanges && (
+                        <Radio
+                          className="w-3 h-3 text-accent flex-shrink-0 animate-pulse"
+                          aria-label="New changes"
+                        >
+                          <title>New changes since you last looked</title>
+                        </Radio>
                       )}
                       {isGitHubPr ? (
                         <GitPullRequest className="w-3.5 h-3.5 text-accent flex-shrink-0" />

@@ -3,6 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import readline from "node:readline";
 import { skillContent } from "../templates/skill.js";
+import { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "@diffprism/core";
 
 export const GITIGNORE_ENTRIES = [
   ".diffprism",
@@ -96,30 +97,24 @@ function setupClaudeSettings(
   const permissions = (existing.permissions ?? {}) as Record<string, unknown>;
   const allow = (permissions.allow ?? []) as string[];
 
-  const toolNames = [
-    "mcp__diffprism__open_review",
-    "mcp__diffprism__update_review_context",
-    "mcp__diffprism__get_review_result",
-    "mcp__diffprism__get_diff",
-    "mcp__diffprism__analyze_diff",
-    "mcp__diffprism__add_annotation",
-    "mcp__diffprism__get_review_state",
-    "mcp__diffprism__flag_for_attention",
-    "mcp__diffprism__review_pr",
-  ];
+  const toolNames = MCP_TOOL_NAMES.map(mcpToolPermission);
+  const retired = new Set<string>(RETIRED_MCP_TOOL_NAMES.map(mcpToolPermission));
 
   const allPresent = toolNames.every((t) => allow.includes(t));
-  if (allPresent && !force) {
+  const hasRetired = allow.some((t) => retired.has(t));
+  if (allPresent && !hasRetired && !force) {
     return { action: "skipped", filePath };
   }
 
+  // Upgrading prunes permissions for tools that no longer exist.
+  const next = allow.filter((t) => !retired.has(t));
   for (const toolName of toolNames) {
-    if (!allow.includes(toolName)) {
-      allow.push(toolName);
+    if (!next.includes(toolName)) {
+      next.push(toolName);
     }
   }
 
-  permissions.allow = allow;
+  permissions.allow = next;
   const action = fs.existsSync(filePath) ? "updated" : "created";
   writeJsonFile(filePath, { ...existing, permissions });
   return { action, filePath };

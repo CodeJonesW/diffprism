@@ -4,10 +4,11 @@ import getPort from "get-port";
 import open from "open";
 import { WebSocketServer, WebSocket } from "ws";
 
-import { getDiff, listBranches, listCommits, getCurrentBranch } from "@diffprism/git";
+import { getDiff, listBranches, listCommits, getCurrentBranch, getRepoRoot } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import fs from "node:fs";
+import path from "node:path";
 
 import type {
   GlobalServerOptions,
@@ -57,6 +58,17 @@ interface UserFocus {
 
 interface Session {
   id: string;
+  /**
+   * What this session is a review OF. "repo:<working tree root>" for local
+   * changes, "pr:<owner>/<repo>#<n>" for a pull request. Every open path
+   * dedups on this and nothing else — see openSession.
+   */
+  key: string;
+  /**
+   * The local working tree this session reads from, or null for a PR with no
+   * local clone. Participant tools find a session by repo path through this.
+   */
+  repoRoot: string | null;
   payload: ReviewInitPayload;
   projectPath: string;
   source: SessionSource;
@@ -77,6 +89,12 @@ interface Session {
    * UI reconnects. Cleared if a new review reuses the session.
    */
   closedAt?: number;
+  /**
+   * Warnings created after this moment are unseen and put the session in
+   * needsAttention. Advanced when someone selects the session, or when a
+   * warning lands while it is already being viewed.
+   */
+  attentionClearedAt: number;
 }
 
 const sessions = new Map<string, Session>();
@@ -90,6 +108,147 @@ function listedSummaries(): SessionSummary[] {
   return Array.from(sessions.values())
     .filter((session) => session.closedAt === undefined)
     .map(toSummary);
+}
+
+// ─── Session identity ───
+
+/**
+ * The identity of a local review: one session per repo, not per repo+ref.
+ *
+ * Keyed on the working tree's top level, so an agent running from a
+ * subdirectory and a hook firing at the root land on the same session, while
+ * a linked worktree — which has its own top level — gets its own. Outside a
+ * git repository there is no top level to normalise to, so the resolved path
+ * itself is the identity.
+ */
+function localIdentity(projectPath: string): { key: string; repoRoot: string } {
+  const repoRoot = getRepoRoot({ cwd: projectPath }) ?? path.resolve(projectPath);
+  return { key: `repo:${repoRoot}`, repoRoot };
+}
+
+function findSessionByKey(key: string): Session | undefined {
+  for (const session of sessions.values()) {
+    if (session.key === key) return session;
+  }
+  return undefined;
+}
+
+interface OpenSessionRequest {
+  key: string;
+  repoRoot: string | null;
+  projectPath: string;
+  payload: ReviewInitPayload;
+  diffRef?: string;
+  source: SessionSource;
+}
+
+/**
+ * The one way a session is created or reused.
+ *
+ * The CLI, the pre-commit hook, MCP open_review, "Open Project" and "Review PR"
+ * all come through here. They used to build sessions separately with opposite
+ * rules — agent opens deduped and overwrote in place, manual opens never
+ * deduped — so a hook could silently hijack a UI-opened session for the same
+ * repo, or leave two live-watching sessions side by side.
+ */
+function openSession(request: OpenSessionRequest): { session: Session; reused: boolean } {
+  const { payload, diffRef } = request;
+  if (diffRef) {
+    payload.watchMode = true;
+  }
+
+  const existing = findSessionByKey(request.key);
+
+  if (!existing) {
+    const id = `session-${randomUUID().slice(0, 8)}`;
+    payload.reviewId = id;
+    const session: Session = {
+      id,
+      key: request.key,
+      repoRoot: request.repoRoot,
+      payload,
+      projectPath: request.projectPath,
+      source: request.source,
+      status: "pending",
+      createdAt: Date.now(),
+      result: null,
+      diffRef,
+      lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
+      lastDiffSet: diffRef ? payload.diffSet : undefined,
+      hasNewChanges: false,
+      annotations: [],
+      attentionClearedAt: 0,
+    };
+    sessions.set(id, session);
+    if (diffRef) {
+      startSessionWatcher(id);
+    }
+    broadcastToAll({ type: "session:added", payload: toSummary(session) });
+    return { session, reused: false };
+  }
+
+  const id = existing.id;
+  payload.reviewId = id;
+  stopSessionWatcher(id);
+
+  const wasClosed = existing.closedAt !== undefined;
+  existing.closedAt = undefined;
+
+  // A verdict belongs to the round it was given in. A new round needs a new
+  // decision, or a caller blocked on this session would read the old verdict
+  // straight back. A round still in progress keeps its status — resetting an
+  // in_review session would pull it out from under the person reviewing it.
+  if (existing.result !== null) {
+    existing.result = null;
+    existing.status = "pending";
+  }
+
+  existing.payload = payload;
+  existing.projectPath = request.projectPath;
+  existing.repoRoot = request.repoRoot;
+  // Ref-on-reuse: the freshest thing someone asked to look at wins.
+  existing.diffRef = diffRef;
+  existing.lastDiffHash = diffRef ? hashDiff(payload.rawDiff) : undefined;
+  existing.lastDiffSet = diffRef ? payload.diffSet : undefined;
+  existing.createdAt = Date.now();
+  // Annotations are deliberately kept. Reuse used to wipe them, destroying an
+  // agent's findings whenever a hook or a second open landed on the repo.
+
+  if (diffRef) {
+    startSessionWatcher(id);
+  }
+
+  if (hasViewersForSession(id)) {
+    if (existing.status === "pending") {
+      existing.status = "in_review";
+    }
+    existing.hasNewChanges = false;
+    sendToSessionClients(id, { type: "review:init", payload });
+    // review:init resets the viewer's annotations, so the ones kept above have
+    // to be sent again — otherwise "preserved" is only true on the server.
+    for (const annotation of existing.annotations) {
+      sendToSessionClients(id, { type: "annotation:added", payload: annotation });
+    }
+  } else {
+    existing.hasNewChanges = true;
+  }
+
+  // The UI dropped a closed session and ignores updates for ids it does not
+  // hold, so a reopened one has to be announced as new.
+  if (wasClosed) {
+    broadcastToAll({ type: "session:added", payload: toSummary(existing) });
+  } else {
+    broadcastSessionUpdate(existing);
+  }
+
+  return { session: existing, reused: true };
+}
+
+/** Unseen, undismissed warnings — what the sidebar flags for attention. */
+function needsAttention(session: Session): boolean {
+  return session.annotations.some(
+    (a) => a.type === "warning" && !a.dismissed && a.createdAt > session.attentionClearedAt,
+  );
 }
 
 // Track which WS clients are viewing which session
@@ -128,6 +287,8 @@ function toSummary(session: Session): SessionSummary {
     decision: session.result?.decision,
     createdAt: session.createdAt,
     hasNewChanges: session.hasNewChanges,
+    needsAttention: needsAttention(session),
+    diffRef: session.diffRef,
     source: session.source,
   };
 }
@@ -384,7 +545,7 @@ async function handleApiRequest(
     return true;
   }
 
-  // POST /api/reviews — create or update a session
+  // POST /api/reviews — open (or reuse) a local review session
   if (method === "POST" && url === "/api/reviews") {
     try {
       const body = await readBody(req);
@@ -394,112 +555,20 @@ async function handleApiRequest(
         diffRef?: string;
       };
 
-      // Check for existing agent session with same projectPath (manual sessions never dedup)
-      let existingSession: Session | undefined;
-      for (const session of sessions.values()) {
-        if (session.projectPath === projectPath && session.source === "agent") {
-          existingSession = session;
-          break;
-        }
-      }
+      const identity = localIdentity(projectPath);
+      const { session, reused } = openSession({
+        key: identity.key,
+        repoRoot: identity.repoRoot,
+        projectPath: identity.repoRoot,
+        payload,
+        diffRef,
+        source: "agent",
+      });
 
-      if (existingSession) {
-        // Reuse the existing session — update in place
-        const sessionId = existingSession.id;
-        payload.reviewId = sessionId;
+      // Re-open browser if no UI clients are connected
+      reopenBrowserIfNeeded?.();
 
-        if (diffRef) {
-          payload.watchMode = true;
-        }
-
-        // Stop the old watcher before updating (diffRef may have changed)
-        stopSessionWatcher(sessionId);
-
-        // A new review for a repo whose session was closed brings it back.
-        const wasClosed = existingSession.closedAt !== undefined;
-        existingSession.closedAt = undefined;
-
-        // Update session in place
-        existingSession.payload = payload;
-        existingSession.status = "pending";
-        existingSession.result = null;
-        existingSession.createdAt = Date.now();
-        existingSession.diffRef = diffRef;
-        existingSession.lastDiffHash = diffRef ? hashDiff(payload.rawDiff) : undefined;
-        existingSession.lastDiffSet = diffRef ? payload.diffSet : undefined;
-        existingSession.hasNewChanges = false;
-        existingSession.annotations = [];
-
-        // Restart watcher immediately (watches regardless of connected UI clients)
-        if (diffRef) {
-          startSessionWatcher(sessionId);
-        }
-
-        // If a UI client is viewing this session, send fresh data
-        if (hasViewersForSession(sessionId)) {
-          sendToSessionClients(sessionId, {
-            type: "review:init",
-            payload,
-          });
-        }
-
-        // The UI dropped a closed session and ignores updates for ids it does
-        // not hold, so a reopened one has to be announced as new.
-        if (wasClosed) {
-          broadcastToAll({
-            type: "session:added",
-            payload: toSummary(existingSession),
-          });
-        } else {
-          broadcastSessionUpdate(existingSession);
-        }
-
-        // Re-open browser if no UI clients are connected
-        reopenBrowserIfNeeded?.();
-
-        jsonResponse(res, 200, { sessionId });
-      } else {
-        // Create new session
-        const sessionId = `session-${randomUUID().slice(0, 8)}`;
-        payload.reviewId = sessionId;
-
-        if (diffRef) {
-          payload.watchMode = true;
-        }
-
-        const session: Session = {
-          id: sessionId,
-          payload,
-          projectPath,
-          source: "agent",
-          status: "pending",
-          createdAt: Date.now(),
-          result: null,
-          diffRef,
-          lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
-          lastDiffSet: diffRef ? payload.diffSet : undefined,
-          hasNewChanges: false,
-          annotations: [],
-        };
-
-        sessions.set(sessionId, session);
-
-        // Start watcher immediately (watches regardless of connected UI clients)
-        if (diffRef) {
-          startSessionWatcher(sessionId);
-        }
-
-        // Notify connected UI clients about the new session
-        broadcastToAll({
-          type: "session:added",
-          payload: toSummary(session),
-        });
-
-        // Re-open browser if no UI clients are connected
-        reopenBrowserIfNeeded?.();
-
-        jsonResponse(res, 201, { sessionId });
-      }
+      jsonResponse(res, reused ? 200 : 201, { sessionId: session.id });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }
@@ -552,11 +621,11 @@ async function handleApiRequest(
         // Not critical
       }
 
-      const sessionId = `session-${randomUUID().slice(0, 8)}`;
-      const projectName = projectPath.split("/").pop() || projectPath;
+      const identity = localIdentity(projectPath);
+      const projectName = identity.repoRoot.split("/").pop() || identity.repoRoot;
 
       const payload: ReviewInitPayload = {
-        reviewId: sessionId,
+        reviewId: "",
         diffSet,
         rawDiff,
         briefing,
@@ -564,33 +633,21 @@ async function handleApiRequest(
           title: projectName,
           currentBranch,
         },
-        watchMode: true,
       };
 
-      const session: Session = {
-        id: sessionId,
+      const { session, reused } = openSession({
+        key: identity.key,
+        repoRoot: identity.repoRoot,
+        projectPath: identity.repoRoot,
         payload,
-        projectPath,
-        source: "manual",
-        status: "pending",
-        createdAt: Date.now(),
-        result: null,
         diffRef,
-        lastDiffHash: hashDiff(rawDiff),
-        lastDiffSet: diffSet,
-        hasNewChanges: false,
-        annotations: [],
-      };
-
-      sessions.set(sessionId, session);
-      startSessionWatcher(sessionId);
-
-      broadcastToAll({
-        type: "session:added",
-        payload: toSummary(session),
+        source: "manual",
       });
 
-      jsonResponse(res, 201, { sessionId, fileCount: diffSet.files.length });
+      jsonResponse(res, reused ? 200 : 201, {
+        sessionId: session.id,
+        fileCount: diffSet.files.length,
+      });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }
@@ -663,30 +720,19 @@ async function handleApiRequest(
         // Not in a git repo or git not available — no local context
       }
 
-      const sessionId = `session-${randomUUID().slice(0, 8)}`;
-      normalized.payload.reviewId = sessionId;
-
-      const session: Session = {
-        id: sessionId,
-        payload: normalized.payload,
+      // A PR is its own review subject, keyed by the PR — not by the local
+      // clone it may be read from. Keying it by repo would make a PR review
+      // and a working-copy review of the same repo overwrite each other.
+      const { session, reused } = openSession({
+        key: `pr:${owner}/${repo}#${prNumber}`.toLowerCase(),
+        repoRoot: localRepoPath ? (getRepoRoot({ cwd: localRepoPath }) ?? localRepoPath) : null,
         projectPath: localRepoPath ?? `github:${owner}/${repo}#${prNumber}`,
+        payload: normalized.payload,
         source: "manual",
-        status: "pending",
-        createdAt: Date.now(),
-        result: null,
-        hasNewChanges: false,
-        annotations: [],
-      };
-
-      sessions.set(sessionId, session);
-
-      broadcastToAll({
-        type: "session:added",
-        payload: toSummary(session),
       });
 
-      jsonResponse(res, 201, {
-        sessionId,
+      jsonResponse(res, reused ? 200 : 201, {
+        sessionId: session.id,
         fileCount: normalized.diffSet.files.length,
         localRepoPath,
         pr: {
@@ -756,6 +802,28 @@ async function handleApiRequest(
   if (method === "GET" && url === "/api/reviews") {
     const summaries = listedSummaries();
     jsonResponse(res, 200, { sessions: summaries });
+    return true;
+  }
+
+  // GET /api/reviews/resolve?path=<dir> — sessions reading from a repo path
+  //
+  // How participant tools find "the session for this repo" without guessing.
+  // Returns every open session whose working tree matches; the caller decides
+  // what zero, one, or several matches mean. Must precede /api/reviews/:id.
+  if (method === "GET" && url === "/api/reviews/resolve") {
+    const parsed = new URL(req.url ?? "/", "http://localhost");
+    const rawPath = parsed.searchParams.get("path");
+    if (!rawPath) {
+      jsonResponse(res, 400, { error: "Missing path" });
+      return true;
+    }
+
+    const repoRoot = getRepoRoot({ cwd: rawPath }) ?? path.resolve(rawPath);
+    const matches = Array.from(sessions.values())
+      .filter((session) => session.closedAt === undefined && session.repoRoot === repoRoot)
+      .map(toSummary);
+
+    jsonResponse(res, 200, { repoRoot, sessions: matches });
     return true;
   }
 
@@ -911,6 +979,17 @@ async function handleApiRequest(
         payload: annotation,
       });
 
+      if (annotation.type === "warning") {
+        // Someone already looking at the session has seen it.
+        if (hasViewersForSession(session.id)) {
+          session.attentionClearedAt = annotation.createdAt;
+        }
+        // Everyone else learns through the sidebar. annotation:added only
+        // reaches viewers of this session, so relying on it meant a warning on
+        // a session you were NOT looking at could never raise attention.
+        broadcastSessionUpdate(session);
+      }
+
       jsonResponse(res, 200, { annotationId: annotation.id });
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
@@ -953,6 +1032,10 @@ async function handleApiRequest(
       type: "annotation:dismissed",
       payload: { annotationId: dismissAnnotationParams.annotationId },
     });
+
+    if (annotation.type === "warning") {
+      broadcastSessionUpdate(session);
+    }
 
     jsonResponse(res, 200, { ok: true });
     return true;
@@ -1291,6 +1374,7 @@ export async function startGlobalServer(
             clientSessions.set(ws, session.id);
             session.status = "in_review";
             session.hasNewChanges = false;
+            session.attentionClearedAt = Date.now();
             startSessionWatcher(session.id);
             broadcastSessionUpdate(session);
             ws.send(JSON.stringify({

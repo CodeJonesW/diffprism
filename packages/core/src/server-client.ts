@@ -159,6 +159,27 @@ function readOwnBinPath(dir: string): string | null {
 
 // ─── submitReviewToServer ───
 
+/**
+ * Thrown when a blocking review is still open when the wait expires.
+ *
+ * The session is not gone — the reviewer simply has not decided yet — so the
+ * caller gets its id back and can check again later instead of losing track
+ * of a review that is still sitting in someone's browser.
+ */
+export class ReviewTimeoutError extends Error {
+  readonly sessionId: string;
+  readonly waitedMs: number;
+
+  constructor(sessionId: string, waitedMs: number) {
+    super(
+      `Review ${sessionId} is still open after ${Math.round(waitedMs / 1000)}s without a decision.`,
+    );
+    this.name = "ReviewTimeoutError";
+    this.sessionId = sessionId;
+    this.waitedMs = waitedMs;
+  }
+}
+
 export interface SubmitReviewOptions {
   title?: string;
   description?: string;
@@ -329,5 +350,5 @@ export async function submitReviewToServer(
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
 
-  throw new Error("Review timed out waiting for submission.");
+  throw new ReviewTimeoutError(sessionId, maxWaitMs);
 }

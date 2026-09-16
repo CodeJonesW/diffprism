@@ -6,7 +6,7 @@
  * between light and dark mode — no `dark:` prefixes needed.
  */
 
-/* ── Review status badges (SessionList, submitted screens) ── */
+/* ── Review status badges (SessionSidebar, submitted screens) ── */
 
 export const STATUS_BADGE_STYLES: Record<string, string> = {
   pending: "bg-warning/20 text-warning border border-warning/30",

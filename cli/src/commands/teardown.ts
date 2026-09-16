@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { findGitRoot, readJsonFile, writeJsonFile, GITIGNORE_ENTRIES } from "./setup.js";
+import { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "@diffprism/core";
 
 interface TeardownFlags {
   global?: boolean;
@@ -57,16 +58,9 @@ function teardownClaudePermissions(
   const permissions = (existing.permissions ?? {}) as Record<string, unknown>;
   const allow = (permissions.allow ?? []) as string[];
 
-  const toolNames = [
-    "mcp__diffprism__open_review",
-    "mcp__diffprism__update_review_context",
-    "mcp__diffprism__get_review_result",
-    "mcp__diffprism__get_diff",
-    "mcp__diffprism__analyze_diff",
-    "mcp__diffprism__add_annotation",
-    "mcp__diffprism__get_review_state",
-    "mcp__diffprism__flag_for_attention",
-  ];
+  // Current and retired tools both: settings written by an older version
+  // still name tools this version no longer registers.
+  const toolNames = [...MCP_TOOL_NAMES, ...RETIRED_MCP_TOOL_NAMES].map(mcpToolPermission);
 
   const filtered = allow.filter((t) => !toolNames.includes(t));
 
