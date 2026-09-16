@@ -69,9 +69,28 @@ interface Session {
   hasNewChanges: boolean;
   annotations: Annotation[];
   userFocus?: UserFocus;
+  /**
+   * Set when the user closes the session in the UI. A closed session is kept
+   * in memory — a blocked caller (CLI review, pre-commit hook, MCP) is still
+   * polling for its "dismissed" verdict and would otherwise hang until its
+   * timeout — but it is never listed again, so it does not come back when the
+   * UI reconnects. Cleared if a new review reuses the session.
+   */
+  closedAt?: number;
 }
 
 const sessions = new Map<string, Session>();
+
+/**
+ * Summaries of the sessions a UI should show. Every path that lists sessions
+ * goes through here; they used to each call sessions.values() directly, and
+ * that is how a closed session kept reappearing.
+ */
+function listedSummaries(): SessionSummary[] {
+  return Array.from(sessions.values())
+    .filter((session) => session.closedAt === undefined)
+    .map(toSummary);
+}
 
 // Track which WS clients are viewing which session
 const clientSessions = new Map<WebSocket, string>();
@@ -285,7 +304,7 @@ function hasConnectedClients(): boolean {
 }
 
 function broadcastSessionList(): void {
-  const summaries = Array.from(sessions.values()).map(toSummary);
+  const summaries = listedSummaries();
   broadcastToAll({ type: "session:list", payload: summaries });
 }
 
@@ -396,6 +415,10 @@ async function handleApiRequest(
         // Stop the old watcher before updating (diffRef may have changed)
         stopSessionWatcher(sessionId);
 
+        // A new review for a repo whose session was closed brings it back.
+        const wasClosed = existingSession.closedAt !== undefined;
+        existingSession.closedAt = undefined;
+
         // Update session in place
         existingSession.payload = payload;
         existingSession.status = "pending";
@@ -420,8 +443,16 @@ async function handleApiRequest(
           });
         }
 
-        // Broadcast update (not added)
-        broadcastSessionUpdate(existingSession);
+        // The UI dropped a closed session and ignores updates for ids it does
+        // not hold, so a reopened one has to be announced as new.
+        if (wasClosed) {
+          broadcastToAll({
+            type: "session:added",
+            payload: toSummary(existingSession),
+          });
+        } else {
+          broadcastSessionUpdate(existingSession);
+        }
 
         // Re-open browser if no UI clients are connected
         reopenBrowserIfNeeded?.();
@@ -723,7 +754,7 @@ async function handleApiRequest(
 
   // GET /api/reviews — list all sessions
   if (method === "GET" && url === "/api/reviews") {
-    const summaries = Array.from(sessions.values()).map(toSummary);
+    const summaries = listedSummaries();
     jsonResponse(res, 200, { sessions: summaries });
     return true;
   }
@@ -1205,7 +1236,7 @@ export async function startGlobalServer(
       }
     } else {
       // No specific session requested — send full session list (server mode UI)
-      const summaries = Array.from(sessions.values()).map(toSummary);
+      const summaries = listedSummaries();
       const msg: ServerMessage = {
         type: "session:list",
         payload: summaries,
@@ -1279,10 +1310,13 @@ export async function startGlobalServer(
           const closedId = msg.payload.sessionId;
           stopSessionWatcher(closedId);
           const closedSession = sessions.get(closedId);
-          if (closedSession && !closedSession.result) {
-            // Store dismiss result so MCP polling can pick it up
-            closedSession.result = { decision: "dismissed", comments: [] };
-            closedSession.status = "submitted";
+          if (closedSession) {
+            closedSession.closedAt = Date.now();
+            if (!closedSession.result) {
+              // Store dismiss result so MCP polling can pick it up
+              closedSession.result = { decision: "dismissed", comments: [] };
+              closedSession.status = "submitted";
+            }
           }
           broadcastSessionRemoved(closedId);
         } else if (msg.type === "diff:change_ref") {

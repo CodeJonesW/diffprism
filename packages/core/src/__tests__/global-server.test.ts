@@ -1351,3 +1351,113 @@ describe("global-server", () => {
     });
   });
 });
+
+// ─── #153: closed sessions stay closed ───
+
+describe("closing a session", () => {
+  async function createSession(baseUrl: string, projectPath: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath }),
+    });
+    return ((await response.json()) as { sessionId: string }).sessionId;
+  }
+
+  /** Connect a UI client the way the dashboard does, and collect what it hears. */
+  async function connectUi(wsPort: number) {
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${wsPort}`);
+    const messages: ServerMessage[] = [];
+    ws.on("message", (data) => {
+      messages.push(JSON.parse(data.toString()) as ServerMessage);
+    });
+    await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    return { ws, messages };
+  }
+
+  async function closeFromUi(wsPort: number, sessionId: string): Promise<void> {
+    const { ws } = await connectUi(wsPort);
+    ws.send(JSON.stringify({ type: "session:close", payload: { sessionId } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+  }
+
+  it("does not hand a closed session back when the UI reconnects", async () => {
+    // The reported bug: close a session, come back, and it is still there,
+    // because every listing path returned the whole session map.
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const closedId = await createSession(baseUrl, "/repo-closed");
+    const keptId = await createSession(baseUrl, "/repo-kept");
+
+    await closeFromUi(handle.wsPort, closedId);
+
+    const { ws, messages } = await connectUi(handle.wsPort);
+    ws.close();
+
+    const list = messages.find((m) => m.type === "session:list");
+    expect(list).toBeDefined();
+    const ids = (list!.payload as SessionSummary[]).map((s) => s.id);
+    expect(ids).toContain(keptId);
+    expect(ids).not.toContain(closedId);
+  });
+
+  it("omits a closed session from GET /api/reviews", async () => {
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const closedId = await createSession(baseUrl, "/repo-closed");
+    await closeFromUi(handle.wsPort, closedId);
+
+    const body = (await (await fetch(`${baseUrl}/api/reviews`)).json()) as {
+      sessions: SessionSummary[];
+    };
+    expect(body.sessions.map((s) => s.id)).not.toContain(closedId);
+  });
+
+  it("still lets a blocked caller read the dismissed verdict", async () => {
+    // Deleting the session outright would make a CLI review, pre-commit hook,
+    // or MCP poll get a 404 and hang until its timeout. It has to stay readable.
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const sessionId = await createSession(baseUrl, "/repo-polled");
+    await closeFromUi(handle.wsPort, sessionId);
+
+    const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/result`);
+    expect(response.ok).toBe(true);
+    const body = (await response.json()) as { result: ReviewResult | null };
+    expect(body.result?.decision).toBe("dismissed");
+  });
+
+  it("brings the session back, announced as new, when a later review reuses it", async () => {
+    // The UI dropped the closed session and ignores session:updated for ids it
+    // does not hold — so a reopened session has to arrive as session:added or
+    // the new review never shows up.
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const sessionId = await createSession(baseUrl, "/repo-reopened");
+    await closeFromUi(handle.wsPort, sessionId);
+
+    const { ws, messages } = await connectUi(handle.wsPort);
+    const reusedId = await createSession(baseUrl, "/repo-reopened");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+
+    expect(reusedId).toBe(sessionId);
+
+    const added = messages.find(
+      (m) => m.type === "session:added" && (m.payload as SessionSummary).id === sessionId,
+    );
+    expect(added).toBeDefined();
+
+    const body = (await (await fetch(`${baseUrl}/api/reviews`)).json()) as {
+      sessions: SessionSummary[];
+    };
+    expect(body.sessions.map((s) => s.id)).toContain(sessionId);
+  });
+});
