@@ -46,7 +46,9 @@ async function reviewLocalFlow(
 ): Promise<void> {
   const serverInfo = await ensureServer({ dev: flags.dev });
 
-  console.log("Opening review in browser...");
+  // Progress goes to stderr so stdout carries nothing but the ReviewResult,
+  // and a caller can pipe it straight into a JSON parser.
+  console.error("Opening review in browser...");
 
   const { result } = await submitReviewToServer(serverInfo, diffRef, {
     title: flags.title,
@@ -56,7 +58,17 @@ async function reviewLocalFlow(
 
   // Print structured result to stdout
   console.log(JSON.stringify(result, null, 2));
-  process.exit(0);
+
+  // The exit code carries the verdict. Callers that gate on a review — a
+  // pre-commit hook, CI — need to tell approval from rejection without
+  // parsing anything, and anything that is not an approval is a refusal.
+  if (!result) {
+    console.error("No review result was returned.");
+    process.exit(1);
+  }
+  const approved =
+    result.decision === "approved" || result.decision === "approved_with_comments";
+  process.exit(approved ? 0 : 1);
 }
 
 async function reviewPrFlow(
