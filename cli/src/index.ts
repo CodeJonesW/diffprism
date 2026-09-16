@@ -8,6 +8,7 @@ import { teardown } from "./commands/teardown.js";
 import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
 import { defaultAction } from "./commands/default.js";
+import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -41,6 +42,27 @@ program
 program
   .command("review-pr <pr>", { hidden: true })
   .action((pr: string, flags: Record<string, unknown>) => review(pr, flags));
+
+const hookCmd = program
+  .command("hook")
+  .description("Git hook integration — gate commits on a human review");
+
+hookCmd
+  .command("pre-commit")
+  .description("Run the review gate for the staged changes (called from a git hook)")
+  .option("--min-lines <n>", "Staged lines required to trigger a review (default: 120)")
+  .option("--dev", "Use Vite dev server")
+  .action((flags) => { void preCommitHook(flags); });
+
+hookCmd
+  .command("install")
+  .description("Add the diffprism gate to this repo's pre-commit hook")
+  .action(() => { installHook(); });
+
+hookCmd
+  .command("uninstall")
+  .description("Remove the diffprism gate from this repo's pre-commit hook")
+  .action(() => { uninstallHook(); });
 
 program
   .command("serve")

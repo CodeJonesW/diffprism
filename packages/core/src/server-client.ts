@@ -79,41 +79,82 @@ export async function ensureServer(
  * Build the default spawn command for the daemon.
  * Resolves the diffprism CLI entry point relative to this package.
  */
-function buildDefaultSpawnCommand(options: EnsureServerOptions): string[] {
+export function buildDefaultSpawnCommand(
+  options: EnsureServerOptions,
+): string[] {
   const thisFile = fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
 
   // In dev: packages/core/src -> ../../.. -> cli/bin/diffprism.mjs
-  // In published: node_modules/@diffprism/core/dist -> look for node_modules/.bin/diffprism
   const workspaceRoot = path.resolve(thisDir, "..", "..", "..");
   const devBin = path.join(workspaceRoot, "cli", "bin", "diffprism.mjs");
-
-  let binPath: string = "diffprism"; // Fall back to PATH lookup
   if (fs.existsSync(devBin)) {
-    binPath = devBin;
-  } else {
-    // Published mode: walk up looking for node_modules/.bin/diffprism
-    let searchDir = thisDir;
-    while (searchDir !== path.dirname(searchDir)) {
-      const candidate = path.join(
-        searchDir,
-        "node_modules",
-        ".bin",
-        "diffprism",
-      );
-      if (fs.existsSync(candidate)) {
-        binPath = candidate;
-        break;
-      }
-      searchDir = path.dirname(searchDir);
-    }
+    return withDevFlag([process.execPath, devBin, "server", "--_daemon"], options);
   }
 
-  const args = [process.execPath, binPath, "server", "--_daemon"];
-  if (options.dev) {
-    args.push("--dev");
+  let searchDir = thisDir;
+  while (searchDir !== path.dirname(searchDir)) {
+    // Preferred: the package we are running from declares its own bin, which
+    // is a real JS entry point node can execute. A global install has nothing
+    // else — npm links the executable from the prefix's bin directory, which
+    // is nowhere above this file.
+    const ownBin = readOwnBinPath(searchDir);
+    if (ownBin) {
+      return withDevFlag(
+        [process.execPath, ownBin, "server", "--_daemon"],
+        options,
+      );
+    }
+
+    // Otherwise a local install's shim. This is NOT a JS file — npm writes a
+    // shell script — so it has to be executed directly. Handing it to node
+    // makes node parse shell as JavaScript and die on `basedir=$(dirname ...)`.
+    const shim = path.join(searchDir, "node_modules", ".bin", "diffprism");
+    if (fs.existsSync(shim)) {
+      return withDevFlag([shim, "server", "--_daemon"], options);
+    }
+
+    searchDir = path.dirname(searchDir);
   }
-  return args;
+
+  // Last resort: let the OS resolve it on PATH. Also spawned directly —
+  // passing a bare name as an argument to node makes node resolve it against
+  // the current working directory instead, which is how this used to fail
+  // with "Cannot find module '<cwd>/diffprism'".
+  return withDevFlag(["diffprism", "server", "--_daemon"], options);
+}
+
+function withDevFlag(args: string[], options: EnsureServerOptions): string[] {
+  return options.dev ? [...args, "--dev"] : args;
+}
+
+/**
+ * If `dir` is the root of the diffprism package, return the absolute path to
+ * the bin entry declared in its own package.json. Returns null otherwise.
+ */
+function readOwnBinPath(dir: string): string | null {
+  const manifestPath = path.join(dir, "package.json");
+  if (!fs.existsSync(manifestPath)) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      bin?: string | Record<string, string>;
+    };
+    const entry =
+      typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.diffprism;
+    if (!entry) {
+      return null;
+    }
+
+    const resolved = path.resolve(dir, entry);
+    return fs.existsSync(resolved) ? resolved : null;
+  } catch {
+    // A malformed package.json above us is not our problem to report — it just
+    // means this directory is not the answer.
+    return null;
+  }
 }
 
 // ─── submitReviewToServer ───

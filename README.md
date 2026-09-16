@@ -102,6 +102,41 @@ diffprism review main..feature      # Branch diff
 
 Running multiple Claude Code sessions? All reviews appear in one browser dashboard with status badges, branch info, and desktop notifications.
 
+## Commit Gate
+
+Review is only reliable if something other than memory triggers it. `diffprism hook`
+wires the review into your pre-commit hook, so a substantial change opens a review
+before it can land.
+
+```bash
+diffprism hook install              # Add the gate to this repo's pre-commit hook
+diffprism hook uninstall            # Remove it
+```
+
+By default a staged diff of **120+ changed lines** opens a review; anything smaller
+commits untouched. A gate that stops every commit is one you learn to skip with
+`--no-verify`, and a skipped gate is worse than none. Tune it per repo:
+
+```bash
+git config diffprism.gate-lines 200
+```
+
+Approve and the commit proceeds. Request changes and the commit is blocked — with
+your comments printed in the output, so the agent that ran `git commit` can read
+what you asked for and fix it without another round trip:
+
+```
+140 staged lines (gate at 120) — opening DiffPrism review...
+
+  feature.ts:12  [must_fix]  these should be a single exported record
+  feature.ts:88  [question]  is this range meant to be inclusive?
+
+Commit blocked: the review requested changes.
+```
+
+Install adds one line between markers, so uninstall removes exactly that and leaves
+the rest of your hook alone. Repos using `core.hooksPath` are handled.
+
 ## Features
 
 - **AI-powered PR review** — Your AI gets full codebase context via 14 MCP tools
@@ -124,6 +159,8 @@ diffprism setup --global            # Global setup (no git repo needed)
 diffprism server                    # Start the background server
 diffprism server status             # Check server status
 diffprism server stop               # Stop the server
+diffprism hook install              # Gate commits on a review
+diffprism hook uninstall            # Remove the gate
 diffprism teardown                  # Remove configuration
 ```
 
