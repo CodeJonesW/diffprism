@@ -94,6 +94,7 @@ export interface ReviewState {
   setCompareRef: (ref: string | null) => void;
   addAnnotation: (annotation: Annotation) => void;
   dismissAnnotation: (annotationId: string) => void;
+  updateAnnotation: (annotation: Annotation) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
 }
@@ -389,6 +390,14 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       // session:updated replaced the object and wiped it.
       return { annotations: [...state.annotations, annotation] };
     });
+  },
+
+  // A thread changed on the server — a reply landed. Replace it wholesale:
+  // the server's copy is the conversation.
+  updateAnnotation: (annotation: Annotation) => {
+    set((state) => ({
+      annotations: state.annotations.map((a) => (a.id === annotation.id ? annotation : a)),
+    }));
   },
 
   dismissAnnotation: (annotationId: string) => {

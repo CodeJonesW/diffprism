@@ -17,6 +17,8 @@ export const MCP_TOOL_NAMES = [
   "annotate",
   "get_review_state",
   "get_review_comments",
+  "reply",
+  "wait_for_comments",
   "get_user_focus",
   "get_pr_context",
   "get_file_diff",

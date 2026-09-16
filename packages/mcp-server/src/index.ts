@@ -8,11 +8,13 @@ import {
   ReviewTimeoutError,
   currentVersion,
   recordError,
+  awaitingAgent,
   REPORT_HINT,
   DEFAULT_DIFF_REF,
   DIFF_REF_DESCRIPTION,
 } from "@diffprism/core";
 import type {
+  Annotation,
   ContextUpdatePayload,
   GlobalServerInfo,
   ReviewResult,
@@ -125,6 +127,21 @@ export async function resolveTarget(
   return {
     error: `${sessions.length} reviews are open for ${repoRoot}. Pass session_id to choose one:\n${candidates}`,
   };
+}
+
+/** A session's threads, each marked with whether it is waiting on an agent. */
+async function readThreads(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+): Promise<Array<Annotation & { awaitingReply: boolean }> | null> {
+  const response = await fetch(
+    `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+  );
+  if (!response.ok) {
+    return null;
+  }
+  const { annotations } = (await response.json()) as { annotations: Annotation[] };
+  return annotations.map((a) => ({ ...a, awaitingReply: awaitingAgent(a) }));
 }
 
 /** Run a tool body against the resolved session, with the shared failure handling. */
@@ -476,18 +493,85 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_comments",
-    "Get every comment and annotation on an open review — findings from agents and inline comments from human reviewers. Read these before adding your own.",
-    { ...targetParams },
-    async ({ session_id, repo_path }) =>
+    "Get every thread on an open review — agent findings and the reviewer's comments, each with its replies. `awaitingReply` marks threads where the reviewer spoke last and nobody has answered. Read these before adding your own.",
+    {
+      ...targetParams,
+      awaiting_reply: z
+        .boolean()
+        .optional()
+        .describe("Only return threads waiting for an agent to reply"),
+    },
+    async ({ session_id, repo_path, awaiting_reply }) =>
       withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
-        const response = await fetch(
-          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
-        );
-        if (!response.ok) {
+        const threads = await readThreads(serverInfo, sessionId);
+        if (!threads) {
           return toolError(`Session not found: ${sessionId}`);
         }
-        const { annotations } = (await response.json()) as { annotations: unknown[] };
+        const annotations = awaiting_reply ? threads.filter((t) => t.awaitingReply) : threads;
         return jsonResult({ sessionId, annotations });
+      }),
+  );
+
+  server.tool(
+    "reply",
+    "Reply to a thread on an open review — answer the reviewer's question, or follow up on a finding. The reply appears under the thread in the dashboard straight away.",
+    {
+      ...targetParams,
+      annotation_id: z.string().describe("The thread to reply to (an annotation id from get_review_comments or wait_for_comments)"),
+      body: z.string().describe("Your reply"),
+      source_agent: z.string().optional().describe("Who is replying, e.g. 'pr-reviewer'"),
+    },
+    async ({ session_id, repo_path, annotation_id, body, source_agent }) =>
+      withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
+        const response = await fetch(
+          `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations/${annotation_id}/replies`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ author: "agent", agent: source_agent ?? "unknown", body }),
+          },
+        );
+        const data = (await response.json().catch(() => ({}))) as { replyId?: string; error?: string };
+        if (!response.ok) {
+          return toolError(`Error: ${data.error ?? `server returned ${response.status}`}`);
+        }
+        return jsonResult({ sessionId, annotationId: annotation_id, replyId: data.replyId });
+      }),
+  );
+
+  server.tool(
+    "wait_for_comments",
+    "Wait for the reviewer to write something you haven't answered — a new comment on a line, or a reply in a thread. Returns those threads as soon as there are any. Use it to hold a conversation during a PR review: wait, answer each thread with `reply`, then wait again. If it returns `timed_out`, nothing new was said; wait again rather than asking the user in the terminal.",
+    {
+      ...targetParams,
+      timeout: z
+        .number()
+        .optional()
+        .describe(`Max wait in seconds (default ${DEFAULT_WAIT_MS / 1000}, max 600)`),
+    },
+    async ({ session_id, repo_path, timeout }) =>
+      withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
+        const maxWaitMs = Math.min(timeout ?? DEFAULT_WAIT_MS / 1000, 600) * 1000;
+        const start = Date.now();
+        while (true) {
+          const threads = await readThreads(serverInfo, sessionId);
+          if (!threads) {
+            return toolError(`Session not found: ${sessionId}`);
+          }
+          const waiting = threads.filter((t) => t.awaitingReply);
+          if (waiting.length > 0) {
+            return jsonResult({ sessionId, threads: waiting });
+          }
+          if (Date.now() - start >= maxWaitMs) {
+            return jsonResult({
+              status: "timed_out",
+              sessionId,
+              message:
+                "The reviewer hasn't written anything new. Call wait_for_comments again to keep listening — don't ask them in the terminal.",
+            });
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
       }),
   );
 

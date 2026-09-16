@@ -27,6 +27,8 @@ import type {
   AnnotationType,
   AnnotationCategory,
   AnnotationSource,
+  AnnotationReply,
+  ThreadAuthor,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import {
@@ -1052,7 +1054,7 @@ async function handleApiRequest(
 
     try {
       const body = await readBody(req);
-      const { file, line, body: annotationBody, type, confidence, category, source } = JSON.parse(body) as {
+      const { file, line, body: annotationBody, type, confidence, category, source, author } = JSON.parse(body) as {
         file: string;
         line: number;
         body: string;
@@ -1060,7 +1062,13 @@ async function handleApiRequest(
         confidence?: number;
         category?: AnnotationCategory;
         source: AnnotationSource;
+        author?: ThreadAuthor;
       };
+
+      if (author !== undefined && author !== "agent" && author !== "reviewer") {
+        jsonResponse(res, 400, { error: `Unknown author: ${String(author)}` });
+        return true;
+      }
 
       const annotation: Annotation = {
         id: randomUUID(),
@@ -1073,6 +1081,8 @@ async function handleApiRequest(
         category: category ?? "other",
         source,
         createdAt: Date.now(),
+        author: author ?? "agent",
+        replies: [],
       };
 
       session.annotations.push(annotation);
@@ -1112,6 +1122,58 @@ async function handleApiRequest(
     }
 
     jsonResponse(res, 200, { annotations: session.annotations });
+    return true;
+  }
+
+  // POST /api/reviews/:id/annotations/:annotationId/replies — continue a thread
+  //
+  // Either side can reply. The reviewer writes from the dashboard; an agent
+  // answers through the MCP `reply` tool, having found the thread with
+  // `wait_for_comments`.
+  const replyParams = matchRoute(method, url, "POST", "/api/reviews/:id/annotations/:annotationId/replies");
+  if (replyParams) {
+    const session = sessions.get(replyParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    const annotation = session.annotations.find((a) => a.id === replyParams.annotationId);
+    if (!annotation) {
+      jsonResponse(res, 404, { error: "Annotation not found" });
+      return true;
+    }
+
+    try {
+      const { author, agent, body: replyBody } = JSON.parse(await readBody(req)) as {
+        author?: ThreadAuthor;
+        agent?: string;
+        body?: string;
+      };
+
+      if (author !== "agent" && author !== "reviewer") {
+        jsonResponse(res, 400, { error: "author must be \"agent\" or \"reviewer\"" });
+        return true;
+      }
+      if (!replyBody?.trim()) {
+        jsonResponse(res, 400, { error: "A reply needs a body" });
+        return true;
+      }
+
+      const reply: AnnotationReply = {
+        id: randomUUID(),
+        author,
+        ...(author === "agent" ? { agent: agent ?? "unknown" } : {}),
+        body: replyBody,
+        createdAt: Date.now(),
+      };
+      annotation.replies = [...(annotation.replies ?? []), reply];
+      touch(session);
+
+      sendToSessionClients(session.id, { type: "annotation:updated", payload: annotation });
+      jsonResponse(res, 200, { replyId: reply.id, annotation });
+    } catch {
+      jsonResponse(res, 400, { error: "Invalid request body" });
+    }
     return true;
   }
 

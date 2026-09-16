@@ -131,6 +131,8 @@ By default, Claude Code prompts for confirmation each time an MCP tool is called
       "mcp__diffprism__analyze_diff",
       "mcp__diffprism__annotate",
       "mcp__diffprism__get_review_comments",
+      "mcp__diffprism__reply",
+      "mcp__diffprism__wait_for_comments",
       "mcp__diffprism__get_review_state",
       "mcp__diffprism__get_user_focus",
       "mcp__diffprism__get_pr_context",
@@ -245,7 +247,34 @@ Returns `{ sessionId, annotationIds, failed? }`. Partial failures are listed in 
 
 ### `get_review_comments`
 
-Every comment and annotation on an open review. Takes targeting.
+Every thread on an open review. Each carries `author` (`agent` or `reviewer`), its `replies`, and `awaitingReply` — true when the reviewer spoke last and the thread isn't dismissed.
+
+| Parameter        | Required | Description |
+|------------------|----------|-------------|
+| targeting        | No       | See above |
+| `awaiting_reply` | No       | Only threads waiting for an agent to reply |
+
+### `reply`
+
+Replies to a thread. The reply appears under it in the dashboard straight away.
+
+| Parameter       | Required | Description |
+|-----------------|----------|-------------|
+| targeting       | No       | See above |
+| `annotation_id` | Yes      | The thread, from `get_review_comments` or `wait_for_comments` |
+| `body`          | Yes      | The reply |
+| `source_agent`  | No       | Who is replying, e.g. `pr-reviewer` |
+
+Returns `{ sessionId, annotationId, replyId }`.
+
+### `wait_for_comments`
+
+Blocks until some thread is awaiting a reply, then returns `{ sessionId, threads }` with those threads. Returns `{ status: "timed_out" }` if nothing new was said — call it again.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| targeting | No       | See above |
+| `timeout` | No       | Max wait in seconds (default 600, max 600) |
 
 ### `get_review_state`
 
