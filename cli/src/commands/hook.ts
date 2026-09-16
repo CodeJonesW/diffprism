@@ -70,12 +70,17 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
   const decision = review?.decision;
 
   if (decision === "approved" || decision === "approved_with_comments") {
+    const summary = review?.summary?.trim();
+    const comments = review?.comments ?? [];
+    if (summary || comments.length > 0) {
+      printFeedback(review);
+    }
     console.error(`Review: ${decision} — proceeding.`);
     process.exit(0);
   }
 
   if (decision === "changes_requested") {
-    printComments(review?.comments ?? []);
+    printFeedback(review);
     fail("Commit blocked: the review requested changes.");
     return;
   }
@@ -94,22 +99,47 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
 }
 
 /**
- * Echo the reviewer's comments into the failure output.
+ * Echo everything the reviewer said into the failure output.
  *
  * The caller that just got a non-zero exit is usually an agent, and it only
- * sees what this command prints. Without the comments it knows it was
- * rejected but not what to change, which stalls the loop on a round trip
- * the reviewer already paid for.
+ * sees what this command prints. Without the feedback it knows it was
+ * rejected but not what to change, which stalls the loop on a round trip the
+ * reviewer already paid for.
+ *
+ * A review carries feedback in two places and BOTH have to be read. General
+ * remarks go in `summary` — the box above the decision buttons — while
+ * `comments` holds per-line notes. A rejection that says "what is this??" in
+ * the summary box and nothing inline is entirely normal, and printing only
+ * the inline comments makes it look like the reviewer said nothing at all.
  */
-export function printComments(comments: ReviewComment[]): void {
-  if (comments.length === 0) {
+export function printFeedback(review: ReviewResult | null): void {
+  const summary = review?.summary?.trim();
+  const comments = review?.comments ?? [];
+
+  console.error("");
+
+  if (!summary && comments.length === 0) {
+    // Say so rather than printing nothing. Silence is indistinguishable from
+    // a bug, and the agent needs to know to ask instead of guessing.
+    console.error("  The review left no summary and no inline comments.");
+    console.error("  Ask what needs changing — there is nothing here to act on.");
+    console.error("");
     return;
   }
 
-  console.error("");
+  if (summary) {
+    for (const line of summary.split("\n")) {
+      console.error(`  ${line}`);
+    }
+    if (comments.length > 0) {
+      console.error("");
+    }
+  }
+
   for (const c of comments) {
     console.error(`  ${c.file}:${c.line}  [${c.type}]  ${c.body}`);
   }
+
   console.error("");
 }
 

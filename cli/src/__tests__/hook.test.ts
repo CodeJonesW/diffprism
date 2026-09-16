@@ -28,7 +28,7 @@ vi.mock("@diffprism/git", () => ({
 }));
 
 import {
-  printComments,
+  printFeedback,
   removeMarkedBlock,
   resolveMinLines,
   resolveHookPath,
@@ -235,26 +235,72 @@ describe("uninstallHook", () => {
   });
 });
 
-describe("printComments", () => {
-  it("reports each comment with file, line, type and body", () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+describe("printFeedback", () => {
+  function captured(): string {
+    const spy = vi.mocked(console.error);
+    return spy.mock.calls.map((c) => c[0]).join("\n");
+  }
 
-    printComments([
-      { file: "src/a.ts", line: 12, body: "drops the error", type: "must_fix" },
-      { file: "src/b.ts", line: 7, body: "inclusive?", type: "question" },
-    ]);
+  it("prints the summary — the box most feedback is actually typed into", () => {
+    // Regression: a rejection carrying only a summary printed nothing at all,
+    // so the reviewer's words never reached the agent and the block looked
+    // like it carried no reason.
+    printFeedback({ decision: "changes_requested", comments: [], summary: "what is this?????" });
 
-    const output = spy.mock.calls.map((c) => c[0]).join("\n");
-    expect(output).toContain("src/a.ts:12");
-    expect(output).toContain("[must_fix]");
-    expect(output).toContain("drops the error");
-    expect(output).toContain("src/b.ts:7");
-    expect(output).toContain("[question]");
+    expect(captured()).toContain("what is this?????");
   });
 
-  it("stays quiet when a rejection carried no comments", () => {
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    printComments([]);
-    expect(spy).not.toHaveBeenCalled();
+  it("prints inline comments with file, line, type and body", () => {
+    printFeedback({
+      decision: "changes_requested",
+      comments: [
+        { file: "src/a.ts", line: 12, body: "drops the error", type: "must_fix" },
+      ],
+    });
+
+    const out = captured();
+    expect(out).toContain("src/a.ts:12");
+    expect(out).toContain("[must_fix]");
+    expect(out).toContain("drops the error");
+  });
+
+  it("prints both when the reviewer left both", () => {
+    printFeedback({
+      decision: "changes_requested",
+      summary: "this needs rethinking",
+      comments: [
+        { file: "src/a.ts", line: 3, body: "here", type: "question" },
+      ],
+    });
+
+    const out = captured();
+    expect(out).toContain("this needs rethinking");
+    expect(out).toContain("src/a.ts:3");
+  });
+
+  it("indents every line of a multi-line summary", () => {
+    printFeedback({
+      decision: "changes_requested",
+      comments: [],
+      summary: "first line\nsecond line",
+    });
+
+    const out = captured();
+    expect(out).toContain("  first line");
+    expect(out).toContain("  second line");
+  });
+
+  it("says so when a rejection carried nothing at all", () => {
+    // Silence is indistinguishable from a bug — the agent has to be told
+    // there is nothing to act on, so it asks instead of guessing.
+    printFeedback({ decision: "changes_requested", comments: [] });
+
+    expect(captured()).toContain("no summary and no inline comments");
+  });
+
+  it("treats a whitespace-only summary as empty", () => {
+    printFeedback({ decision: "changes_requested", comments: [], summary: "   " });
+
+    expect(captured()).toContain("no summary and no inline comments");
   });
 });
