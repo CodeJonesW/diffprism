@@ -1,4 +1,4 @@
-import { ensureServer, submitReviewToServer } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, DEFAULT_DIFF_REF } from "@diffprism/core";
 import { isPrRef, parsePrRef } from "@diffprism/github";
 
 interface ReviewFlags {
@@ -23,8 +23,7 @@ export async function review(
   } else if (ref) {
     diffRef = ref;
   } else {
-    // Default to working-copy mode: staged/unstaged shown as separate groups
-    diffRef = "working-copy";
+    diffRef = DEFAULT_DIFF_REF;
   }
 
   try {

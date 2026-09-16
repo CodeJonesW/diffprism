@@ -20,11 +20,14 @@ vi.mock("@diffprism/core", () => {
     submitReviewToServer: (...args: unknown[]) => mockSubmitReviewToServer(...args),
     isServerAlive: (...args: unknown[]) => mockIsServerAlive(...args),
     ReviewTimeoutError,
+    DEFAULT_DIFF_REF: "working-copy",
+    DIFF_REF_DESCRIPTION: "scope",
   };
 });
 
-vi.mock("@diffprism/git", () => ({ getDiff: vi.fn() }));
-vi.mock("@diffprism/analysis", () => ({ analyze: vi.fn() }));
+const mockGetDiff = vi.fn();
+vi.mock("@diffprism/git", () => ({ getDiff: (...args: unknown[]) => mockGetDiff(...args) }));
+vi.mock("@diffprism/analysis", () => ({ analyze: vi.fn(() => ({ summary: "ok" })) }));
 
 const mockIsPrRef = vi.fn();
 vi.mock("@diffprism/github", () => ({
@@ -401,5 +404,40 @@ describe("get_review_result", () => {
 
     const result = await (await tool("get_review_result"))({ session_id: "s1" });
     expect(parse(result)).toMatchObject({ status: "pending", sessionId: "s1" });
+  });
+});
+
+// ─── #164: one default scope ───
+
+describe("diff scope", () => {
+  it("open_review reviews the working copy when no scope is given", async () => {
+    mockSubmitReviewToServer.mockResolvedValue({ result: null, sessionId: "s1" });
+
+    await (await tool("open_review"))({ wait: false });
+
+    expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
+      serverInfo,
+      "working-copy",
+      expect.objectContaining({ diffRef: "working-copy" }),
+    );
+  });
+
+  it.each(["get_diff", "analyze_diff"])(
+    "%s looks at the same default scope, so self-review matches the human review",
+    async (name) => {
+      mockGetDiff.mockReturnValue({ diffSet: { baseRef: "HEAD", headRef: "working-copy", files: [] }, rawDiff: "" });
+
+      await (await tool(name))({});
+
+      expect(mockGetDiff).toHaveBeenCalledWith("working-copy", { cwd: process.cwd() });
+    },
+  );
+
+  it("still honours an explicit scope", async () => {
+    mockSubmitReviewToServer.mockResolvedValue({ result: null, sessionId: "s1" });
+
+    await (await tool("open_review"))({ diff_ref: "staged", wait: false });
+
+    expect(mockSubmitReviewToServer).toHaveBeenCalledWith(serverInfo, "staged", expect.anything());
   });
 });

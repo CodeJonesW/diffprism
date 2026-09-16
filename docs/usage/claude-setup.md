@@ -184,7 +184,7 @@ Opens a review of local changes and **blocks until the reviewer decides**, retur
 
 | Parameter     | Required | Description |
 |---------------|----------|-------------|
-| `diff_ref`    | Yes      | `"working-copy"` (staged + unstaged, grouped), `"staged"`, `"unstaged"`, or a ref range (e.g. `"HEAD~3..HEAD"`) |
+| `diff_ref`    | No       | `"working-copy"` (default — everything uncommitted, staged and unstaged grouped), `"staged"`, `"unstaged"`, or a ref range (e.g. `"HEAD~3..HEAD"`) |
 | `title`       | No       | Title displayed in the review UI |
 | `description` | No       | Description of the changes |
 | `reasoning`   | No       | What the agent was trying to accomplish; shown as the session subtitle |
@@ -221,7 +221,7 @@ Returns a structured `DiffSet` as JSON. Runs locally — no server needed.
 
 | Parameter  | Required | Description |
 |------------|----------|-------------|
-| `diff_ref` | Yes      | Same options as `open_review` |
+| `diff_ref` | No       | Same options and default as `open_review` |
 
 ### `analyze_diff`
 
@@ -229,7 +229,7 @@ Returns a `ReviewBriefing`: summary, file triage, impact detection, complexity s
 
 | Parameter  | Required | Description |
 |------------|----------|-------------|
-| `diff_ref` | Yes      | Same options as `open_review` |
+| `diff_ref` | No       | Same options and default as `open_review` |
 
 ### `annotate`
 

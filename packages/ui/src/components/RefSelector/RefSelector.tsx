@@ -16,7 +16,7 @@ export function RefSelector() {
   const filterRef = useRef<HTMLInputElement>(null);
 
   const { activeSessionId, compareRef, setCompareRef, metadata } = useReviewStore();
-  const { isAvailable, fetchRefs, compareAgainst } = useHttpApi();
+  const { isAvailable, fetchRefs, compareAgainst, resetCompare } = useHttpApi();
 
   const displayRef = compareRef ?? "working copy";
 
@@ -52,7 +52,7 @@ export function RefSelector() {
     if (!activeSessionId) return;
     setComparing(true);
     setError(null);
-    const result = await compareAgainst(activeSessionId, "working-copy");
+    const result = await resetCompare(activeSessionId);
     if (result.ok) {
       setCompareRef(null);
       setIsOpen(false);
@@ -60,7 +60,7 @@ export function RefSelector() {
       setError(result.error ?? "Reset failed");
     }
     setComparing(false);
-  }, [activeSessionId, compareAgainst, setCompareRef]);
+  }, [activeSessionId, resetCompare, setCompareRef]);
 
   // Close on click outside
   useEffect(() => {

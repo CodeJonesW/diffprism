@@ -17,12 +17,16 @@ Every tool that acts on an open review takes `session_id` and `repo_path`, and r
 
 There is no module-level "last session" and no "most recent session across all repos" fallback. That fallback is how an agent working in one repo used to post findings into another.
 
+## Diff scope
+
+`open_review`, `get_diff` and `analyze_diff` share one `diff_ref` parameter — `DIFF_REF_DESCRIPTION` from core — and default to `DEFAULT_DIFF_REF` (`"working-copy"`), the same as CLI `review` and the dashboard. Self-review with `analyze_diff` and the human review it leads to therefore cover the same changes. The pre-commit hook alone uses `COMMIT_GATE_DIFF_REF` (`"staged"`), because a commit contains only the index.
+
 ## Tools
 
 ### Opening and deciding
 
 #### `open_review`
-- **Params:** `diff_ref` (required), `title`, `description`, `reasoning`, `annotations`, `wait` (default `true`), `timeout_ms` (default `DEFAULT_WAIT_MS`, 600000)
+- **Params:** `diff_ref` (default `DEFAULT_DIFF_REF`, `"working-copy"`), `title`, `description`, `reasoning`, `annotations`, `wait` (default `true`), `timeout_ms` (default `DEFAULT_WAIT_MS`, 600000)
 - **Behavior:** Calls `ensureServer()` then `submitReviewToServer()`. Blocks until the reviewer decides and returns the `ReviewResult`. With `wait: false`, returns `{ status: "open", sessionId }` at once. If the wait runs out, `submitReviewToServer` throws `ReviewTimeoutError` and the tool returns `{ status: "timed_out", sessionId }` — the review is still open.
 - **Rejects PR refs.** Pull requests are opened by `diffprism review <PR>` or the dashboard; agents then participate with the PR tools.
 - **One session per repo:** a second open for the same repo reuses the session, keeps its annotations, switches it to the new ref, and raises its new-changes signal.
@@ -40,11 +44,11 @@ There is no module-level "last session" and no "most recent session across all r
 ### Headless analysis (no server)
 
 #### `get_diff`
-- **Params:** `diff_ref` (required)
+- **Params:** `diff_ref` (default `"working-copy"`)
 - **Behavior:** Runs `getDiff()` locally and returns the `DiffSet`.
 
 #### `analyze_diff`
-- **Params:** `diff_ref` (required)
+- **Params:** `diff_ref` (default `"working-copy"`)
 - **Behavior:** Runs `getDiff()` + `analyze()` locally and returns the `ReviewBriefing`.
 
 ### Working in an open review

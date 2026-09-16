@@ -52,5 +52,28 @@ export function useHttpApi() {
     [httpPort],
   );
 
-  return { isAvailable, fetchRefs, compareAgainst };
+  /** Return to the ref the session was opened with — the server knows which. */
+  const resetCompare = useCallback(
+    async (sessionId: string): Promise<CompareResult> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(
+          `http://localhost:${httpPort}/api/reviews/${sessionId}/compare`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ reset: true }),
+          },
+        );
+        if (response.ok) return { ok: true };
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        return { ok: false, error: body.error ?? "Reset failed" };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  return { isAvailable, fetchRefs, compareAgainst, resetCompare };
 }

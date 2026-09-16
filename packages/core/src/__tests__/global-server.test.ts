@@ -1934,3 +1934,66 @@ describe("session identity", () => {
     });
   });
 });
+
+// ─── #164: the server owns the default scope and the reset target ───
+
+describe("diff scope", () => {
+  beforeEach(() => {
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+    vi.mocked(git.getDiff).mockReturnValue({
+      diffSet: { baseRef: "HEAD", headRef: "working-copy", files: [] },
+      rawDiff: "",
+    });
+  });
+
+  it("reports its default scope so the dashboard doesn't keep a copy", async () => {
+    handle = await startGlobalServer({ silent: true });
+    const status = (await (await fetch(`http://localhost:${handle.httpPort}/api/status`)).json()) as {
+      defaultDiffRef?: string;
+    };
+    expect(status.defaultDiffRef).toBe("working-copy");
+  });
+
+  it("opens a project on the default scope when none is given", async () => {
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const opened = await fetch(`${baseUrl}/api/projects/open`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectPath: tmpDir }),
+    });
+    const { sessionId } = (await opened.json()) as { sessionId: string };
+
+    const summary = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as SessionSummary;
+    expect(summary.diffRef).toBe("working-copy");
+  });
+
+  it("resets a comparison to the ref the session was opened with, not a guess", async () => {
+    // The UI used to reset to "working-copy" unconditionally — for a staged
+    // commit-gate review that shows edits the commit doesn't include.
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/repo", diffRef: "staged" }),
+    });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+
+    const compare = (body: unknown) =>
+      fetch(`${baseUrl}/api/reviews/${sessionId}/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+    await compare({ ref: "HEAD~1..HEAD" });
+    const reset = await compare({ reset: true });
+    expect(reset.ok).toBe(true);
+
+    const summary = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as SessionSummary;
+    expect(summary.diffRef).toBe("staged");
+  });
+});

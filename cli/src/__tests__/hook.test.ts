@@ -18,7 +18,8 @@ vi.mock("node:child_process", () => ({
 }));
 
 // The gate imports these at module level; nothing here exercises them.
-vi.mock("@diffprism/core", () => {
+vi.mock("@diffprism/core", async () => {
+  const actual = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
   class ReviewTimeoutError extends Error {
     readonly sessionId: string;
     readonly waitedMs: number;
@@ -28,7 +29,12 @@ vi.mock("@diffprism/core", () => {
       this.waitedMs = waitedMs;
     }
   }
-  return { ensureServer: vi.fn(), submitReviewToServer: vi.fn(), ReviewTimeoutError };
+  return {
+    ensureServer: vi.fn(),
+    submitReviewToServer: vi.fn(),
+    ReviewTimeoutError,
+    COMMIT_GATE_DIFF_REF: actual.COMMIT_GATE_DIFF_REF,
+  };
 });
 
 vi.mock("@diffprism/git", () => ({
@@ -372,6 +378,22 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
 
     expect(await run()).toBe(0);
     expect(adviceBeforeWait).toBe(true);
+  });
+
+  it("reviews staged changes only, unlike interactive reviews (#164)", async () => {
+    vi.mocked(submitReviewToServer).mockResolvedValue({
+      result: { decision: "approved", comments: [] },
+      sessionId: "s1",
+    });
+
+    await run();
+
+    expect(vi.mocked(getDiff)).toHaveBeenCalledWith("staged", expect.anything());
+    expect(vi.mocked(submitReviewToServer)).toHaveBeenCalledWith(
+      expect.anything(),
+      "staged",
+      expect.objectContaining({ diffRef: "staged" }),
+    );
   });
 
   it("blocks with retry advice, not a bare error, when the wait runs out", async () => {
