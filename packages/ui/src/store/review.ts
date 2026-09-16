@@ -93,7 +93,10 @@ export interface ReviewState {
   setFocusedHunkIndex: (index: number | null) => void;
   setCompareRef: (ref: string | null) => void;
   addAnnotation: (annotation: Annotation) => void;
+  /** The reviewer dismissed an annotation: apply it and persist it to the server. */
   dismissAnnotation: (annotationId: string) => void;
+  /** The server reports a dismissal it already persisted: apply it, never write back. */
+  applyAnnotationDismissed: (annotationId: string) => void;
   updateAnnotation: (annotation: Annotation) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
@@ -400,12 +403,16 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     }));
   },
 
-  dismissAnnotation: (annotationId: string) => {
+  applyAnnotationDismissed: (annotationId: string) => {
     set((state) => ({
       annotations: state.annotations.map((a) =>
         a.id === annotationId ? { ...a, dismissed: true } : a,
       ),
     }));
+  },
+
+  dismissAnnotation: (annotationId: string) => {
+    get().applyAnnotationDismissed(annotationId);
 
     // Persist dismissal to server (fire-and-forget)
     const params = new URLSearchParams(window.location.search);

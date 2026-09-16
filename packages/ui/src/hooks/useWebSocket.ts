@@ -32,7 +32,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
     updateSession,
     removeSession,
     addAnnotation,
-    dismissAnnotation,
+    applyAnnotationDismissed,
     updateAnnotation,
   } = useReviewStore();
 
@@ -94,7 +94,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           addAnnotation(message.payload);
           onAnnotationAddedRef.current?.(message.payload as Annotation);
         } else if (message.type === "annotation:dismissed") {
-          dismissAnnotation(message.payload.annotationId);
+          applyAnnotationDismissed(message.payload.annotationId);
         } else if (message.type === "annotation:updated") {
           updateAnnotation(message.payload);
         }
@@ -115,7 +115,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
       ws.close();
       wsRef.current = null;
     };
-  }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession, addAnnotation, dismissAnnotation, updateAnnotation]);
+  }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession, addAnnotation, applyAnnotationDismissed, updateAnnotation]);
 
   const sendResult = useCallback((result: ReviewResult) => {
     const ws = wsRef.current;
