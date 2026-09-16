@@ -23,17 +23,33 @@ export function getBuildInfo(): BuildInfo {
   let dir = path.dirname(fileURLToPath(import.meta.url));
 
   while (dir !== path.dirname(dir)) {
-    if (fs.existsSync(path.join(dir, "package.json"))) {
-      if (fs.existsSync(path.join(dir, ".git"))) {
-        return { dev: true, root: dir };
-      }
-      // Keep walking: in a monorepo the first manifest found may be a
-      // workspace package, with the checkout root further up.
+    const manifest = path.join(dir, "package.json");
+    if (fs.existsSync(manifest) && isOwnManifest(manifest)) {
+      // Decide it HERE and nowhere else. Walking further up finds unrelated
+      // repositories that happen to sit above the install — nvm is itself a
+      // git clone with its own package.json, and a version-controlled home
+      // directory or dotfiles repo does the same — which made every published
+      // release label itself a dev build.
+      return fs.existsSync(path.join(dir, ".git"))
+        ? { dev: true, root: dir }
+        : { dev: false, root: null };
     }
     dir = path.dirname(dir);
   }
 
   return { dev: false, root: null };
+}
+
+/** True when this manifest is diffprism's own, not some package above it. */
+function isOwnManifest(manifestPath: string): boolean {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      name?: string;
+    };
+    return manifest.name === "diffprism";
+  } catch {
+    return false;
+  }
 }
 
 /** A version string that admits when it is not a release. */
