@@ -6,7 +6,7 @@ import type { Annotation } from "../types";
 
 function thread(over: Partial<Annotation> = {}): Annotation {
   return {
-    id: "a1", sessionId: "s1", file: "a.ts", line: 1, body: "Why a Map here?", type: "question",
+    id: "a1", sessionId: "s1", file: "a.ts", line: 1, side: "new", body: "Why a Map here?", type: "question",
     confidence: 1, category: "other", source: { agent: "security-reviewer" }, createdAt: 1, ...over,
   };
 }

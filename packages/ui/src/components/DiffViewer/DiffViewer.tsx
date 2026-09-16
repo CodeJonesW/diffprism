@@ -10,6 +10,7 @@ import {
   isNormal,
 } from "react-diff-view";
 import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
+import type { DiffSide } from "../../types";
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
@@ -100,6 +101,11 @@ function getLineFromChange(change: ChangeData): number {
   if (isDelete(change)) return change.lineNumber;
   if (isNormal(change)) return change.newLineNumber;
   return 0;
+}
+
+/** A deleted line is numbered in the old file; everything else in the new one. */
+function getSideFromChange(change: ChangeData): DiffSide {
+  return isDelete(change) ? "old" : "new";
 }
 
 /**
@@ -264,6 +270,18 @@ export function DiffViewer() {
     return map;
   }, [parsedFiles]);
 
+  // Reverse map: changeKey → which side of the diff the line is on
+  const keyToSideMap = useMemo(() => {
+    const map: Record<string, DiffSide> = {};
+    if (parsedFiles.length === 0) return map;
+    for (const hunk of parsedFiles[0].hunks) {
+      for (const change of hunk.changes) {
+        map[getChangeKey(change)] = getSideFromChange(change);
+      }
+    }
+    return map;
+  }, [parsedFiles]);
+
   // Comments for the currently selected file
   const fileComments = useMemo(() => {
     if (!selectedFile) return [];
@@ -391,7 +409,7 @@ export function DiffViewer() {
                 placeholder="Start another conversation on this line…"
                 submitLabel="Comment"
                 onSubmit={async (body) => {
-                  const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, body });
+                  const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, side: keyToSideMap[changeKey], body });
                   if (result.ok) setActiveCommentKey(null);
                   return result;
                 }}
@@ -432,7 +450,7 @@ export function DiffViewer() {
               placeholder="Ask the agent about this line…"
               submitLabel="Comment"
               onSubmit={async (body) => {
-                const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, body });
+                const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, side: keyToSideMap[activeCommentKey], body });
                 if (result.ok) setActiveCommentKey(null);
                 return result;
               }}
@@ -472,6 +490,7 @@ export function DiffViewer() {
     activeCommentKey,
     lineToKeyMap,
     keyToLineMap,
+    keyToSideMap,
     addComment,
     updateComment,
     deleteComment,

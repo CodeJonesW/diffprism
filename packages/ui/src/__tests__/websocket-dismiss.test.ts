@@ -22,7 +22,7 @@ class FakeSocket {
 }
 
 const annotation: Annotation = {
-  id: "a1", sessionId: "s1", file: "a.ts", line: 1, body: "Why?", type: "question",
+  id: "a1", sessionId: "s1", file: "a.ts", line: 1, side: "new", body: "Why?", type: "question",
   confidence: 1, category: "other", source: { agent: "reviewer" }, createdAt: 1,
 };
 

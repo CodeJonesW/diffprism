@@ -4,7 +4,7 @@ import type { Annotation } from "../types.js";
 
 function thread(over: Partial<Annotation> = {}): Annotation {
   return {
-    id: "a1", sessionId: "s1", file: "a.ts", line: 1, body: "x", type: "question",
+    id: "a1", sessionId: "s1", file: "a.ts", line: 1, side: "new", body: "x", type: "question",
     confidence: 1, category: "other", source: { agent: "reviewer" }, createdAt: 1, ...over,
   };
 }

@@ -6,7 +6,7 @@ import type { Annotation } from "../types";
 
 function annotation(over: Partial<Annotation> = {}): Annotation {
   return {
-    id: "a", sessionId: "s", file: "src/cache.ts", line: 4, body: "x", type: "finding",
+    id: "a", sessionId: "s", file: "src/cache.ts", line: 4, side: "new", body: "x", type: "finding",
     confidence: 1, category: "security", source: { agent: "security-reviewer" }, createdAt: 1, ...over,
   };
 }

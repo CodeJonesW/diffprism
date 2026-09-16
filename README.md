@@ -89,6 +89,8 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 
 PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread.
 
+When you're done, **Approve**, **Request changes** or **Comment** from the bar at the bottom: DiffPrism posts it to GitHub as a pull request review. Your threads are a conversation with the agent, so none of them goes to GitHub unless you tick it; a ticked thread posts your opening message as an inline review comment. The token comes from `GITHUB_TOKEN`, `gh auth token`, or `~/.diffprism/config.json`.
+
 ## Choosing a scope
 
 Every review — CLI, dashboard, and the MCP tools — defaults to the **working copy**.
