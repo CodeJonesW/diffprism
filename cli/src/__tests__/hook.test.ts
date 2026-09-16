@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 
@@ -18,16 +18,27 @@ vi.mock("node:child_process", () => ({
 }));
 
 // The gate imports these at module level; nothing here exercises them.
-vi.mock("@diffprism/core", () => ({
-  ensureServer: vi.fn(),
-  submitReviewToServer: vi.fn(),
-}));
+vi.mock("@diffprism/core", () => {
+  class ReviewTimeoutError extends Error {
+    readonly sessionId: string;
+    readonly waitedMs: number;
+    constructor(sessionId: string, waitedMs: number) {
+      super("timed out");
+      this.sessionId = sessionId;
+      this.waitedMs = waitedMs;
+    }
+  }
+  return { ensureServer: vi.fn(), submitReviewToServer: vi.fn(), ReviewTimeoutError };
+});
 
 vi.mock("@diffprism/git", () => ({
   getDiff: vi.fn(),
 }));
 
+import { ensureServer, submitReviewToServer, ReviewTimeoutError } from "@diffprism/core";
+import { getDiff } from "@diffprism/git";
 import {
+  preCommitHook,
   printFeedback,
   removeMarkedBlock,
   resolveMinLines,
@@ -302,5 +313,104 @@ describe("printFeedback", () => {
     printFeedback({ decision: "changes_requested", comments: [], summary: "   " });
 
     expect(captured()).toContain("no summary and no inline comments");
+  });
+});
+
+describe("preCommitHook while waiting for a decision (#161)", () => {
+  class Exit extends Error {
+    constructor(readonly code: number | undefined) {
+      super(`exit ${code}`);
+    }
+  }
+
+  let errors: string[];
+
+  beforeEach(() => {
+    errors = [];
+    vi.mocked(console.error).mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(" "));
+    });
+    vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Exit(code);
+    }) as never);
+    mockGit.mockImplementation(() => {
+      throw new Error("no config");
+    });
+    vi.mocked(getDiff).mockReturnValue({
+      diffSet: {
+        baseRef: "HEAD",
+        headRef: "staged",
+        files: [{ path: "a.ts", status: "modified", hunks: [], language: "typescript", binary: false, additions: 200, deletions: 0 }],
+      },
+      rawDiff: "diff",
+    } as never);
+    vi.mocked(ensureServer).mockResolvedValue({ httpPort: 1, wsPort: 2, pid: 3, startedAt: 4 });
+  });
+
+  afterEach(() => {
+    vi.mocked(process.exit).mockRestore();
+  });
+
+  async function run(): Promise<number | undefined> {
+    try {
+      await preCommitHook();
+    } catch (err) {
+      if (err instanceof Exit) return err.code;
+      throw err;
+    }
+    return undefined;
+  }
+
+  it("says the review outlives the command before it starts waiting", async () => {
+    // A shell timeout can end the hook with SIGKILL, which no handler sees,
+    // so the advice has to be on screen before the wait — not only after it.
+    let adviceBeforeWait = false;
+    vi.mocked(submitReviewToServer).mockImplementation(async () => {
+      adviceBeforeWait = errors.some((line) => line.includes("run git commit again"));
+      return { result: { decision: "approved", comments: [] }, sessionId: "s1" };
+    });
+
+    expect(await run()).toBe(0);
+    expect(adviceBeforeWait).toBe(true);
+  });
+
+  it("blocks with retry advice, not a bare error, when the wait runs out", async () => {
+    vi.mocked(submitReviewToServer).mockRejectedValue(new ReviewTimeoutError("s1", 600_000));
+
+    expect(await run()).toBe(1);
+    const last = errors.at(-1) ?? "";
+    expect(last).toContain("no decision after 600s");
+    expect(last).toContain("run git commit again");
+  });
+
+  it("repeats the advice if it is interrupted mid-review", async () => {
+    vi.mocked(submitReviewToServer).mockImplementation(() => new Promise(() => {}));
+
+    const pending = run();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    let code: number | undefined;
+    try {
+      process.emit("SIGTERM", "SIGTERM");
+    } catch (err) {
+      if (err instanceof Exit) code = err.code;
+      else throw err;
+    }
+    void pending;
+
+    expect(code).toBe(1);
+    expect(errors.some((line) => line.includes("Interrupted (SIGTERM)") && line.includes("run git commit again"))).toBe(true);
+  });
+
+  it("stops listening for interrupts once a decision arrives", async () => {
+    const before = process.listenerCount("SIGTERM");
+    vi.mocked(submitReviewToServer).mockResolvedValue({
+      result: { decision: "approved", comments: [] },
+      sessionId: "s1",
+    });
+
+    await run();
+
+    expect(process.listenerCount("SIGTERM")).toBe(before);
   });
 });

@@ -11,6 +11,7 @@ You have 12 DiffPrism MCP tools. Use the analysis tools proactively; open a huma
 
 - **One review per repo.** Opening a review for a repo that already has one updates it — new diff, same session, existing annotations kept. A git worktree is its own repo.
 - **\`open_review\` waits for the decision.** It blocks until the reviewer approves, requests changes, or dismisses, and returns their \`ReviewResult\`. Pass \`wait: false\` to get the session id back immediately instead.
+- **A decision stands while its diff is unchanged.** If your wait is cut short, open the same review again or re-run the same commit and you get the decision the reviewer already gave — not a second review request. Change the diff and it becomes a new question.
 - **Tools act on the review for your repo.** Every tool that works on an open review takes \`session_id\` or \`repo_path\`, and otherwise uses the repo you are running in. If that is ambiguous the tool says so and lists the sessions — pass \`session_id\`. It never guesses.
 
 ## Workflow 1: Self-Review Before Human Review
@@ -44,9 +45,19 @@ This should happen automatically after significant changes. You don't need the u
    - **\`changes_requested\`** — read the \`summary\` and \`comments\`, make the fixes, and offer to re-review.
    - **\`dismissed\`** — the reviewer closed it without deciding. Ask before continuing.
    - If \`postReviewAction\` is \`"commit"\` — commit the changes. If \`"commit_and_pr"\` — commit and open a PR.
-4. If it returns \`status: "timed_out"\`, the review is still open. Check again with \`mcp__diffprism__get_review_result\` rather than opening another.
+4. If it returns \`status: "timed_out"\`, the reviewer is still reading. Keep waiting with \`mcp__diffprism__get_review_result\` (\`wait: true\`).
+
+**While a review is open, wait for it.** Don't ask the user whether they've finished, and don't move on to other work — their decision is the answer, and it arrives through the tool. Asking in the terminal splits the conversation in two and the decision gets lost between them.
 
 To add findings while a review is open, call \`mcp__diffprism__annotate\`.
+
+## Commit gate
+
+If the repo has the DiffPrism pre-commit gate installed (\`diffprism hook install\`), a \`git commit\` of a large enough change opens a review and **waits for a human**.
+
+- Run \`git commit\` with a shell timeout long enough for someone to read the change — up to 600000 ms — not the short default.
+- If the commit is interrupted, or reports no decision, the review is still open. Once the reviewer decides, run the **same** \`git commit\` again: their decision is picked up immediately. Don't change the staged files first — that makes it a new question.
+- If it's blocked with changes requested, the reviewer's summary and comments are printed. Address them, stage, and commit again.
 
 ## Workflow 3: PR Review
 
@@ -92,6 +103,7 @@ A PR review and a working-copy review can be open for the same clone at once. If
 - **Self-review is proactive** — run \`analyze_diff\` after significant changes without being asked.
 - **Human review requires explicit request** — only call \`open_review\` when the user asks (\`/review\`, "review my changes", or as part of a defined workflow like PR creation).
 - **Don't open a second review to check on the first** — use \`get_review_result\`.
+- **Don't ask the user about a review that's open** — wait for the decision; it is their answer.
 - **Annotate generously** — the more context you provide, the faster the reviewer can decide.
 - **PR review is conversational** — when a PR is open, use the PR tools to answer questions and post findings without being asked to use specific tools.
 `;

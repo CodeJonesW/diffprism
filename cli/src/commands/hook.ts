@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { ensureServer, submitReviewToServer } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, ReviewTimeoutError } from "@diffprism/core";
 import type { ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 
@@ -13,6 +13,14 @@ import { getDiff } from "@diffprism/git";
  * gate because you also lose the belief that it ran.
  */
 const DEFAULT_MIN_LINES = 120;
+
+/**
+ * What to do when the wait ends without a decision. Safe advice because the
+ * server keeps a verdict for as long as the staged diff it answered is
+ * unchanged — re-running the commit picks it up instead of asking again.
+ */
+const RETRY_ADVICE =
+  "The review stays open in DiffPrism — once the reviewer decides, run git commit again to pick up the decision. Don't open another review or change the staged files meanwhile.";
 
 const MARKER_START = "# >>> diffprism >>>";
 const MARKER_END = "# <<< diffprism <<<";
@@ -52,6 +60,17 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
   console.error(
     `${changedLines} staged lines (gate at ${minLines}) — opening DiffPrism review...`,
   );
+  // Said up front, not only on interruption: a shell timeout can end this
+  // process with SIGKILL, which no handler sees. Whoever ran `git commit` —
+  // usually an agent — needs to know the review outlives this command, or it
+  // fills the silence by asking the user something the review already asks.
+  console.error(`Waiting for a decision in the browser. ${RETRY_ADVICE}`);
+
+  const stopWaiting = onInterrupt((signal) => {
+    console.error("");
+    console.error(`Interrupted (${signal}) before a decision. ${RETRY_ADVICE}`);
+    process.exit(1);
+  });
 
   let review: ReviewResult | null = null;
   try {
@@ -63,9 +82,15 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
     });
     review = result;
   } catch (err) {
+    stopWaiting();
+    if (err instanceof ReviewTimeoutError) {
+      fail(`Commit blocked: no decision after ${Math.round(err.waitedMs / 1000)}s. ${RETRY_ADVICE}`);
+      return;
+    }
     fail(`DiffPrism could not run the review: ${message(err)}`);
     return;
   }
+  stopWaiting();
 
   const decision = review?.decision;
 
@@ -224,6 +249,22 @@ export function removeMarkedBlock(contents: string): string {
 }
 
 // ─── helpers ───
+
+/**
+ * Run `handler` if the process is asked to stop while waiting. Returns a
+ * function that removes the listeners once the wait is over.
+ */
+function onInterrupt(handler: (signal: NodeJS.Signals) => void): () => void {
+  const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+  for (const signal of signals) {
+    process.once(signal, handler);
+  }
+  return () => {
+    for (const signal of signals) {
+      process.removeListener(signal, handler);
+    }
+  };
+}
 
 export function resolveMinLines(flags: HookFlags, cwd: string): number {
   const fromFlag = flags.minLines ? Number.parseInt(flags.minLines, 10) : NaN;

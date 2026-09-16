@@ -192,6 +192,8 @@ Opens a review of local changes and **blocks until the reviewer decides**, retur
 | `wait`        | No       | Wait for the decision (default `true`). `false` returns `{ status: "open", sessionId }` at once. |
 | `timeout_ms`  | No       | How long to wait (default 600000). On expiry returns `{ status: "timed_out", sessionId }`; the review stays open. |
 
+A decision stands while the diff it answered is unchanged, so calling `open_review` again with the same diff after a timeout returns the decision already given rather than asking for a new one.
+
 ### `get_review_result`
 
 Checks the decision on a review that is already open — after `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`.

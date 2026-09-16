@@ -19,7 +19,17 @@ import { isPrRef } from "@diffprism/github";
 
 declare const DIFFPRISM_VERSION: string;
 
-/** How long open_review waits for a decision unless told otherwise. */
+/**
+ * How long open_review waits for a decision unless told otherwise.
+ *
+ * Ten minutes, so that open_review — not the client — decides when the wait
+ * ends. Claude Code aborts a stdio tool call that sends nothing for its idle
+ * window (30 minutes by default), and a per-server `timeout` is a hard limit
+ * people commonly set to ten minutes. If the client cuts the call off, the
+ * agent gets a bare error with no session id and tends to fill the gap by
+ * asking the user something; if we end it, the agent gets `timed_out` with the
+ * session id and instructions to keep waiting (#161).
+ */
 export const DEFAULT_WAIT_MS = 600_000;
 
 type McpToolResult = {
@@ -242,7 +252,7 @@ export async function startMcpServer(): Promise<void> {
             return jsonResult({
               status: "timed_out",
               sessionId: err.sessionId,
-              message: `No decision after ${Math.round(err.waitedMs / 1000)}s. The review is still open — check again with get_review_result (session_id: ${err.sessionId}).`,
+              message: `No decision after ${Math.round(err.waitedMs / 1000)}s. The reviewer may still be reading — the review is open in their browser. Wait with get_review_result (session_id: ${err.sessionId}, wait: true). Don't ask the user about it in the meantime: their decision is the answer. Calling open_review again with an unchanged diff is also safe — it returns a decision already given.`,
             });
           }
           throw err;
@@ -295,7 +305,8 @@ export async function startMcpServer(): Promise<void> {
         return jsonResult({
           status: "pending",
           sessionId,
-          message: "Still no decision; the review remains open.",
+          message:
+            "Still no decision; the review remains open in the reviewer's browser. Call get_review_result with wait: true again rather than asking the user — their decision is the answer.",
         });
       }),
   );
