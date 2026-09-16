@@ -181,8 +181,22 @@ diffprism server status             # Check server status
 diffprism server stop               # Stop the server
 diffprism hook install              # Gate commits on a review
 diffprism hook uninstall            # Remove the gate
+diffprism feedback                  # Share feedback as a prefilled GitHub issue
+diffprism feedback --bug            # Report a bug, including the last error
 diffprism teardown                  # Remove configuration
 ```
+
+## Feedback
+
+```bash
+diffprism feedback                 # Share an idea or what's working
+diffprism feedback --bug           # Report a bug
+diffprism feedback -m "…" --print  # Start with text; print the URL instead of opening it
+```
+
+Both open a **prefilled GitHub issue** in your browser — DiffPrism version, OS, Node, and for a bug the last error it hit, with your home directory replaced by `~`. Nothing is sent automatically and DiffPrism collects no telemetry: you read and edit the issue, then submit it or don't. The dashboard has a **Send feedback** link that does the same.
+
+When a command fails, it says how to report it, and keeps the error in `~/.diffprism/last-error.json` so `--bug` can include it.
 
 ## Development
 

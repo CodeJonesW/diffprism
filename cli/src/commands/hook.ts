@@ -1,7 +1,14 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { ensureServer, submitReviewToServer, ReviewTimeoutError, COMMIT_GATE_DIFF_REF } from "@diffprism/core";
+import {
+  ensureServer,
+  submitReviewToServer,
+  ReviewTimeoutError,
+  COMMIT_GATE_DIFF_REF,
+  recordError,
+  REPORT_HINT,
+} from "@diffprism/core";
 import type { ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 
@@ -46,7 +53,8 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
       0,
     );
   } catch (err) {
-    fail(`Could not read the staged diff: ${message(err)}`);
+    recordError("hook pre-commit", err);
+    fail(`Could not read the staged diff: ${message(err)}\n${REPORT_HINT}`);
     return;
   }
 
@@ -88,7 +96,8 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
       fail(`Commit blocked: no decision after ${Math.round(err.waitedMs / 1000)}s. ${RETRY_ADVICE}`);
       return;
     }
-    fail(`DiffPrism could not run the review: ${message(err)}`);
+    recordError("hook pre-commit", err);
+    fail(`DiffPrism could not run the review: ${message(err)}\n${REPORT_HINT}`);
     return;
   }
   stopWaiting();

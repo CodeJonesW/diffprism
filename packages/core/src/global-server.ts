@@ -37,6 +37,7 @@ import {
 } from "./ui-server.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { DEFAULT_DIFF_REF } from "./diff-scope.js";
+import { buildFeedbackUrl, readLastError } from "./feedback.js";
 import { watcherPollDelay, DEFAULT_WATCH_SCHEDULE } from "./watch-schedule.js";
 import type { WatchScheduleOptions } from "./watch-schedule.js";
 import { createDiffPoller } from "./diff-poller.js";
@@ -631,6 +632,19 @@ async function handleApiRequest(
       // The dashboard reads its default scope from here rather than keeping
       // its own copy — Vite can't import @diffprism/core, and a copy drifts.
       defaultDiffRef: DEFAULT_DIFF_REF,
+    });
+    return true;
+  }
+
+  // GET /api/feedback?kind=feedback|bug — a prefilled GitHub issue URL
+  //
+  // Built here because the UI can't import core. Nothing is sent: the dashboard
+  // links to the URL and the user submits the issue themselves, if at all.
+  if (method === "GET" && url === "/api/feedback") {
+    const parsed = new URL(req.url ?? "/", "http://localhost");
+    const kind = parsed.searchParams.get("kind") === "bug" ? "bug" : "feedback";
+    jsonResponse(res, 200, {
+      url: buildFeedbackUrl({ kind, error: kind === "bug" ? readLastError() : null }),
     });
     return true;
   }

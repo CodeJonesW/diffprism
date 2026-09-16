@@ -1,7 +1,5 @@
 import open from "open";
-import { isServerAlive, ensureServer } from "@diffprism/core";
-
-declare const DIFFPRISM_VERSION: string;
+import { isServerAlive, ensureServer, currentVersion } from "@diffprism/core";
 
 function formatUptime(seconds: number): string {
   if (seconds < 60) return `${Math.floor(seconds)}s`;
@@ -27,7 +25,7 @@ async function fetchStatus(httpPort: number): Promise<StatusResponse> {
 }
 
 function printStatus(status: StatusResponse, httpPort: number): void {
-  const version = typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev";
+  const version = currentVersion();
 
   console.log(`\nDiffPrism v${version}\n`);
   console.log(`  Server:    running (PID ${status.pid}, uptime ${formatUptime(status.uptime)})`);

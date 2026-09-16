@@ -1,6 +1,7 @@
 import { SessionSidebar } from "../SessionSidebar";
 import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
+import { FeedbackLink } from "../FeedbackLink";
 import { PrInput } from "../PrInput";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
@@ -248,16 +249,17 @@ export function Dashboard({
           onOpenProject={() => setDetailView("open-project")}
           onReviewPr={() => setDetailView("review-pr")}
         />
-        {/* Notification toggle at bottom of sidebar */}
-        {onToggleNotifications && notificationPermission && (
-          <div className="px-3 py-2 border-t border-border border-r border-r-border bg-surface">
+        {/* Sidebar footer: notifications and feedback */}
+        <div className="px-3 py-2 border-t border-border border-r border-r-border bg-surface space-y-1.5">
+          {onToggleNotifications && notificationPermission && (
             <NotificationToggle
               permission={notificationPermission}
               enabled={notificationsEnabled ?? false}
               onToggle={onToggleNotifications}
             />
-          </div>
-        )}
+          )}
+          <FeedbackLink />
+        </div>
       </div>
 
       {/* Detail pane — review or empty state */}

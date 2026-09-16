@@ -37,6 +37,7 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 | `packages/mcp-server/src/index.ts` | MCP server — 12 tools, all routed through global server; `resolveTarget()` picks the session |
 | `cli/src/commands/setup.ts` | `diffprism setup` — one-command Claude Code integration |
 | `cli/src/commands/hook.ts` | `diffprism hook` — pre-commit review gate, plus its install/uninstall |
+| `packages/core/src/feedback.ts` | Prefilled GitHub-issue feedback and bug reports; the last-error record they include |
 | `cli/src/commands/server.ts` | `diffprism server` — start/status/stop global server |
 | `cli/src/templates/skill.ts` | Embedded `/review` skill content (SKILL.md template) |
 | `cli/bin/diffprism.mjs` | Executable shim (tsx → src/index.ts) |
@@ -52,6 +53,7 @@ pnpm cli serve                                  # Start MCP server
 pnpm cli setup                                  # Configure Claude Code integration
 pnpm cli server                                 # Start global multi-session server
 pnpm cli hook install                           # Gate commits in this repo on a review
+pnpm cli feedback --bug --print                 # Print a prefilled bug-report issue URL
 pnpm cli setup -- --global                      # Global setup (no git repo needed)
 ```
 
