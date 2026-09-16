@@ -9,6 +9,7 @@ import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
 import { defaultAction } from "./commands/default.js";
 import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
+import { describeVersion } from "@diffprism/core";
 
 declare const DIFFPRISM_VERSION: string;
 
@@ -17,7 +18,11 @@ const program = new Command();
 program
   .name("diffprism")
   .description("Local-first code review tool for agent-generated changes")
-  .version(typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev");
+  .version(
+    describeVersion(
+      typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev",
+    ),
+  );
 
 program.action(defaultAction);
 

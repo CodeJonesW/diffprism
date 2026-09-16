@@ -43,6 +43,8 @@ export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
 export { startGlobalServer } from "./global-server.js";
 export { ensureServer, submitReviewToServer } from "./server-client.js";
+export { getBuildInfo, describeVersion } from "./build-info.js";
+export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,
   SubmitReviewOptions,

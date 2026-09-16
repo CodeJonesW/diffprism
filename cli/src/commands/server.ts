@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { startGlobalServer, readServerFile, isServerAlive } from "@diffprism/core";
+import { startGlobalServer, readServerFile, isServerAlive, getBuildInfo } from "@diffprism/core";
 import { setup, isGlobalSetupDone } from "./setup.js";
 
 interface ServerFlags {
@@ -154,6 +154,10 @@ export async function serverStatus(): Promise<void> {
     console.log(`  PID:      ${status.pid}`);
     console.log(`  Sessions: ${status.sessions}`);
     console.log(`  Uptime:   ${Math.floor(status.uptime)}s`);
+    const build = getBuildInfo();
+    if (build.dev) {
+      console.log(`  Build:    dev — ${build.root}`);
+    }
 
     // List sessions if any
     if (status.sessions > 0) {
