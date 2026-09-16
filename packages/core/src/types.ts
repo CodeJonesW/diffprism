@@ -359,7 +359,15 @@ export interface GlobalServerOptions {
   wsPort?: number; // default 24681
   silent?: boolean;
   dev?: boolean;
-  pollInterval?: number; // ms, default 2000
+  pollInterval?: number; // ms, default 2000 — while a client is viewing the session
+  /** ms before the first poll of a session nobody is viewing; default 30000. Backs off from here. */
+  unviewedPollInterval?: number;
+  /** ms ceiling for an unviewed session's back-off; default 300000. */
+  unviewedPollMaxInterval?: number;
+  /** ms a session can go unviewed, unwaited-on and unchanged before it expires; default 24h. */
+  idleSessionTtl?: number;
+  /** ms between expiry sweeps; default 60000. */
+  cleanupInterval?: number;
   openBrowser?: boolean; // default true — set false for daemon auto-start
 }
 

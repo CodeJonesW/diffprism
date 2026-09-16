@@ -1997,3 +1997,157 @@ describe("diff scope", () => {
     expect(summary.diffRef).toBe("staged");
   });
 });
+
+// ─── #165: bounded watcher cost ───
+
+describe("watcher cost", () => {
+  let rawDiff: string;
+
+  beforeEach(() => {
+    rawDiff = "diff A";
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+    vi.mocked(git.getCurrentBranch).mockReturnValue("main");
+    vi.mocked(git.getDiff).mockImplementation(() => ({
+      diffSet: { baseRef: "HEAD", headRef: "working-copy", files: [] },
+      rawDiff,
+    }));
+  });
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function openWatched(baseUrl: string, projectPath: string): Promise<string> {
+    const response = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload({ rawDiff }), projectPath, diffRef: "working-copy" }),
+    });
+    return ((await response.json()) as { sessionId: string }).sessionId;
+  }
+
+  function gitCallsFor(projectPath: string): number {
+    return vi.mocked(git.getDiff).mock.calls.filter((c) => (c[1] as { cwd?: string })?.cwd === projectPath).length;
+  }
+
+  async function connect(wsPort: number) {
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${wsPort}`);
+    const messages: ServerMessage[] = [];
+    ws.on("message", (data) => messages.push(JSON.parse(data.toString()) as ServerMessage));
+    await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+    return { ws, messages };
+  }
+
+  it("barely polls a session nobody is viewing", async () => {
+    // Before: every session ran `git diff` every 2s, viewed or not.
+    handle = await startGlobalServer({ silent: true, pollInterval: 20, unviewedPollInterval: 10_000 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    await openWatched(baseUrl, "/unviewed");
+    const afterOpen = gitCallsFor("/unviewed");
+    await sleep(300);
+
+    expect(gitCallsFor("/unviewed") - afterOpen).toBe(0);
+  });
+
+  it("polls at full speed while someone is viewing", async () => {
+    handle = await startGlobalServer({ silent: true, pollInterval: 20, unviewedPollInterval: 10_000 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const sessionId = await openWatched(baseUrl, "/viewed");
+    const { ws } = await connect(handle.wsPort);
+    ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+    await sleep(50);
+    const afterSelect = gitCallsFor("/viewed");
+    await sleep(300);
+    ws.close();
+
+    expect(gitCallsFor("/viewed") - afterSelect).toBeGreaterThan(5);
+  });
+
+  it("brings a backed-off session up to date the moment someone opens it", async () => {
+    // Without the wake, a session backed off to minutes would show a stale
+    // diff until its next scheduled poll.
+    handle = await startGlobalServer({ silent: true, pollInterval: 10_000, unviewedPollInterval: 60_000 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+
+    const sessionId = await openWatched(baseUrl, "/stale");
+    // Keep the handshake from auto-selecting it before the change lands.
+    await openWatched(baseUrl, "/other");
+    rawDiff = "diff B — changed while nobody was looking";
+
+    const { ws, messages } = await connect(handle.wsPort);
+    ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+    await sleep(100);
+    ws.close();
+
+    const update = messages.find((m) => m.type === "diff:update");
+    expect((update?.payload as { rawDiff?: string } | undefined)?.rawDiff).toBe(rawDiff);
+  });
+
+  describe("idle expiry", () => {
+    const quick = { silent: true, idleSessionTtl: 150, cleanupInterval: 50 } as const;
+
+    async function listed(baseUrl: string): Promise<string[]> {
+      const body = (await (await fetch(`${baseUrl}/api/reviews`)).json()) as { sessions: SessionSummary[] };
+      return body.sessions.map((s) => s.id);
+    }
+
+    it("expires an abandoned UI-opened session, which used to live forever", async () => {
+      handle = await startGlobalServer(quick);
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const opened = await fetch(`${baseUrl}/api/projects/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectPath: tmpDir }),
+      });
+      const { sessionId } = (await opened.json()) as { sessionId: string };
+      expect(await listed(baseUrl)).toContain(sessionId);
+
+      await sleep(400);
+      expect(await listed(baseUrl)).not.toContain(sessionId);
+    });
+
+    it("expires an in_review session nobody returned to, which matched no rule at all", async () => {
+      handle = await startGlobalServer(quick);
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openWatched(baseUrl, "/in-review");
+
+      const { ws } = await connect(handle.wsPort);
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await sleep(30);
+      ws.close(); // viewed once, then abandoned
+      await sleep(400);
+
+      expect(await listed(baseUrl)).not.toContain(sessionId);
+    });
+
+    it("keeps a session someone is still waiting on", async () => {
+      // A blocked hook or open_review polls the result; that is activity.
+      handle = await startGlobalServer(quick);
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openWatched(baseUrl, "/waited-on");
+
+      for (let i = 0; i < 12; i++) {
+        await fetch(`${baseUrl}/api/reviews/${sessionId}/result`);
+        await sleep(40);
+      }
+
+      expect(await listed(baseUrl)).toContain(sessionId);
+    });
+
+    it("keeps a session someone is viewing, however long it sits", async () => {
+      handle = await startGlobalServer(quick);
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openWatched(baseUrl, "/viewed-idle");
+
+      const { ws } = await connect(handle.wsPort);
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await sleep(400);
+      const ids = await listed(baseUrl);
+      ws.close();
+
+      expect(ids).toContain(sessionId);
+    });
+  });
+});

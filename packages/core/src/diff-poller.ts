@@ -4,10 +4,20 @@ import { analyze } from "@diffprism/analysis";
 import type { DiffSet, DiffUpdatePayload, ReviewInitPayload, ReviewMetadata } from "./types.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 
+export interface PollSchedule {
+  /** Consecutive polls that found nothing new. Resets to 0 on a change. */
+  quietPolls: number;
+}
+
 export interface DiffPollerOptions {
   diffRef: string;
   cwd: string;
-  pollInterval: number;
+  /**
+   * How long to wait before each poll. A number is a fixed interval. A
+   * function is asked before every poll, so a caller can slow a poller down
+   * while nobody is watching and let a quiet repo back off.
+   */
+  pollInterval: number | ((schedule: PollSchedule) => number);
   onDiffChanged: (payload: DiffUpdatePayload) => void;
   onError?: (error: Error) => void;
   silent?: boolean;
@@ -18,6 +28,11 @@ export interface DiffPoller {
   stop: () => void;
   setDiffRef: (newRef: string) => void;
   refresh: () => void;
+  /**
+   * Poll now and restart the schedule. For a poller that has backed off to a
+   * long interval and suddenly matters — someone just opened the session.
+   */
+  wake: () => void;
 }
 
 export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
@@ -27,8 +42,24 @@ export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
   let lastDiffHash: string | null = null;
   let lastDiffSet: DiffSet | null = null;
   let refreshRequested = false;
-  let interval: ReturnType<typeof setInterval> | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let running = false;
+  let quietPolls = 0;
+
+  function nextDelay(): number {
+    return typeof pollInterval === "number" ? pollInterval : pollInterval({ quietPolls });
+  }
+
+  // A timeout rescheduled after each poll rather than a fixed setInterval, so
+  // the interval can change between polls.
+  function schedule(): void {
+    if (!running) return;
+    timer = setTimeout(() => {
+      timer = null;
+      poll();
+      schedule();
+    }, nextDelay());
+  }
 
   function poll(): void {
     if (!running) return;
@@ -39,6 +70,7 @@ export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
 
       if (newHash !== lastDiffHash || refreshRequested) {
         refreshRequested = false;
+        quietPolls = 0;
 
         const newBriefing = analyze(newDiffSet);
         const changedFiles = detectChangedFiles(lastDiffSet, newDiffSet);
@@ -55,8 +87,12 @@ export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
         };
 
         onDiffChanged(updatePayload);
+      } else {
+        quietPolls++;
       }
     } catch (err) {
+      // A failing repo backs off like a quiet one rather than retrying at full speed.
+      quietPolls++;
       // getDiff can fail if git state is mid-operation — silently skip by default
       if (onError && err instanceof Error) {
         onError(err);
@@ -78,14 +114,14 @@ export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
         // Will catch on next poll
       }
 
-      interval = setInterval(poll, pollInterval);
+      schedule();
     },
 
     stop() {
       running = false;
-      if (interval) {
-        clearInterval(interval);
-        interval = null;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
       }
     },
 
@@ -98,6 +134,16 @@ export function createDiffPoller(options: DiffPollerOptions): DiffPoller {
 
     refresh() {
       refreshRequested = true;
+    },
+
+    wake() {
+      if (!running) return;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      poll();
+      schedule();
     },
   };
 }
