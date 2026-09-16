@@ -12,6 +12,7 @@ import {
   Search,
   GitPullRequest,
   ExternalLink,
+  GitBranch,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
 import { RefSelector } from "../RefSelector";
@@ -19,7 +20,23 @@ import { BRIEFING_BADGE_STYLES, BRIEFING_SECTION_COLORS, SEVERITY_BADGE_STYLES, 
 
 export function BriefingBar() {
   const [expanded, setExpanded] = useState(false);
-  const { briefing, metadata, isServerMode, clearReview } = useReviewStore();
+  const { briefing, metadata, isServerMode, clearReview, sessions, activeSessionId } =
+    useReviewStore();
+
+  // Which review am I looking at? The sidebar answers that; the header did
+  // not, so with several sessions open across worktrees there was nothing on
+  // screen tying the diff you are reading to a branch or a checkout. Read it
+  // from the same session record the sidebar uses, so the two cannot disagree.
+  //
+  // Only the session record, deliberately. RefSelector already renders
+  // metadata.currentBranch as a static badge outside server mode; falling
+  // back to it here would print the branch twice. The gap is server mode,
+  // where RefSelector shows the ref switcher and the branch appears nowhere.
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
+  const branch = activeSession?.branch;
+  const checkout = activeSession?.projectPath
+    ? activeSession.projectPath.split("/").filter(Boolean).pop()
+    : undefined;
 
   if (!briefing) return null;
   
@@ -55,6 +72,18 @@ export function BriefingBar() {
           </span>
 
         <div className="flex items-center gap-2 flex-shrink-0">
+          {(branch || checkout) && (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-text-primary/5 text-text-secondary max-w-[22rem]"
+              title={activeSession?.projectPath}
+            >
+              <GitBranch className="w-3 h-3 flex-shrink-0" />
+              {checkout && <span className="truncate">{checkout}</span>}
+              {checkout && branch && <span className="opacity-40">/</span>}
+              {branch && <span className="truncate">{branch}</span>}
+            </span>
+          )}
+
           {securityFlags.length > 0 && (
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${BRIEFING_BADGE_STYLES.security}`}>
               <ShieldAlert className="w-3 h-3" />
