@@ -9,6 +9,9 @@ interface UseWebSocketOptions {
   onAnnotationAdded?: (annotation: Annotation) => void;
 }
 
+/** How long to wait before reconnecting to the server after the connection drops. */
+const RECONNECT_DELAY_MS = 1000;
+
 export function useWebSocket(options?: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const onSessionAddedRef = useRef(options?.onSessionAdded);
@@ -58,14 +61,7 @@ export function useWebSocket(options?: UseWebSocketOptions) {
       ? `ws://localhost:${wsPort}?sessionId=${sessionId}`
       : `ws://localhost:${wsPort}`;
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.addEventListener("open", () => {
-      setConnectionStatus("connected");
-    });
-
-    ws.addEventListener("message", (event) => {
+    const onMessage = (event: MessageEvent) => {
       try {
         const message: ServerMessage = JSON.parse(event.data as string);
 
@@ -101,18 +97,78 @@ export function useWebSocket(options?: UseWebSocketOptions) {
       } catch (err) {
         console.error("Failed to parse WebSocket message:", err);
       }
-    });
+    };
 
-    ws.addEventListener("close", () => {
-      setConnectionStatus("disconnected");
-    });
+    // The dashboard outlives the server it first talked to: a newer build
+    // replaces the server, `diffprism server stop` ends it. Reconnect instead
+    // of sitting disconnected — otherwise the next review finds no dashboard
+    // connected and opens yet another tab (#188).
+    const httpPort = params.get("httpPort");
+    let disposed = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let serverPid: number | null = null;
+    let hasConnected = false;
 
-    ws.addEventListener("error", () => {
-      setConnectionStatus("disconnected");
-    });
+    const readServerPid = async (): Promise<number | null> => {
+      if (!httpPort) return null;
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/status`);
+        if (!response.ok) {
+          console.warn(`DiffPrism server status returned ${response.status}`);
+          return null;
+        }
+        return ((await response.json()) as { pid: number }).pid;
+      } catch (err) {
+        console.warn("Could not read DiffPrism server status:", err);
+        return null;
+      }
+    };
+
+    const connect = () => {
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.addEventListener("open", async () => {
+        setConnectionStatus("connected");
+        const reconnected = hasConnected;
+        hasConnected = true;
+        const pid = await readServerPid();
+        if (reconnected && serverPid !== null && pid !== null && pid !== serverPid) {
+          // A different server: none of the sessions on screen exist in it, and
+          // it may be a newer build with a newer dashboard. Start over.
+          window.location.reload();
+          return;
+        }
+        if (pid !== null) serverPid = pid;
+        if (reconnected) {
+          // Same server, dropped connection: it forgot which session this tab views.
+          const activeSessionId = useReviewStore.getState().activeSessionId;
+          if (activeSessionId) {
+            ws.send(JSON.stringify({ type: "session:select", payload: { sessionId: activeSessionId } }));
+          }
+        }
+      });
+
+      ws.addEventListener("message", onMessage);
+
+      ws.addEventListener("close", () => {
+        setConnectionStatus("disconnected");
+        if (!disposed) {
+          retryTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        }
+      });
+
+      ws.addEventListener("error", () => {
+        setConnectionStatus("disconnected");
+      });
+    };
+
+    connect();
 
     return () => {
-      ws.close();
+      disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      wsRef.current?.close();
       wsRef.current = null;
     };
   }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession, addAnnotation, applyAnnotationDismissed, updateAnnotation]);
