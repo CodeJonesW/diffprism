@@ -46,6 +46,17 @@ export { ensureServer, submitReviewToServer, ReviewTimeoutError } from "./server
 export { getBuildInfo, describeVersion } from "./build-info.js";
 export { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "./mcp-tools.js";
 export { DEFAULT_DIFF_REF, COMMIT_GATE_DIFF_REF, DIFF_REF_DESCRIPTION } from "./diff-scope.js";
+export {
+  ISSUES_NEW_URL,
+  REPORT_HINT,
+  buildFeedbackUrl,
+  currentVersion,
+  describeEnvironment,
+  readLastError,
+  recordError,
+  redactHome,
+} from "./feedback.js";
+export type { Environment, ErrorReport, FeedbackOptions } from "./feedback.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,

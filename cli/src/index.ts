@@ -9,20 +9,15 @@ import { demo } from "./commands/demo.js";
 import { server, serverStatus, serverStop } from "./commands/server.js";
 import { defaultAction } from "./commands/default.js";
 import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
-import { describeVersion } from "@diffprism/core";
-
-declare const DIFFPRISM_VERSION: string;
+import { feedback } from "./commands/feedback.js";
+import { describeVersion, currentVersion } from "@diffprism/core";
 
 const program = new Command();
 
 program
   .name("diffprism")
   .description("Local-first code review tool for agent-generated changes")
-  .version(
-    describeVersion(
-      typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev",
-    ),
-  );
+  .version(describeVersion(currentVersion()));
 
 program.action(defaultAction);
 
@@ -68,6 +63,14 @@ hookCmd
   .command("uninstall")
   .description("Remove the diffprism gate from this repo's pre-commit hook")
   .action(() => { uninstallHook(); });
+
+program
+  .command("feedback")
+  .description("Open a prefilled GitHub issue to share feedback or report a bug — you review it before anything is sent")
+  .option("--bug", "Report a bug, including the last error DiffPrism hit")
+  .option("-m, --message <text>", "Start the issue with this text")
+  .option("--print", "Print the issue URL instead of opening a browser")
+  .action((flags) => feedback(flags));
 
 program
   .command("serve")

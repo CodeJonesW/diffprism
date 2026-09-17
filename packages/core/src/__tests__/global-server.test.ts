@@ -2151,3 +2151,25 @@ describe("watcher cost", () => {
     });
   });
 });
+
+// ─── #159: feedback ───
+
+describe("GET /api/feedback", () => {
+  it("builds a prefilled feedback issue for the dashboard", async () => {
+    handle = await startGlobalServer({ silent: true });
+    const body = (await (await fetch(`http://localhost:${handle.httpPort}/api/feedback`)).json()) as { url: string };
+    expect(new URL(body.url).searchParams.get("labels")).toBe("feedback");
+  });
+
+  it("includes the last recorded error in a bug report", async () => {
+    const { recordError } = await import("../feedback.js");
+    recordError("review", new Error("server refused the review"));
+
+    handle = await startGlobalServer({ silent: true });
+    const body = (await (await fetch(`http://localhost:${handle.httpPort}/api/feedback?kind=bug`)).json()) as { url: string };
+
+    const parsed = new URL(body.url);
+    expect(parsed.searchParams.get("labels")).toBe("bug");
+    expect(parsed.searchParams.get("body")).toContain("server refused the review");
+  });
+});

@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock @diffprism/core before importing the review command
 const mockEnsureServer = vi.fn();
 const mockSubmitReviewToServer = vi.fn();
+const mockRecordError = vi.fn();
 vi.mock("@diffprism/core", async () => {
   // Scope constants come from the real module so these tests assert against
   // the actual default, not a retyped copy of it.
@@ -12,6 +13,8 @@ vi.mock("@diffprism/core", async () => {
     submitReviewToServer: (...args: unknown[]) =>
       mockSubmitReviewToServer(...args),
     DEFAULT_DIFF_REF: actual.DEFAULT_DIFF_REF,
+    recordError: (...args: unknown[]) => mockRecordError(...args),
+    REPORT_HINT: actual.REPORT_HINT,
   };
 });
 
@@ -172,6 +175,15 @@ describe("review command", () => {
 
       expect(console.error).toHaveBeenCalledWith("Error: git not found");
       expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("keeps the error for a bug report and says how to file one (#159)", async () => {
+      mockEnsureServer.mockRejectedValue(new Error("git not found"));
+
+      await review(undefined, { staged: true });
+
+      expect(mockRecordError).toHaveBeenCalledWith("review", expect.objectContaining({ message: "git not found" }));
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("diffprism feedback --bug"));
     });
   });
 

@@ -6,6 +6,9 @@ import {
   submitReviewToServer,
   isServerAlive,
   ReviewTimeoutError,
+  currentVersion,
+  recordError,
+  REPORT_HINT,
   DEFAULT_DIFF_REF,
   DIFF_REF_DESCRIPTION,
 } from "@diffprism/core";
@@ -18,8 +21,6 @@ import type {
 import { getDiff } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 import { isPrRef } from "@diffprism/github";
-
-declare const DIFFPRISM_VERSION: string;
 
 /**
  * How long open_review waits for a decision unless told otherwise.
@@ -142,7 +143,8 @@ async function withSession(
     }
     return await run({ serverInfo, sessionId: target.sessionId });
   } catch (err) {
-    return toolError(`Error: ${errorMessage(err)}`);
+    recordError("serve (MCP)", err);
+    return toolError(`Error: ${errorMessage(err)}\n${REPORT_HINT}`);
   }
 }
 
@@ -183,7 +185,7 @@ const annotationSchema = z.object({
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
     name: "diffprism",
-    version: typeof DIFFPRISM_VERSION !== "undefined" ? DIFFPRISM_VERSION : "0.0.0-dev",
+    version: currentVersion(),
   });
 
   // ─── Opening a review ───
@@ -259,7 +261,8 @@ export async function startMcpServer(): Promise<void> {
           throw err;
         }
       } catch (err) {
-        return toolError(`Error: ${errorMessage(err)}`);
+        recordError("serve (MCP) open_review", err);
+        return toolError(`Error: ${errorMessage(err)}\n${REPORT_HINT}`);
       }
     },
   );

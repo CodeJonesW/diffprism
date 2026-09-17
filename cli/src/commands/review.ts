@@ -1,4 +1,4 @@
-import { ensureServer, submitReviewToServer, DEFAULT_DIFF_REF } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, DEFAULT_DIFF_REF, recordError, REPORT_HINT } from "@diffprism/core";
 import { isPrRef, parsePrRef } from "@diffprism/github";
 
 interface ReviewFlags {
@@ -34,7 +34,9 @@ export async function review(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    recordError("review", err);
     console.error(`Error: ${message}`);
+    console.error(REPORT_HINT);
     process.exit(1);
   }
 }

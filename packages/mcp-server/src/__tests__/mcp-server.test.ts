@@ -22,6 +22,9 @@ vi.mock("@diffprism/core", () => {
     ReviewTimeoutError,
     DEFAULT_DIFF_REF: "working-copy",
     DIFF_REF_DESCRIPTION: "scope",
+    currentVersion: () => "0.0.0-test",
+    recordError: vi.fn(),
+    REPORT_HINT: "report hint",
   };
 });
 
@@ -231,11 +234,11 @@ describe("open_review", () => {
     );
   });
 
-  it("reports other failures as tool errors", async () => {
+  it("reports other failures as tool errors, with how to report a bug", async () => {
     mockEnsureServer.mockRejectedValue(new Error("boom"));
     const result = await (await tool("open_review"))({ diff_ref: "staged" });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toBe("Error: boom");
+    expect(result.content[0].text).toBe("Error: boom\nreport hint");
   });
 });
 

@@ -34,6 +34,8 @@ vi.mock("@diffprism/core", async () => {
     submitReviewToServer: vi.fn(),
     ReviewTimeoutError,
     COMMIT_GATE_DIFF_REF: actual.COMMIT_GATE_DIFF_REF,
+    recordError: vi.fn(),
+    REPORT_HINT: actual.REPORT_HINT,
   };
 });
 
