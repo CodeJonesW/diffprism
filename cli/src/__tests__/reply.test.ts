@@ -60,6 +60,8 @@ describe("diffprism reply (#179)", () => {
     );
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ author: "agent", agent: "claude-code", body: "It caches the shell." });
     expect(out.join("\n")).toContain("Replied on apps/sw.ts:51");
+    // The next step, where the agent is looking: go back to waiting, not to the terminal.
+    expect(out.join("\n")).toContain("Go back to waiting for the decision now");
   });
 
   it("fails with the server's reason when the reply is refused", async () => {

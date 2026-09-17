@@ -56,6 +56,13 @@ export async function reply(annotationId: string, words: string[], flags: ReplyF
 
   const where = data.annotation ? ` on ${data.annotation.file}:${data.annotation.line}` : "";
   console.log(`Replied${where}. It shows in the review now.`);
+  // Said here, at the moment of acting, and not only where the question was
+  // printed: an agent that has just answered tends to stop and report back in
+  // the terminal, while the reviewer is still in the dashboard — and whatever
+  // they ask next reaches no one until something waits again.
+  console.log(
+    "The review is still open. Go back to waiting for the decision now: run the same command that opened it again (`git commit` or `diffprism review`). It returns the decision, or the reviewer's next question. Don't ask them in the terminal.",
+  );
 }
 
 function fail(message: string): void {
