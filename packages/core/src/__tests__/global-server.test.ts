@@ -3,6 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import * as github from "@diffprism/github";
+import open from "open";
+import net from "node:net";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -2377,5 +2379,65 @@ describe("github review", () => {
       file: "a.ts", line: 1, side: "left", body: "x", type: "question", source: { agent: "reviewer" },
     });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("reusing an open dashboard tab (#188)", () => {
+  beforeEach(() => {
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+    vi.mocked(open).mockClear();
+  });
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  async function review(baseUrl: string, projectPath: string) {
+    await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath }),
+    });
+  }
+
+  it("serves the dashboard on its preferred port, so an open tab's address survives a restart", async () => {
+    // Found with node:net, not get-port: get-port locks a port it hands out,
+    // and the server would then skip it.
+    const uiPort = await new Promise<number>((resolve) => {
+      const probe = net.createServer().listen(0, () => {
+        const { port } = probe.address() as net.AddressInfo;
+        probe.close(() => resolve(port));
+      });
+    });
+    handle = await startGlobalServer({ silent: true, openBrowser: false, uiPort });
+    const status = (await (await fetch(`http://localhost:${handle.httpPort}/api/status`)).json()) as { uiUrl: string };
+    expect(status.uiUrl).toContain(`http://localhost:${uiPort}?`);
+  });
+
+  it("gives an open dashboard time to reconnect before opening a new tab", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 400 });
+    await review(`http://localhost:${handle.httpPort}`, "/restarted");
+
+    // The tab from before the restart reconnects inside the grace period.
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+    await new Promise((resolve) => ws.once("open", resolve));
+    await sleep(600);
+
+    expect(open).not.toHaveBeenCalled();
+    ws.close();
+  });
+
+  it("opens a tab once the grace period passes with nobody watching", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 200 });
+    await review(`http://localhost:${handle.httpPort}`, "/unwatched");
+
+    expect(open).not.toHaveBeenCalled();
+    await sleep(400);
+    expect(open).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens a tab straight away when the server has long been up and nobody is watching", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 0 });
+    await review(`http://localhost:${handle.httpPort}`, "/idle");
+    expect(open).toHaveBeenCalledTimes(1);
   });
 });
