@@ -16,6 +16,7 @@
     "dev": "pnpm -r run dev",
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
+    "docs:check": "pnpm -F diffprism-cli docs:check",
     "cli": "pnpm -F @diffprism/ui build && tsx cli/src/index.ts",
     "prepublishOnly": "pnpm run build"
   },

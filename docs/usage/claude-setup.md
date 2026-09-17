@@ -167,7 +167,7 @@ Claude will call the `open_review` MCP tool. The DiffPrism server auto-starts as
 
 ## Tool Reference
 
-The MCP server exposes 12 tools.
+The MCP server exposes 14 tools.
 
 **Reviews are one per repo.** Opening a review for a repo that already has one updates that session — new diff, same id, annotations kept. A git worktree counts as its own repo.
 

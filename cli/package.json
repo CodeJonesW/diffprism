@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs:check": "tsx scripts/check-docs.ts"
   },
   "dependencies": {
     "@diffprism/analysis": "workspace:*",
@@ -21,6 +22,7 @@
     "tsx": "^4.19.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

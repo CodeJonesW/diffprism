@@ -214,7 +214,8 @@ const annotationSchema = z.object({
     .describe("Category of the finding (defaults to 'other')"),
 });
 
-export async function startMcpServer(): Promise<void> {
+/** Builds the server with every tool registered, without connecting a transport. */
+export function createMcpServer(): McpServer {
   const server = new McpServer({
     name: "diffprism",
     version: currentVersion(),
@@ -772,6 +773,11 @@ export async function startMcpServer(): Promise<void> {
       }),
   );
 
+  return server;
+}
+
+export async function startMcpServer(): Promise<void> {
+  const server = createMcpServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

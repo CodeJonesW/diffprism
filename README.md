@@ -181,6 +181,7 @@ skill tells them so.
 ## CLI Reference
 
 ```bash
+diffprism demo                      # Open a sample review
 diffprism review <ref>              # Open a review (PR URL, git ref, or flags)
 diffprism setup                     # Configure Claude Code integration
 diffprism setup --global            # Global setup (no git repo needed)
@@ -189,10 +190,12 @@ diffprism server status             # Check server status
 diffprism server stop               # Stop the server
 diffprism hook install              # Gate commits on a review
 diffprism hook uninstall            # Remove the gate
+diffprism hook pre-commit           # Run the gate (what the installed hook calls)
 diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent
 diffprism feedback                  # Share feedback as a prefilled GitHub issue
 diffprism feedback --bug            # Report a bug, including the last error
 diffprism teardown                  # Remove configuration
+diffprism serve                     # Run the MCP server over stdio (your MCP client launches this)
 ```
 
 ## Feedback

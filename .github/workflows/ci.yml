@@ -24,4 +24,7 @@ jobs:
 
       - run: pnpm test
 
+      - name: Docs in sync with code
+        run: pnpm docs:check
+
       - run: pnpm run build
