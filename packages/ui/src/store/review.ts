@@ -41,6 +41,8 @@ export interface ReviewState {
   fileStatuses: Record<string, FileReviewStatus>;
   comments: ReviewComment[];
   activeCommentKey: string | null;
+  /** A thread to bring into view once its file has rendered — set by the annotation panel. */
+  focusedAnnotationId: string | null;
   draftComment: DraftComment | null;
   theme: Theme;
   isWatchMode: boolean;
@@ -77,6 +79,7 @@ export interface ReviewState {
   updateComment: (index: number, comment: ReviewComment) => void;
   deleteComment: (index: number) => void;
   setActiveCommentKey: (key: string | null) => void;
+  focusAnnotation: (annotationId: string | null) => void;
   setDraftComment: (draft: DraftComment | null) => void;
   saveDraftComment: () => void;
   toggleTheme: () => void;
@@ -114,6 +117,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   fileStatuses: {},
   comments: [],
   activeCommentKey: null,
+  focusedAnnotationId: null,
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   isWatchMode: false,
@@ -206,6 +210,10 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     set((state) => ({
       comments: state.comments.filter((_, i) => i !== index),
     }));
+  },
+
+  focusAnnotation: (annotationId: string | null) => {
+    set({ focusedAnnotationId: annotationId });
   },
 
   setActiveCommentKey: (key: string | null) => {

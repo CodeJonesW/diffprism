@@ -89,7 +89,7 @@ export function InlineAnnotationThread({
         const replies = annotation.replies ?? [];
 
         return (
-          <div key={annotation.id} className="px-3 py-2 border-b border-border/50 group/annotation">
+          <div key={annotation.id} data-annotation-id={annotation.id} className="px-3 py-2 border-b border-border/50 group/annotation">
             <div className="flex items-center gap-2 mb-1">
               {author === "agent" ? (
                 <>
