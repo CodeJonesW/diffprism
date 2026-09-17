@@ -16,6 +16,10 @@ export default defineConfig({
   clean: true,
   define: {
     DIFFPRISM_VERSION: JSON.stringify(version),
+    // When this bundle was built. A long-lived background server started from
+    // an older bundle is replaced by a newer one (#181); the version alone
+    // can't tell them apart while dogfooding a checkout.
+    DIFFPRISM_BUILT_AT: JSON.stringify(Date.now()),
   },
   // Inline all @diffprism/* workspace packages
   noExternal: [/@diffprism\/.*/],
