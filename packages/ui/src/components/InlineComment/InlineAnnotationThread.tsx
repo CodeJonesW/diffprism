@@ -8,10 +8,13 @@ import {
   Bot,
   User,
   MessageSquare,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { Annotation, AnnotationReply } from "../../types";
 import { CATEGORY_COLORS, CATEGORY_BADGE_STYLES } from "../../lib/semantic-colors";
 import { awaitingAgent } from "../../lib/threads";
+import { useAgentPickup } from "../../hooks/useAgentPickup";
 import { ThreadForm } from "./ThreadForm";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
@@ -28,6 +31,10 @@ interface InlineAnnotationThreadProps {
   onDismiss: (annotationId: string) => void;
   /** Present when replies can be posted — i.e. connected to a server session. */
   onReply?: (annotationId: string, body: string) => Promise<SendResult>;
+  /** The review these threads belong to — named when telling the reviewer how to reach an agent. */
+  sessionId?: string;
+  /** SessionSummary.agentReadAt of that review. */
+  agentReadAt?: number;
 }
 
 function AuthorLabel({ author, agent }: { author: "agent" | "reviewer"; agent?: string }) {
@@ -53,12 +60,49 @@ function Reply({ reply }: { reply: AnnotationReply }) {
   );
 }
 
+/**
+ * Nothing will answer this thread until the reviewer starts an agent. The
+ * prompt to give it is its own snippet — one click selects all of it, and
+ * Copy puts it on the clipboard — rather than words inside a sentence.
+ */
+function UnheardNotice({ sessionId }: { sessionId?: string }) {
+  const prompt = `Answer my DiffPrism comments${sessionId ? ` on ${sessionId}` : ""}`;
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+
+  return (
+    <div className="mt-1.5 text-[11px]">
+      <p className="text-warning">No agent is listening, so nothing will answer this. Ask Claude Code:</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="select-all px-1.5 py-0.5 rounded border border-border bg-background text-text-primary">
+          {prompt}
+        </code>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(prompt).then(
+              () => setCopy("copied"),
+              () => setCopy("failed"),
+            );
+          }}
+          className="inline-flex items-center gap-1 text-text-secondary hover:text-accent transition-colors cursor-pointer"
+          title="Copy prompt"
+        >
+          {copy === "copied" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          {copy === "copied" ? "Copied" : copy === "failed" ? "Copy failed — select the text instead" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function InlineAnnotationThread({
   annotations,
   onDismiss,
   onReply,
+  sessionId,
+  agentReadAt,
 }: InlineAnnotationThreadProps) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const pickup = useAgentPickup(annotations, agentReadAt);
 
   if (annotations.length === 0) return null;
 
@@ -122,11 +166,14 @@ export function InlineAnnotationThread({
               </div>
             )}
 
-            {awaitingAgent(annotation) && (
-              <p className="mt-1.5 text-[11px] text-text-secondary italic">
-                Waiting for the agent to reply.
-              </p>
-            )}
+            {awaitingAgent(annotation) &&
+              (pickup(annotation) === "unheard" ? (
+                <UnheardNotice sessionId={sessionId} />
+              ) : (
+                <p className="mt-1.5 text-[11px] text-text-secondary italic">
+                  Waiting for the agent to reply.
+                </p>
+              ))}
 
             {onReply &&
               (replyingTo === annotation.id ? (

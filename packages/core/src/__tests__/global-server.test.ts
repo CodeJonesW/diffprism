@@ -53,6 +53,11 @@ vi.mock("@diffprism/git", () => ({
   // Test paths like "/test" are not repositories, so identity falls back to
   // the resolved path. Individual tests override this to model real repos.
   getRepoRoot: vi.fn().mockReturnValue(null),
+  // POST /api/pr/open reads from a local clone when the server runs in one.
+  // Pretend the process runs inside acme/widget. Passed as an implementation,
+  // not via mockReturnValue: restoreAllMocks in afterEach wipes mockReturnValue
+  // state but keeps a vi.fn(impl).
+  getGitHubRemotes: vi.fn(() => ["acme/widget"]),
   listBranches: vi.fn().mockReturnValue({
     local: ["main", "feature-branch"],
     remote: ["origin/main", "origin/develop"],
@@ -66,17 +71,6 @@ vi.mock("@diffprism/git", () => ({
       date: "2025-01-15T10:30:00Z",
     },
   ]),
-}));
-
-// Mock node:child_process — only POST /api/pr/open uses it, to find a local
-// clone via `git remote -v`. Pretend the process runs inside acme/widget.
-vi.mock("node:child_process", () => ({
-  // Passed as an implementation, not via mockReturnValue: restoreAllMocks in
-  // afterEach wipes mockReturnValue state but keeps a vi.fn(impl).
-  execSync: vi.fn(
-    () =>
-      "origin\tgit@github.com:acme/widget.git (fetch)\norigin\tgit@github.com:acme/widget.git (push)\n",
-  ),
 }));
 
 // Mock @diffprism/github — POST /api/pr/open fetches the PR
@@ -109,7 +103,13 @@ vi.mock("@diffprism/github", () => ({
           verification: { testsPass: null, typeCheck: null, lintClean: null },
           fileStats: [],
         },
-        metadata: { title: "Add widget" },
+        metadata: {
+          title: "Add widget",
+          githubPr: {
+            owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
+            url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+          },
+        },
       },
     };
   }),
@@ -1843,6 +1843,27 @@ describe("session identity", () => {
       expect(body.sessions).toHaveLength(2);
     });
 
+    it("finds a PR review with no local clone from any clone of that repo", async () => {
+      // "Review PR" in a dashboard whose server runs outside the clone leaves
+      // the session with no working tree. An agent in the clone must still
+      // find it without being handed a session id.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockImplementation((options) => options?.cwd ?? null);
+      vi.mocked(git.getGitHubRemotes).mockImplementation((options) =>
+        options?.cwd === "/clones/widget" ? ["acme/widget"] : [],
+      );
+
+      const prResponse = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+      const { sessionId, localRepoPath } = (await prResponse.json()) as { sessionId: string; localRepoPath: string | null };
+      expect(localRepoPath).toBeNull();
+
+      const resolve = async (dir: string) =>
+        ((await (await fetch(`${baseUrl}/api/reviews/resolve?path=${dir}`)).json()) as { sessions: SessionSummary[] }).sessions;
+      expect((await resolve("/clones/widget")).map((s) => s.id)).toEqual([sessionId]);
+      expect(await resolve("/clones/other")).toEqual([]);
+    });
+
     it("requires a path", async () => {
       handle = await startGlobalServer({ silent: true });
       const response = await fetch(`http://localhost:${handle.httpPort}/api/reviews/resolve`);
@@ -2238,6 +2259,46 @@ describe("threads", () => {
       ["reviewer", "fair"],
     ]);
     expect(thread.replies?.[0].agent).toBe("pr-reviewer");
+  });
+
+  it("records when an agent reads the threads, and only an agent", async () => {
+    const { baseUrl, sessionId } = await setup();
+    const summary = async () => (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as SessionSummary;
+
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`);
+    expect((await summary()).agentReadAt).toBeUndefined();
+
+    const before = Date.now();
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations?reader=agent`);
+    expect((await summary()).agentReadAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it("tells viewers when an agent picks up a question, not on every read", async () => {
+    const { baseUrl, sessionId, post } = await setup();
+    await post("/annotations", {
+      file: "a.ts", line: 1, body: "why?", type: "question", author: "reviewer", source: { agent: "reviewer" },
+    });
+
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle!.wsPort}`);
+    const updates: SessionSummary[] = [];
+    await new Promise((resolve) => ws.once("open", resolve));
+    ws.on("message", (data) => {
+      const msg = JSON.parse(data.toString()) as ServerMessage;
+      if (msg.type === "session:updated") updates.push(msg.payload);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // The question and the read must not share a millisecond: a read only
+    // counts for messages strictly older than it.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations?reader=agent`);
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations?reader=agent`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({ id: sessionId, agentReadAt: expect.any(Number) });
   });
 
   it("pushes a reply to everyone viewing the session, live", async () => {

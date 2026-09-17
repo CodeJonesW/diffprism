@@ -317,3 +317,32 @@ export function getRepoRoot(options?: { cwd?: string }): string | null {
     return null;
   }
 }
+
+/**
+ * The GitHub repositories the repo containing `cwd` has as remotes, as
+ * lowercase "owner/repo". Empty when `cwd` is not inside a git repository.
+ *
+ * This is how a local clone is matched to a pull request on GitHub.
+ */
+export function getGitHubRemotes(options?: { cwd?: string }): string[] {
+  const cwd = options?.cwd ?? process.cwd();
+  let output: string;
+  try {
+    output = execSync("git remote -v", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    return [];
+  }
+
+  const repos = new Set<string>();
+  for (const line of output.split("\n")) {
+    const match = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\s/i.exec(line);
+    if (match) {
+      repos.add(`${match[1]}/${match[2]}`.toLowerCase());
+    }
+  }
+  return Array.from(repos);
+}

@@ -157,7 +157,7 @@ describe("submitReviewToServer", () => {
         const result = results.length > 1 ? results.shift() : results[0];
         return { ok: true, json: async () => ({ result }) };
       }
-      if (url.endsWith("/annotations")) {
+      if (url.endsWith("/annotations?reader=agent")) {
         const list = annotations.length > 1 ? annotations.shift() : annotations[0];
         return { ok: true, json: async () => ({ annotations: list }) };
       }
@@ -208,7 +208,8 @@ describe("waitForDecision", () => {
         const result = results.length > 1 ? results.shift() : results[0];
         return { ok: true, json: async () => ({ result }) };
       }
-      if (url.endsWith("/annotations")) {
+      // Read as an agent, so the dashboard knows the reviewer's questions reached one.
+      if (url.endsWith("/annotations?reader=agent")) {
         const list = annotations.length > 1 ? annotations.shift() : annotations[0];
         return { ok: true, json: async () => ({ annotations: list }) };
       }

@@ -88,6 +88,8 @@ The reviewer can also ask you questions on lines of the PR. Hold that conversati
 2. \`mcp__diffprism__reply\` — answer each thread, passing its \`annotation_id\`.
 3. Wait again. On \`timed_out\`, nothing new was said — keep waiting until the user tells you to stop.
 
+When no agent has read a question, the dashboard tells the reviewer so, and to ask you to answer their DiffPrism comments on a session id. When they do, run this loop with that \`session_id\`.
+
 A PR review and a working-copy review can be open for the same clone at once. If a tool reports more than one session, pass the \`session_id\` of the one you mean.
 
 ## Tool Reference

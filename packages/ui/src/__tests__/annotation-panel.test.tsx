@@ -45,9 +45,22 @@ describe("AnnotationPanel with threads (#160)", () => {
         ]}
         onDismiss={vi.fn()}
         onNavigate={vi.fn()}
+        agentReadAt={2}
       />,
     );
     expect(screen.getByText("Waiting for an agent")).toBeTruthy();
     expect(screen.getByText("1 reply")).toBeTruthy();
+  });
+
+  it("says when no agent has picked a question up", () => {
+    render(
+      <AnnotationPanel
+        annotations={[annotation({ id: "unheard", author: "reviewer", body: "Anyone?" })]}
+        onDismiss={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("No agent listening")).toBeTruthy();
+    expect(screen.queryByText("Waiting for an agent")).toBeNull();
   });
 });

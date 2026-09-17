@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, waitFor, act } from "@testing-library/react";
 import { InlineAnnotationThread } from "../components/InlineComment";
+import { AGENT_PICKUP_GRACE_MS } from "../lib/threads";
 import type { Annotation } from "../types";
 
 function thread(over: Partial<Annotation> = {}): Annotation {
@@ -45,7 +46,7 @@ describe("InlineAnnotationThread", () => {
 
   it("says when it's waiting on an agent, and stops once one answers", () => {
     const { rerender } = render(
-      <InlineAnnotationThread annotations={[thread({ author: "reviewer" })]} onDismiss={vi.fn()} />,
+      <InlineAnnotationThread annotations={[thread({ author: "reviewer" })]} onDismiss={vi.fn()} agentReadAt={2} />,
     );
     expect(screen.getByText(/Waiting for the agent to reply/)).toBeTruthy();
 
@@ -53,9 +54,65 @@ describe("InlineAnnotationThread", () => {
       <InlineAnnotationThread
         annotations={[thread({ author: "reviewer", replies: [{ id: "r", author: "agent", body: "ok", createdAt: 2 }] })]}
         onDismiss={vi.fn()}
+        agentReadAt={2}
       />,
     );
     expect(screen.queryByText(/Waiting for the agent to reply/)).toBeNull();
+  });
+
+  describe("when no agent has picked the question up", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("waits briefly for a listening agent, then says nothing is listening and how to fix it", () => {
+      // Found dogfooding: a PR opened from the dashboard with no Claude Code
+      // session said "Waiting for the agent to reply." forever.
+      vi.useFakeTimers();
+      render(
+        <InlineAnnotationThread
+          annotations={[thread({ author: "reviewer", createdAt: Date.now() })]}
+          onDismiss={vi.fn()}
+          sessionId="session-abc"
+        />,
+      );
+      expect(screen.getByText(/Waiting for the agent to reply/)).toBeTruthy();
+
+      act(() => {
+        vi.advanceTimersByTime(AGENT_PICKUP_GRACE_MS);
+      });
+      expect(screen.queryByText(/Waiting for the agent to reply/)).toBeNull();
+      expect(screen.getByText(/No agent is listening/)).toBeTruthy();
+      expect(screen.getByText("Answer my DiffPrism comments on session-abc")).toBeTruthy();
+    });
+
+    it("copies the prompt to give Claude Code", async () => {
+      const writeText = vi.fn(async () => {});
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+      render(
+        <InlineAnnotationThread
+          annotations={[thread({ author: "reviewer", createdAt: 1 })]}
+          onDismiss={vi.fn()}
+          sessionId="session-abc"
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /Copy/ }));
+
+      expect(writeText).toHaveBeenCalledWith("Answer my DiffPrism comments on session-abc");
+      await waitFor(() => expect(screen.getByText("Copied")).toBeTruthy());
+    });
+
+    it("goes back to waiting once an agent reads it", () => {
+      const { rerender } = render(
+        <InlineAnnotationThread annotations={[thread({ author: "reviewer", createdAt: 1 })]} onDismiss={vi.fn()} />,
+      );
+      expect(screen.getByText(/No agent is listening/)).toBeTruthy();
+
+      rerender(
+        <InlineAnnotationThread annotations={[thread({ author: "reviewer", createdAt: 1 })]} onDismiss={vi.fn()} agentReadAt={2} />,
+      );
+      expect(screen.queryByText(/No agent is listening/)).toBeNull();
+      expect(screen.getByText(/Waiting for the agent to reply/)).toBeTruthy();
+    });
   });
 
   it("posts a reply and closes the form", async () => {

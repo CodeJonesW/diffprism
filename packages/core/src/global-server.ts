@@ -4,7 +4,7 @@ import getPort from "get-port";
 import open from "open";
 import { WebSocketServer, WebSocket } from "ws";
 
-import { getDiff, listBranches, listCommits, getCurrentBranch, getRepoRoot } from "@diffprism/git";
+import { getDiff, listBranches, listCommits, getCurrentBranch, getRepoRoot, getGitHubRemotes } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 
 import fs from "node:fs";
@@ -33,6 +33,7 @@ import type {
   PrReviewSubmission,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
+import { awaitingAgent, pickedUpByAgent } from "./threads.js";
 import { builtAt } from "./build-info.js";
 import {
   resolveUiDist,
@@ -77,7 +78,8 @@ interface Session {
   key: string;
   /**
    * The local working tree this session reads from, or null for a PR with no
-   * local clone. Participant tools find a session by repo path through this.
+   * local clone. Participant tools find a session by repo path through this
+   * (and a PR review also through the clone's GitHub remotes — see /resolve).
    */
   repoRoot: string | null;
   payload: ReviewInitPayload;
@@ -124,10 +126,26 @@ interface Session {
    * an abandoned one stops polling git.
    */
   lastActivityAt: number;
+  /** See SessionSummary.agentReadAt. */
+  agentReadAt?: number;
 }
 
 function touch(session: Session): void {
   session.lastActivityAt = Date.now();
+}
+
+/**
+ * An agent just read this session's threads. Viewers are only told when the
+ * read reached a reviewer message no agent had seen yet — waiting agents read
+ * every 2s, and a broadcast per read would be noise.
+ */
+function recordAgentRead(session: Session): void {
+  const previous = session.agentReadAt;
+  session.agentReadAt = Date.now();
+  touch(session);
+  if (session.annotations.some((a) => awaitingAgent(a) && !pickedUpByAgent(a, previous))) {
+    broadcastSessionUpdate(session);
+  }
 }
 
 const sessions = new Map<string, Session>();
@@ -374,6 +392,7 @@ function toSummary(session: Session): SessionSummary {
     needsAttention: needsAttention(session),
     diffRef: session.diffRef,
     source: session.source,
+    agentReadAt: session.agentReadAt,
   };
 }
 
@@ -816,22 +835,11 @@ async function handleApiRequest(
 
       const normalized = normalizePr(rawDiff, prMetadata);
 
-      // Auto-detect local repo by checking git remotes in cwd
-      let localRepoPath: string | null = null;
-      try {
-        const { execSync } = await import("node:child_process");
-        const remoteOutput = execSync("git remote -v", {
-          cwd: process.cwd(),
-          encoding: "utf-8",
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        const repoPattern = new RegExp(`github\\.com[:/]${owner}/${repo}(\\.git)?\\s`, "i");
-        if (repoPattern.test(remoteOutput)) {
-          localRepoPath = process.cwd();
-        }
-      } catch {
-        // Not in a git repo or git not available — no local context
-      }
+      // Read from a local clone when the server happens to run in one. Agents
+      // in any clone of the repo still find the session: see /resolve.
+      const localRepoPath = getGitHubRemotes({ cwd: process.cwd() }).includes(`${owner}/${repo}`.toLowerCase())
+        ? process.cwd()
+        : null;
 
       // A PR is its own review subject, keyed by the PR — not by the local
       // clone it may be read from. Keying it by repo would make a PR review
@@ -918,11 +926,14 @@ async function handleApiRequest(
     return true;
   }
 
-  // GET /api/reviews/resolve?path=<dir> — sessions reading from a repo path
+  // GET /api/reviews/resolve?path=<dir> — sessions for a repo path
   //
   // How participant tools find "the session for this repo" without guessing.
-  // Returns every open session whose working tree matches; the caller decides
-  // what zero, one, or several matches mean. Must precede /api/reviews/:id.
+  // Returns every open session whose working tree matches, plus every PR
+  // review of a GitHub repo this clone has as a remote — a PR opened from the
+  // dashboard has no working tree, and an agent in the clone still has to
+  // find it. The caller decides what zero, one, or several matches mean.
+  // Must precede /api/reviews/:id.
   if (method === "GET" && url === "/api/reviews/resolve") {
     const parsed = new URL(req.url ?? "/", "http://localhost");
     const rawPath = parsed.searchParams.get("path");
@@ -932,8 +943,14 @@ async function handleApiRequest(
     }
 
     const repoRoot = getRepoRoot({ cwd: rawPath }) ?? path.resolve(rawPath);
+    const remotes = getGitHubRemotes({ cwd: repoRoot });
     const matches = Array.from(sessions.values())
-      .filter((session) => session.closedAt === undefined && session.repoRoot === repoRoot)
+      .filter((session) => {
+        if (session.closedAt !== undefined) return false;
+        if (session.repoRoot === repoRoot) return true;
+        const pr = session.payload.metadata.githubPr;
+        return pr !== undefined && remotes.includes(`${pr.owner}/${pr.repo}`.toLowerCase());
+      })
       .map(toSummary);
 
     jsonResponse(res, 200, { repoRoot, sessions: matches });
@@ -1128,12 +1145,21 @@ async function handleApiRequest(
   }
 
   // GET /api/reviews/:id/annotations — list annotations for a session
+  //
+  // ?reader=agent marks the caller as an agent (the MCP tools, or a CLI/hook
+  // caller blocked on the decision). That is how the dashboard knows a
+  // reviewer's question reached an agent — and, when it didn't, says nothing
+  // is listening instead of "waiting" forever.
   const getAnnotationsParams = matchRoute(method, url, "GET", "/api/reviews/:id/annotations");
   if (getAnnotationsParams) {
     const session = sessions.get(getAnnotationsParams.id);
     if (!session) {
       jsonResponse(res, 404, { error: "Session not found" });
       return true;
+    }
+
+    if (new URL(req.url ?? "/", "http://localhost").searchParams.get("reader") === "agent") {
+      recordAgentRead(session);
     }
 
     jsonResponse(res, 200, { annotations: session.annotations });

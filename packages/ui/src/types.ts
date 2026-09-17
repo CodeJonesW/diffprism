@@ -313,6 +313,8 @@ export interface SessionSummary {
   /** The diff ref this session currently shows, e.g. "working-copy" or "staged". */
   diffRef?: string;
   source?: SessionSource;
+  /** Last time an agent read this session's threads. See @diffprism/core. */
+  agentReadAt?: number;
 }
 
 export interface DiffErrorPayload {
