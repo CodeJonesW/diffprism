@@ -4,7 +4,9 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { isServerAlive } from "./server-file.js";
+import { awaitingAgent } from "./threads.js";
 import type {
+  Annotation,
   GlobalServerInfo,
   ReviewInitPayload,
   ReviewResult,
@@ -180,6 +182,69 @@ export class ReviewTimeoutError extends Error {
   }
 }
 
+/**
+ * Thrown when a wait for a decision ends because the reviewer asked the agent
+ * something first.
+ *
+ * Whoever is waiting is usually the agent the question is for, and while it
+ * waits it can't answer. So the wait hands the threads back: answer each with
+ * a reply, then wait again — the review stays open, and a decision still comes.
+ */
+export class ReviewerAskedError extends Error {
+  readonly sessionId: string;
+  readonly threads: Annotation[];
+
+  constructor(sessionId: string, threads: Annotation[]) {
+    super(
+      `The reviewer asked ${threads.length} question${threads.length === 1 ? "" : "s"} on review ${sessionId} before deciding.`,
+    );
+    this.name = "ReviewerAskedError";
+    this.sessionId = sessionId;
+    this.threads = threads;
+  }
+}
+
+/**
+ * Wait for the reviewer's decision on an open review.
+ *
+ * Returns the decision. Throws ReviewerAskedError as soon as a thread is
+ * waiting on the agent, and ReviewTimeoutError when maxWaitMs runs out.
+ */
+export async function waitForDecision(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+  maxWaitMs: number,
+  pollIntervalMs = 2000,
+): Promise<ReviewResult> {
+  const base = `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}`;
+  const start = Date.now();
+
+  while (Date.now() - start < maxWaitMs) {
+    const resultResponse = await fetch(`${base}/result`);
+    if (!resultResponse.ok) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+    const { result } = (await resultResponse.json()) as { result: ReviewResult | null };
+    if (result) {
+      return result;
+    }
+
+    const annotationsResponse = await fetch(`${base}/annotations`);
+    if (!annotationsResponse.ok) {
+      throw new Error(`Could not read threads for ${sessionId}: server returned ${annotationsResponse.status}`);
+    }
+    const { annotations } = (await annotationsResponse.json()) as { annotations: Annotation[] };
+    const asked = annotations.filter(awaitingAgent);
+    if (asked.length > 0) {
+      throw new ReviewerAskedError(sessionId, asked);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+
+  throw new ReviewTimeoutError(sessionId, maxWaitMs);
+}
+
 export interface SubmitReviewOptions {
   title?: string;
   description?: string;
@@ -211,7 +276,7 @@ export interface SubmitReviewOptions {
  * Otherwise, computes diff locally from diffRef.
  *
  * When timeoutMs is 0, returns immediately after session creation (non-blocking).
- * Otherwise, polls until the user submits in the UI or the timeout expires.
+ * Otherwise waits with waitForDecision, and throws what it throws.
  */
 export async function submitReviewToServer(
   serverInfo: GlobalServerInfo,
@@ -327,28 +392,5 @@ export async function submitReviewToServer(
     return { result: null, sessionId };
   }
 
-  // Poll for result
-  const pollIntervalMs = 2000;
-  const start = Date.now();
-
-  while (Date.now() - start < maxWaitMs) {
-    const resultResponse = await fetch(
-      `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
-    );
-
-    if (resultResponse.ok) {
-      const data = (await resultResponse.json()) as {
-        result: ReviewResult | null;
-        status: string;
-      };
-
-      if (data.result) {
-        return { result: data.result, sessionId };
-      }
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-
-  throw new ReviewTimeoutError(sessionId, maxWaitMs);
+  return { result: await waitForDecision(serverInfo, sessionId, maxWaitMs), sessionId };
 }

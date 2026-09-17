@@ -6,6 +6,8 @@ import {
   submitReviewToServer,
   isServerAlive,
   ReviewTimeoutError,
+  ReviewerAskedError,
+  waitForDecision,
   currentVersion,
   recordError,
   awaitingAgent,
@@ -144,6 +146,19 @@ async function readThreads(
   return annotations.map((a) => ({ ...a, awaitingReply: awaitingAgent(a) }));
 }
 
+/**
+ * What a wait for a decision returns when the reviewer asks something first.
+ * The agent is the one being asked, and it can't answer while it waits.
+ */
+function reviewerAskedResult(err: ReviewerAskedError, waitWith: string): McpToolResult {
+  return jsonResult({
+    status: "reviewer_asked",
+    sessionId: err.sessionId,
+    threads: err.threads.map((t) => ({ ...t, awaitingReply: true })),
+    message: `The reviewer asked you something before deciding. Answer each thread with reply (session_id: ${err.sessionId}, annotation_id from threads) — change the code too if that's what they asked for. Then ${waitWith}. The review stays open; the decision still comes.`,
+  });
+}
+
 /** Run a tool body against the resolved session, with the shared failure handling. */
 async function withSession(
   params: TargetParams,
@@ -209,7 +224,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "open_review",
-    "Open a review of local git changes in the DiffPrism dashboard and wait for the reviewer's decision. Blocks until they approve, request changes, or dismiss, then returns their ReviewResult (decision, inline comments, summary). Reviews are one per repo: opening again for the same repo updates the review already open instead of starting another, and keeps its annotations. Pass wait: false to get the session id back immediately instead. Pull requests are not opened here — open them with `diffprism review <PR URL>` or the dashboard, then use the PR tools.",
+    "Open a review of local git changes in the DiffPrism dashboard and wait for the reviewer's decision. Blocks until they approve, request changes, or dismiss, then returns their ReviewResult (decision, inline comments, summary). If the reviewer asks you something first, returns status \"reviewer_asked\" with the threads: answer them with reply, then wait with get_review_result. Reviews are one per repo: opening again for the same repo updates the review already open instead of starting another, and keeps its annotations. Pass wait: false to get the session id back immediately instead. Pull requests are not opened here — open them with `diffprism review <PR URL>` or the dashboard, then use the PR tools.",
     {
       diff_ref: diffRefParam,
       title: z.string().optional().describe("Title for the review"),
@@ -268,6 +283,9 @@ export async function startMcpServer(): Promise<void> {
             message: "Review is open in the DiffPrism dashboard. Check for a decision with get_review_result.",
           });
         } catch (err) {
+          if (err instanceof ReviewerAskedError) {
+            return reviewerAskedResult(err, `wait for the decision with get_review_result (session_id: ${err.sessionId}, wait: true)`);
+          }
           if (err instanceof ReviewTimeoutError) {
             return jsonResult({
               status: "timed_out",
@@ -286,7 +304,7 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     "get_review_result",
-    "Check the decision on a review that is already open — after open_review with wait: false, or after open_review timed out. Returns the ReviewResult once the reviewer has decided. Set wait: true to block until they do.",
+    "Check the decision on a review that is already open — after open_review with wait: false, or after open_review timed out. Returns the ReviewResult once the reviewer has decided. Set wait: true to block until they do; the wait also ends with status \"reviewer_asked\" if they ask you something — reply, then wait again.",
     {
       ...targetParams,
       wait: z.boolean().optional().describe("Block until a decision arrives (up to timeout)"),
@@ -297,38 +315,35 @@ export async function startMcpServer(): Promise<void> {
     },
     async ({ session_id, repo_path, wait, timeout }) =>
       withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
-        const readResult = async (): Promise<ReviewResult | null> => {
+        if (!wait) {
           const response = await fetch(
             `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/result`,
           );
           if (!response.ok) {
             throw new Error(`Session not found: ${sessionId}`);
           }
-          return ((await response.json()) as { result: ReviewResult | null }).result;
-        };
-
-        if (!wait) {
-          const result = await readResult();
+          const { result } = (await response.json()) as { result: ReviewResult | null };
           return result
             ? jsonResult(result)
             : jsonResult({ status: "pending", sessionId, message: "No decision yet." });
         }
 
-        const maxWaitMs = Math.min(timeout ?? 300, 600) * 1000;
-        const start = Date.now();
-        while (Date.now() - start < maxWaitMs) {
-          const result = await readResult();
-          if (result) {
-            return jsonResult(result);
+        try {
+          return jsonResult(await waitForDecision(serverInfo, sessionId, Math.min(timeout ?? 300, 600) * 1000));
+        } catch (err) {
+          if (err instanceof ReviewerAskedError) {
+            return reviewerAskedResult(err, "call get_review_result with wait: true again");
           }
-          await new Promise((resolve) => setTimeout(resolve, 2000));
+          if (err instanceof ReviewTimeoutError) {
+            return jsonResult({
+              status: "pending",
+              sessionId,
+              message:
+                "Still no decision; the review remains open in the reviewer's browser. Call get_review_result with wait: true again rather than asking the user — their decision is the answer.",
+            });
+          }
+          throw err;
         }
-        return jsonResult({
-          status: "pending",
-          sessionId,
-          message:
-            "Still no decision; the review remains open in the reviewer's browser. Call get_review_result with wait: true again rather than asking the user — their decision is the answer.",
-        });
       }),
   );
 

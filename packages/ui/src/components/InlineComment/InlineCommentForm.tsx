@@ -13,6 +13,11 @@ const COMMENT_TYPES: { value: CommentType; label: string }[] = [
 
 interface InlineCommentFormProps {
   onSave: (body: string, type: CommentType) => void;
+  /**
+   * Ask the agent now, as a thread, instead of saving a comment that goes back
+   * with the decision. Given only when a server session can hold the thread.
+   */
+  onAsk?: (body: string) => Promise<{ ok: boolean; error?: string }>;
   onCancel: () => void;
   initialBody?: string;
   initialType?: CommentType;
@@ -22,6 +27,7 @@ interface InlineCommentFormProps {
 
 export function InlineCommentForm({
   onSave,
+  onAsk,
   onCancel,
   initialBody = "",
   initialType = "suggestion",
@@ -30,6 +36,8 @@ export function InlineCommentForm({
 }: InlineCommentFormProps) {
   const [body, setBody] = useState(initialBody);
   const [type, setType] = useState<CommentType>(initialType);
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const setDraftComment = useReviewStore((s) => s.setDraftComment);
 
@@ -52,6 +60,21 @@ export function InlineCommentForm({
     if (body.trim()) {
       setDraftComment(null);
       onSave(body.trim(), type);
+    }
+  }
+
+  async function handleAsk() {
+    if (!onAsk || !body.trim()) return;
+    setAsking(true);
+    setAskError(null);
+    const result = await onAsk(body.trim());
+    setAsking(false);
+    if (result.ok) {
+      setDraftComment(null);
+      onCancel();
+    } else {
+      // Keep what they wrote: the question didn't go anywhere.
+      setAskError(result.error ?? "Could not ask the agent");
     }
   }
 
@@ -80,6 +103,7 @@ export function InlineCommentForm({
         rows={3}
         className="w-full bg-background border border-border rounded px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent"
       />
+      {askError && <p role="alert" className="text-xs text-danger">{askError}</p>}
       <div className="flex items-center gap-2">
         <select
           value={type}
@@ -99,6 +123,16 @@ export function InlineCommentForm({
         >
           Cancel
         </button>
+        {onAsk && (
+          <button
+            onClick={handleAsk}
+            disabled={!body.trim() || asking}
+            title="Start a thread the agent answers while you review, instead of a comment sent with your decision"
+            className="px-3 py-1.5 text-xs font-medium rounded text-text-secondary border border-border hover:text-text-primary hover:border-accent/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            {asking ? "Asking…" : "Ask agent now"}
+          </button>
+        )}
         <button
           onClick={handleSave}
           disabled={!body.trim()}

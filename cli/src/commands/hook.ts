@@ -5,11 +5,12 @@ import {
   ensureServer,
   submitReviewToServer,
   ReviewTimeoutError,
+  ReviewerAskedError,
   COMMIT_GATE_DIFF_REF,
   recordError,
   REPORT_HINT,
 } from "@diffprism/core";
-import type { ReviewComment, ReviewResult } from "@diffprism/core";
+import type { Annotation, ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 
 /**
@@ -92,6 +93,13 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
     review = result;
   } catch (err) {
     stopWaiting();
+    if (err instanceof ReviewerAskedError) {
+      printQuestions(err.threads);
+      fail(
+        `Commit blocked: the reviewer asked you something before deciding. Answer each question with the DiffPrism reply tool (session_id: ${err.sessionId}, annotation_id as listed), then run git commit again — the review stays open and the decision still comes.`,
+      );
+      return;
+    }
     if (err instanceof ReviewTimeoutError) {
       fail(`Commit blocked: no decision after ${Math.round(err.waitedMs / 1000)}s. ${RETRY_ADVICE}`);
       return;
@@ -131,6 +139,24 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
   fail(
     `Commit blocked: no review decision was returned (got ${String(decision)}).`,
   );
+}
+
+/**
+ * Print the threads waiting on the agent, with the ids a reply needs.
+ *
+ * Whoever ran the command only sees its output, so the whole question has to
+ * be here: where it was asked, what was said last, and which thread to answer.
+ */
+export function printQuestions(threads: Annotation[]): void {
+  console.error("");
+  for (const t of threads) {
+    const last = t.replies?.at(-1)?.body ?? t.body;
+    console.error(`  ${t.file}:${t.line}  (annotation_id: ${t.id})`);
+    for (const line of last.split("\n")) {
+      console.error(`    ${line}`);
+    }
+  }
+  console.error("");
 }
 
 /**
