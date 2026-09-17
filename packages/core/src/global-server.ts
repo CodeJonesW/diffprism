@@ -37,6 +37,8 @@ import {
 } from "./ui-server.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { DEFAULT_DIFF_REF } from "./diff-scope.js";
+import { watcherPollDelay, DEFAULT_WATCH_SCHEDULE } from "./watch-schedule.js";
+import type { WatchScheduleOptions } from "./watch-schedule.js";
 import { createDiffPoller } from "./diff-poller.js";
 import type { DiffPoller } from "./diff-poller.js";
 import { appendHistory, generateEntryId, getRecentHistory } from "./review-history.js";
@@ -47,6 +49,7 @@ import type { ReviewHistoryEntry } from "./review-history.js";
 const SUBMITTED_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const ABANDONED_TTL_MS = 60 * 60 * 1000; // 1 hour
 const CLEANUP_INTERVAL_MS = 60 * 1000; // 1 minute
+const IDLE_SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 // ─── In-memory session store ───
 
@@ -107,6 +110,17 @@ interface Session {
    * guessed the working copy — the wrong diff for a staged commit-gate review.
    */
   openedDiffRef?: string;
+  /**
+   * Last time anyone did anything with this session: opened or reused it,
+   * viewed it, waited on its result, annotated or decided it, or its diff
+   * changed. A session idle past the TTL with nobody viewing is expired, so
+   * an abandoned one stops polling git.
+   */
+  lastActivityAt: number;
+}
+
+function touch(session: Session): void {
+  session.lastActivityAt = Date.now();
 }
 
 const sessions = new Map<string, Session>();
@@ -191,6 +205,7 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
       hasNewChanges: false,
       annotations: [],
       attentionClearedAt: 0,
+      lastActivityAt: Date.now(),
     };
     sessions.set(id, session);
     if (diffRef) {
@@ -239,6 +254,7 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
   existing.lastDiffHash = diffRef ? incomingHash : undefined;
   existing.lastDiffSet = diffRef ? payload.diffSet : undefined;
   existing.createdAt = Date.now();
+  touch(existing);
   // Annotations are deliberately kept. Reuse used to wipe them, destroying an
   // agent's findings whenever a hook or a second open landed on the repo.
 
@@ -274,6 +290,34 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
   return { session: existing, reused: true };
 }
 
+/**
+ * A client starts viewing a session. Connecting with ?sessionId=, the
+ * handshake's auto-select, and session:select all do this; they used to each
+ * hand-copy the steps and had drifted — only session:select acknowledged
+ * attention or started the watcher.
+ */
+function attachViewer(ws: WebSocket, session: Session): void {
+  clientSessions.set(ws, session.id);
+  session.status = "in_review";
+  session.hasNewChanges = false;
+  session.attentionClearedAt = Date.now();
+  touch(session);
+
+  const watcher = sessionWatchers.get(session.id);
+  startSessionWatcher(session.id);
+  broadcastSessionUpdate(session);
+
+  ws.send(JSON.stringify({ type: "review:init", payload: session.payload } satisfies ServerMessage));
+  for (const annotation of session.annotations) {
+    ws.send(JSON.stringify({ type: "annotation:added", payload: annotation } satisfies ServerMessage));
+  }
+
+  // An unviewed watcher may have backed off to minutes between polls, so the
+  // diff just sent could be stale. Poll now; a change reaches this viewer as
+  // diff:update. (A watcher started just above already read the diff.)
+  watcher?.wake();
+}
+
 /** Unseen, undismissed warnings — what the sidebar flags for attention. */
 function needsAttention(session: Session): boolean {
   return session.annotations.some(
@@ -286,7 +330,7 @@ const clientSessions = new Map<WebSocket, string>();
 
 // Session watchers using DiffPoller for live diff polling
 const sessionWatchers = new Map<string, DiffPoller>();
-let serverPollInterval = 2000;
+let watchSchedule: WatchScheduleOptions = DEFAULT_WATCH_SCHEDULE;
 
 // Module-level callback set by startGlobalServer to reopen browser when needed
 let reopenBrowserIfNeeded: (() => void) | null = null;
@@ -431,10 +475,14 @@ function startSessionWatcher(sessionId: string): void {
   const poller = createDiffPoller({
     diffRef: session.diffRef,
     cwd: session.projectPath,
-    pollInterval: serverPollInterval,
+    // Asked before every poll, so a session speeds up the moment someone views
+    // it and backs off while nobody is — see watch-schedule.ts.
+    pollInterval: ({ quietPolls }) =>
+      watcherPollDelay({ viewed: hasViewersForSession(sessionId), quietPolls }, watchSchedule),
     onDiffChanged: (updatePayload) => {
       const s = sessions.get(sessionId);
       if (!s) return;
+      touch(s);
 
       // Update session payload
       s.payload = {
@@ -504,6 +552,7 @@ function recordVerdict(session: Session, result: ReviewResult): void {
   session.result = result;
   session.status = "submitted";
   session.verdictDiffHash = hashDiff(session.payload.rawDiff);
+  touch(session);
   recordReviewHistory(session, result);
 }
 
@@ -930,6 +979,8 @@ async function handleApiRequest(
       jsonResponse(res, 404, { error: "Session not found" });
       return true;
     }
+    // A caller blocked on this review polls here; that keeps it alive.
+    touch(session);
 
     if (session.result) {
       jsonResponse(res, 200, { result: session.result, status: "submitted" });
@@ -1011,6 +1062,7 @@ async function handleApiRequest(
       };
 
       session.annotations.push(annotation);
+      touch(session);
 
       // Broadcast to UI clients viewing this session
       sendToSessionClients(session.id, {
@@ -1210,6 +1262,7 @@ async function handleApiRequest(
       // Update diffRef and restart watcher with new ref
       stopSessionWatcher(session.id);
       session.diffRef = ref;
+      touch(session);
       if (hasConnectedClients()) {
         startSessionWatcher(session.id);
       }
@@ -1289,11 +1342,19 @@ export async function startGlobalServer(
     wsPort: preferredWsPort = 24681,
     silent = false,
     dev = false,
-    pollInterval = 2000,
+    pollInterval = DEFAULT_WATCH_SCHEDULE.viewedMs,
+    unviewedPollInterval = DEFAULT_WATCH_SCHEDULE.unviewedMs,
+    unviewedPollMaxInterval = DEFAULT_WATCH_SCHEDULE.unviewedMaxMs,
+    idleSessionTtl = IDLE_SESSION_TTL_MS,
+    cleanupInterval = CLEANUP_INTERVAL_MS,
     openBrowser = true,
   } = options;
 
-  serverPollInterval = pollInterval;
+  watchSchedule = {
+    viewedMs: pollInterval,
+    unviewedMs: unviewedPollInterval,
+    unviewedMaxMs: unviewedPollMaxInterval,
+  };
 
   // Get available ports (prefer defaults, fall back to random)
   const [httpPort, wsPort] = await Promise.all([
@@ -1337,27 +1398,11 @@ export async function startGlobalServer(
     const sessionId = url.searchParams.get("sessionId");
 
     if (sessionId) {
-      clientSessions.set(ws, sessionId);
-
-      // Send the review:init payload for this session
       const session = sessions.get(sessionId);
       if (session) {
-        session.status = "in_review";
-        session.hasNewChanges = false;
-        broadcastSessionUpdate(session);
-        const msg: ServerMessage = {
-          type: "review:init",
-          payload: session.payload,
-        };
-        ws.send(JSON.stringify(msg));
-
-        // Send any existing annotations
-        for (const annotation of session.annotations) {
-          ws.send(JSON.stringify({
-            type: "annotation:added",
-            payload: annotation,
-          } satisfies ServerMessage));
-        }
+        attachViewer(ws, session);
+      } else {
+        clientSessions.set(ws, sessionId);
       }
     } else {
       // No specific session requested — send full session list (server mode UI)
@@ -1372,22 +1417,7 @@ export async function startGlobalServer(
       if (summaries.length === 1) {
         const session = sessions.get(summaries[0].id);
         if (session) {
-          clientSessions.set(ws, session.id);
-          session.status = "in_review";
-          session.hasNewChanges = false;
-          broadcastSessionUpdate(session);
-          ws.send(JSON.stringify({
-            type: "review:init",
-            payload: session.payload,
-          } satisfies ServerMessage));
-
-          // Send any existing annotations
-          for (const annotation of session.annotations) {
-            ws.send(JSON.stringify({
-              type: "annotation:added",
-              payload: annotation,
-            } satisfies ServerMessage));
-          }
+          attachViewer(ws, session);
         }
       }
     }
@@ -1411,24 +1441,7 @@ export async function startGlobalServer(
         } else if (msg.type === "session:select") {
           const session = sessions.get(msg.payload.sessionId);
           if (session) {
-            clientSessions.set(ws, session.id);
-            session.status = "in_review";
-            session.hasNewChanges = false;
-            session.attentionClearedAt = Date.now();
-            startSessionWatcher(session.id);
-            broadcastSessionUpdate(session);
-            ws.send(JSON.stringify({
-              type: "review:init",
-              payload: session.payload,
-            } satisfies ServerMessage));
-
-            // Send any existing annotations
-            for (const annotation of session.annotations) {
-              ws.send(JSON.stringify({
-                type: "annotation:added",
-                payload: annotation,
-              } satisfies ServerMessage));
-            }
+            attachViewer(ws, session);
           }
         } else if (msg.type === "session:close") {
           const closedId = msg.payload.sessionId;
@@ -1515,22 +1528,32 @@ export async function startGlobalServer(
   function cleanupExpiredSessions(): void {
     const now = Date.now();
     for (const [id, session] of sessions.entries()) {
-      // Manual sessions are only removed by explicit user close
-      if (session.source === "manual" && session.status !== "submitted") {
-        continue;
-      }
+      // Idle: nobody viewing it, nobody waiting on it, nothing changing. This
+      // is what finally stops an abandoned session polling git. It used to be
+      // impossible for two kinds — a UI-opened session was only ever removed
+      // by an explicit close, and an in_review session matched no rule at all.
+      const idle =
+        session.status !== "submitted" &&
+        !hasViewersForSession(id) &&
+        now - session.lastActivityAt > idleSessionTtl;
+
+      // The age-based rules still don't apply to an open UI session: a
+      // person opened it, so an hour without a verdict isn't abandonment.
       const age = now - session.createdAt;
-      const expired =
-        (session.status === "submitted" && age > SUBMITTED_TTL_MS) ||
-        (session.status === "pending" && age > ABANDONED_TTL_MS);
-      if (expired) {
+      const ageRulesApply = !(session.source === "manual" && session.status !== "submitted");
+      const expiredByAge =
+        ageRulesApply &&
+        ((session.status === "submitted" && age > SUBMITTED_TTL_MS) ||
+          (session.status === "pending" && age > ABANDONED_TTL_MS));
+
+      if (idle || expiredByAge) {
         stopSessionWatcher(id);
         sessions.delete(id);
         broadcastSessionRemoved(id);
       }
     }
   }
-  const cleanupTimer = setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL_MS);
+  const cleanupTimer = setInterval(cleanupExpiredSessions, cleanupInterval);
 
   // Write server discovery file
   const serverInfo: GlobalServerInfo = {
