@@ -2,6 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+declare const DIFFPRISM_BUILT_AT: number;
+
+/**
+ * When the running bundle was built (ms since epoch), or null when running from
+ * source — tsx and vitest have no build step, so there is nothing to compare.
+ */
+export function builtAt(): number | null {
+  return typeof DIFFPRISM_BUILT_AT !== "undefined" ? DIFFPRISM_BUILT_AT : null;
+}
+
 export interface BuildInfo {
   /** True when running from a source checkout rather than an installed package. */
   dev: boolean;

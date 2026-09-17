@@ -97,7 +97,7 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
     if (err instanceof ReviewerAskedError) {
       printQuestions(err.sessionId, err.threads);
       fail(
-        "Commit blocked: the reviewer asked you something before deciding. Answer each question with the command under it — change the code too if that's what they asked for — then run git commit again. The review stays open and the decision still comes.",
+        "Commit blocked: the reviewer asked you something before deciding. Answer each question with the command under it — change the code too if that's what they asked for — then run git commit again straight away to keep waiting. The review stays open, the reviewer may ask more, and the decision still comes. Don't stop to ask them in the terminal.",
       );
       return;
     }

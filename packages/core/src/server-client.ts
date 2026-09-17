@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { isServerAlive } from "./server-file.js";
+import { isServerAlive, readServerFile, removeServerFile } from "./server-file.js";
+import { builtAt } from "./build-info.js";
 import { awaitingAgent } from "./threads.js";
 import type {
   Annotation,
@@ -33,10 +34,25 @@ export interface EnsureServerOptions {
 export async function ensureServer(
   options: EnsureServerOptions = {},
 ): Promise<GlobalServerInfo> {
-  // 1. Check if already running
+  // 1. Check if already running — and whether it runs this build
   const existing = await isServerAlive();
   if (existing) {
-    return existing;
+    const decision = await decideOnRunningServer(existing, builtAt());
+    if (decision.action === "keep") {
+      return existing;
+    }
+    if (decision.action === "keep-busy") {
+      if (!options.silent) {
+        console.error(
+          `The DiffPrism server (PID ${existing.pid}) runs an older build, but ${decision.openReviews} review${decision.openReviews === 1 ? " is" : "s are"} open in it, so it stays up. Finish or close ${decision.openReviews === 1 ? "it" : "them"} and the next command starts the new build — or run \`diffprism server stop\`.`,
+        );
+      }
+      return existing;
+    }
+    if (!options.silent) {
+      console.error(`Replacing the DiffPrism server (PID ${existing.pid}): it runs an older build than this command.`);
+    }
+    await stopServer(existing);
   }
 
   // 2. Build spawn command
@@ -75,6 +91,74 @@ export async function ensureServer(
   throw new Error(
     `DiffPrism server failed to start within ${timeoutMs / 1000}s. Check logs at ${logPath}`,
   );
+}
+
+export type RunningServerDecision =
+  | { action: "keep" }
+  | { action: "keep-busy"; openReviews: number }
+  | { action: "replace" };
+
+/**
+ * Decide whether a running server should be replaced by this build.
+ *
+ * Only an OLDER server is replaced. Claude Code keeps `diffprism serve` running
+ * on whatever build it started with; if merely being different were enough,
+ * that stale process would restart a newer server back onto its old build.
+ * Without a build stamp on this side (running from source) nothing can be
+ * compared, so the server is kept. A server with no stamp predates stamps and
+ * is older by definition.
+ *
+ * A review in progress is never cut off: its session lives in the server.
+ */
+export async function decideOnRunningServer(
+  server: GlobalServerInfo,
+  ownBuiltAt: number | null,
+): Promise<RunningServerDecision> {
+  if (ownBuiltAt === null) return { action: "keep" };
+  if (server.builtAt !== undefined && server.builtAt >= ownBuiltAt) return { action: "keep" };
+
+  const response = await fetch(`http://localhost:${server.httpPort}/api/reviews`);
+  if (!response.ok) {
+    throw new Error(`Could not list reviews on the running DiffPrism server: it returned ${response.status}`);
+  }
+  const { sessions } = (await response.json()) as { sessions: Array<{ status: string }> };
+  const openReviews = sessions.filter((s) => s.status === "pending" || s.status === "in_review").length;
+  return openReviews > 0 ? { action: "keep-busy", openReviews } : { action: "replace" };
+}
+
+/**
+ * Stop a running server and wait until it is gone, so a replacement can take
+ * its ports. Throws if it outlives the wait rather than racing it for them.
+ */
+export async function stopServer(server: GlobalServerInfo, timeoutMs = 5000): Promise<void> {
+  try {
+    process.kill(server.pid, "SIGTERM");
+  } catch {
+    // Already gone.
+  }
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (!isProcessRunning(server.pid)) {
+      // A server that died without cleaning up leaves its file behind.
+      if (readServerFile()?.pid === server.pid) {
+        removeServerFile();
+      }
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(
+    `The old DiffPrism server (PID ${server.pid}) did not stop within ${timeoutMs / 1000}s. Stop it with \`diffprism server stop\` and try again.`,
+  );
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

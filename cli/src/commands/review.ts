@@ -64,7 +64,7 @@ async function reviewLocalFlow(
     if (err instanceof ReviewerAskedError) {
       printQuestions(err.sessionId, err.threads);
       console.error(
-        "The reviewer asked something before deciding. Answer each question with the command under it, then run diffprism review again — the review stays open.",
+        "The reviewer asked something before deciding. Answer each question with the command under it, then run diffprism review again straight away to keep waiting — the review stays open, and the reviewer may ask more. Don't stop to ask them in the terminal.",
       );
       process.exit(1);
     }
