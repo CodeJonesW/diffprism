@@ -17,6 +17,8 @@ interface InlineCommentThreadProps {
   file: string;
   line: number;
   onAdd: (body: string, type: ReviewComment["type"]) => void;
+  /** Ask the agent now instead — see InlineCommentForm. */
+  onAsk?: (body: string) => Promise<{ ok: boolean; error?: string }>;
   onUpdate: (index: number, body: string, type: ReviewComment["type"]) => void;
   onDelete: (index: number) => void;
   onOpenForm: () => void;
@@ -29,6 +31,7 @@ export function InlineCommentThread({
   file,
   line,
   onAdd,
+  onAsk,
   onUpdate,
   onDelete,
   onOpenForm,
@@ -101,6 +104,7 @@ export function InlineCommentThread({
             onAdd(body, type);
             onCloseForm();
           }}
+          onAsk={onAsk}
           onCancel={onCloseForm}
         />
       )}

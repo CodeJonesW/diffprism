@@ -47,6 +47,7 @@ This should happen automatically after significant changes. You don't need the u
    - **`dismissed`** — the reviewer closed it without deciding. Ask before continuing.
    - If `postReviewAction` is `"commit"` — commit the changes. If `"commit_and_pr"` — commit and open a PR.
 4. If it returns `status: "timed_out"`, the reviewer is still reading. Keep waiting with `mcp__diffprism__get_review_result` (`wait: true`).
+5. If it returns `status: "reviewer_asked"`, the reviewer asked you something before deciding. Answer each thread with `mcp__diffprism__reply` (its `id` is the `annotation_id`) — and change the code if that's what they asked for. Then wait again with `mcp__diffprism__get_review_result` (`wait: true`), which can return `reviewer_asked` again.
 
 **While a review is open, wait for it.** Don't ask the user whether they've finished, and don't move on to other work — their decision is the answer, and it arrives through the tool. Asking in the terminal splits the conversation in two and the decision gets lost between them.
 
@@ -68,6 +69,7 @@ If the repo has the DiffPrism pre-commit gate installed (`diffprism hook install
 - Run `git commit` with a shell timeout long enough for someone to read the change — up to 600000 ms — not the short default.
 - If the commit is interrupted, or reports no decision, the review is still open. Once the reviewer decides, run the **same** `git commit` again: their decision is picked up immediately. Don't change the staged files first — that makes it a new question.
 - If it's blocked with changes requested, the reviewer's summary and comments are printed. Address them, stage, and commit again.
+- If it's blocked because the reviewer asked something, their questions are printed with an `annotation_id` each. Answer each with `mcp__diffprism__reply`, then run the same `git commit` again — the review is still open.
 
 ## Workflow 3: PR Review
 

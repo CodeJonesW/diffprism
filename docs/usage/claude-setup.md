@@ -196,9 +196,11 @@ Opens a review of local changes and **blocks until the reviewer decides**, retur
 
 A decision stands while the diff it answered is unchanged, so calling `open_review` again with the same diff after a timeout returns the decision already given rather than asking for a new one.
 
+If the reviewer asks the agent something before deciding — **Ask agent now** on a line, or a reply to one of its findings — the wait ends with `{ status: "reviewer_asked", sessionId, threads }`. Answer each thread with `reply`, then wait again with `get_review_result`. The review stays open.
+
 ### `get_review_result`
 
-Checks the decision on a review that is already open — after `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`.
+Checks the decision on a review that is already open — after `wait: false`, or after a timeout. Returns the `ReviewResult`, `{ status: "pending" }`, or — when waiting — `{ status: "reviewer_asked", sessionId, threads }` if the reviewer asks the agent something first.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|

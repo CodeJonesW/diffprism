@@ -7,20 +7,14 @@ const mockSubmitReviewToServer = vi.fn();
 const mockIsServerAlive = vi.fn();
 vi.mock("@diffprism/core", async () => {
   const actual = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
-  class ReviewTimeoutError extends Error {
-    readonly sessionId: string;
-    readonly waitedMs: number;
-    constructor(sessionId: string, waitedMs: number) {
-      super(`Review ${sessionId} is still open`);
-      this.sessionId = sessionId;
-      this.waitedMs = waitedMs;
-    }
-  }
   return {
     ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
     submitReviewToServer: (...args: unknown[]) => mockSubmitReviewToServer(...args),
     isServerAlive: (...args: unknown[]) => mockIsServerAlive(...args),
-    ReviewTimeoutError,
+    ReviewTimeoutError: actual.ReviewTimeoutError,
+    ReviewerAskedError: actual.ReviewerAskedError,
+    // The real wait, over the stubbed fetch: what it asks the server is the behaviour under test.
+    waitForDecision: actual.waitForDecision,
     DEFAULT_DIFF_REF: "working-copy",
     DIFF_REF_DESCRIPTION: "scope",
     currentVersion: () => "0.0.0-test",
@@ -164,6 +158,21 @@ describe("open_review", () => {
 
     expect(result.isError).toBeUndefined();
     expect(parse(result)).toMatchObject({ decision: "changes_requested", summary: "what is this?" });
+  });
+
+  it("returns the reviewer's questions instead of blocking on them", async () => {
+    const { ReviewerAskedError } = await import("@diffprism/core");
+    const question = {
+      id: "q1", sessionId: "s1", file: "src/a.ts", line: 3, side: "new" as const, body: "Why a Map?", type: "question" as const,
+      confidence: 1, category: "other" as const, source: { agent: "reviewer" }, createdAt: 1, author: "reviewer" as const, replies: [],
+    };
+    mockSubmitReviewToServer.mockRejectedValue(new ReviewerAskedError("s1", [question]));
+
+    const result = await (await tool("open_review"))({ diff_ref: "staged" });
+
+    expect(result.isError).toBeUndefined();
+    expect(parse(result)).toMatchObject({ status: "reviewer_asked", sessionId: "s1", threads: [{ id: "q1" }] });
+    expect(parse(result).message).toContain("get_review_result");
   });
 
   it("returns the session id at once with wait: false", async () => {
@@ -402,6 +411,24 @@ describe("get_review_result", () => {
 
     const result = await (await tool("get_review_result"))({ session_id: "s1" });
     expect(parse(result)).toMatchObject({ decision: "approved" });
+  });
+
+  it("stops waiting when the reviewer asks something, and hands back the threads to answer", async () => {
+    const question = {
+      id: "q1", sessionId: "s1", file: "src/a.ts", line: 3, side: "new", body: "Why a Map?", type: "question",
+      confidence: 1, category: "other", source: { agent: "reviewer" }, createdAt: 1, author: "reviewer", replies: [],
+    };
+    stubFetch({
+      [`${base}/api/reviews/s1/result`]: () => json({ result: null }),
+      [`${base}/api/reviews/s1/annotations`]: () => json({ annotations: [question] }),
+    });
+
+    const result = await (await tool("get_review_result"))({ session_id: "s1", wait: true, timeout: 5 });
+
+    const body = parse(result);
+    expect(body).toMatchObject({ status: "reviewer_asked", sessionId: "s1" });
+    expect(body.threads).toEqual([expect.objectContaining({ id: "q1", body: "Why a Map?", awaitingReply: true })]);
+    expect(body.message).toContain("reply");
   });
 
   it("reports pending while the reviewer is still deciding", async () => {

@@ -27,7 +27,7 @@ There is no module-level "last session" and no "most recent session across all r
 
 #### `open_review`
 - **Params:** `diff_ref` (default `DEFAULT_DIFF_REF`, `"working-copy"`), `title`, `description`, `reasoning`, `annotations`, `wait` (default `true`), `timeout_ms` (default `DEFAULT_WAIT_MS`, 600000)
-- **Behavior:** Calls `ensureServer()` then `submitReviewToServer()`. Blocks until the reviewer decides and returns the `ReviewResult`. With `wait: false`, returns `{ status: "open", sessionId }` at once. If the wait runs out, `submitReviewToServer` throws `ReviewTimeoutError` and the tool returns `{ status: "timed_out", sessionId }` — the review is still open.
+- **Behavior:** Calls `ensureServer()` then `submitReviewToServer()`. Blocks until the reviewer decides and returns the `ReviewResult`. With `wait: false`, returns `{ status: "open", sessionId }` at once. If the wait runs out, `submitReviewToServer` throws `ReviewTimeoutError` and the tool returns `{ status: "timed_out", sessionId }` — the review is still open. If a thread is waiting on the agent first, core's `waitForDecision` throws `ReviewerAskedError` and the tool returns `{ status: "reviewer_asked", sessionId, threads }` (#177): the agent is the one asked, and it can't answer while it waits.
 - **Rejects PR refs.** Pull requests are opened by `diffprism review <PR>` or the dashboard; agents then participate with the PR tools.
 - **One session per repo:** a second open for the same repo reuses the session, keeps its annotations, switches it to the new ref, and raises its new-changes signal.
 - **A decision stands while its diff is unchanged.** Re-opening with the identical diff returns a decision already given instead of clearing it — so a caller whose wait was cut short converges on the reviewer's answer. A changed diff clears it; a dismissal never carries over.
@@ -35,7 +35,7 @@ There is no module-level "last session" and no "most recent session across all r
 
 #### `get_review_result`
 - **Params:** targeting, `wait`, `timeout` (seconds, default 300, max 600)
-- **Behavior:** Checks an already-open review — after `open_review` with `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`.
+- **Behavior:** Checks an already-open review — after `open_review` with `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`. With `wait`, uses the same `waitForDecision` as `open_review`, so it also returns `reviewer_asked`.
 
 #### `update_review_context`
 - **Params:** targeting, `reasoning`, `title`, `description`

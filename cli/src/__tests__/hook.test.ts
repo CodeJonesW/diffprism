@@ -33,6 +33,7 @@ vi.mock("@diffprism/core", async () => {
     ensureServer: vi.fn(),
     submitReviewToServer: vi.fn(),
     ReviewTimeoutError,
+    ReviewerAskedError: actual.ReviewerAskedError,
     COMMIT_GATE_DIFF_REF: actual.COMMIT_GATE_DIFF_REF,
     recordError: vi.fn(),
     REPORT_HINT: actual.REPORT_HINT,
@@ -43,7 +44,7 @@ vi.mock("@diffprism/git", () => ({
   getDiff: vi.fn(),
 }));
 
-import { ensureServer, submitReviewToServer, ReviewTimeoutError } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, ReviewTimeoutError, ReviewerAskedError } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 import {
   preCommitHook,
@@ -404,6 +405,24 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     expect(await run()).toBe(1);
     const last = errors.at(-1) ?? "";
     expect(last).toContain("no decision after 600s");
+    expect(last).toContain("run git commit again");
+  });
+
+  it("blocks with the reviewer's questions and how to answer them (#177)", async () => {
+    const question = {
+      id: "q1", sessionId: "s1", file: "src/a.ts", line: 3, side: "new" as const, body: "Why a Map?", type: "question" as const,
+      confidence: 1, category: "other" as const, source: { agent: "reviewer" }, createdAt: 1, author: "agent" as const,
+      replies: [{ id: "r1", author: "reviewer" as const, body: "And why not a Set?", createdAt: 2 }],
+    };
+    vi.mocked(submitReviewToServer).mockRejectedValue(new ReviewerAskedError("s1", [question]));
+
+    expect(await run()).toBe(1);
+    const output = errors.join("\n");
+    // The last thing said in the thread is the question to answer.
+    expect(output).toContain("src/a.ts:3  (annotation_id: q1)");
+    expect(output).toContain("And why not a Set?");
+    const last = errors.at(-1) ?? "";
+    expect(last).toContain("reply tool (session_id: s1");
     expect(last).toContain("run git commit again");
   });
 

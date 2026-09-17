@@ -380,6 +380,14 @@ export function DiffViewer() {
       }
     }
 
+    // In a local review the reviewer can also ask the agent now, as a thread,
+    // rather than leave a comment that only goes back with the decision.
+    const askAgent = (line: number, key: string) =>
+      !isPrReview && canThread
+        ? (body: string) =>
+            startThread(reviewId!, { file: getDisplayPath(selectedFile), line, side: keyToSideMap[key], body })
+        : undefined;
+
     // Collect all lines that have either comments or annotations
     const allLines = new Set<number>([
       ...commentsByLine.keys(),
@@ -426,6 +434,7 @@ export function DiffViewer() {
               onAdd={(body, type) => {
                 addComment({ file: selectedFile, line, body, type });
               }}
+              onAsk={askAgent(line, changeKey)}
               onUpdate={(index, body, type) => {
                 updateComment(index, { file: selectedFile, line, body, type });
               }}
@@ -433,6 +442,21 @@ export function DiffViewer() {
               onOpenForm={() => setActiveCommentKey(changeKey)}
               onCloseForm={() => setActiveCommentKey(null)}
             />
+          )}
+          {/* A line with only an agent's finding still takes a comment. */}
+          {!isPrReview && !lineComments?.length && activeCommentKey === changeKey && (
+            <div className="border-t border-border bg-surface">
+              <InlineCommentForm
+                file={selectedFile}
+                line={line}
+                onSave={(body, type) => {
+                  addComment({ file: selectedFile, line, body, type });
+                  setActiveCommentKey(null);
+                }}
+                onAsk={askAgent(line, changeKey)}
+                onCancel={() => setActiveCommentKey(null)}
+              />
+            </div>
           )}
         </>
       );
@@ -474,6 +498,7 @@ export function DiffViewer() {
                 addComment({ file: selectedFile, line, body, type });
                 setActiveCommentKey(null);
               }}
+              onAsk={askAgent(line, activeCommentKey)}
               onCancel={() => setActiveCommentKey(null)}
             />
           </div>

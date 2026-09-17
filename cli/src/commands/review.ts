@@ -1,4 +1,6 @@
-import { ensureServer, submitReviewToServer, DEFAULT_DIFF_REF, recordError, REPORT_HINT } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, ReviewerAskedError, DEFAULT_DIFF_REF, recordError, REPORT_HINT } from "@diffprism/core";
+import type { ReviewResult } from "@diffprism/core";
+import { printQuestions } from "./hook.js";
 import { isPrRef, parsePrRef } from "@diffprism/github";
 
 interface ReviewFlags {
@@ -51,11 +53,23 @@ async function reviewLocalFlow(
   // and a caller can pipe it straight into a JSON parser.
   console.error("Opening review in browser...");
 
-  const { result } = await submitReviewToServer(serverInfo, diffRef, {
-    title: flags.title,
-    cwd: process.cwd(),
-    diffRef,
-  });
+  let result: ReviewResult | null;
+  try {
+    ({ result } = await submitReviewToServer(serverInfo, diffRef, {
+      title: flags.title,
+      cwd: process.cwd(),
+      diffRef,
+    }));
+  } catch (err) {
+    if (err instanceof ReviewerAskedError) {
+      printQuestions(err.threads);
+      console.error(
+        `The reviewer asked something before deciding. Answer each question with the DiffPrism reply tool (session_id: ${err.sessionId}, annotation_id as listed), then run diffprism review again — the review stays open.`,
+      );
+      process.exit(1);
+    }
+    throw err;
+  }
 
   // Print structured result to stdout
   console.log(JSON.stringify(result, null, 2));
