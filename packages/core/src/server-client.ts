@@ -313,7 +313,7 @@ export async function waitForDecision(
       return result;
     }
 
-    const annotationsResponse = await fetch(`${base}/annotations`);
+    const annotationsResponse = await fetch(`${base}/annotations?reader=agent`);
     if (!annotationsResponse.ok) {
       throw new Error(`Could not read threads for ${sessionId}: server returned ${annotationsResponse.status}`);
     }

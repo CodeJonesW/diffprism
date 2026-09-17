@@ -137,7 +137,7 @@ async function readThreads(
   sessionId: string,
 ): Promise<Array<Annotation & { awaitingReply: boolean }> | null> {
   const response = await fetch(
-    `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`,
+    `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations?reader=agent`,
   );
   if (!response.ok) {
     return null;
@@ -493,7 +493,7 @@ export async function startMcpServer(): Promise<void> {
       withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
         const [sessionResponse, annotationsResponse] = await Promise.all([
           fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}`),
-          fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations`),
+          fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations?reader=agent`),
         ]);
         if (!sessionResponse.ok) {
           return toolError(`Session not found: ${sessionId}`);

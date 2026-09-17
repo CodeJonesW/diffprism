@@ -20,6 +20,7 @@ interface ReviewViewProps {
 
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
   const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata } = useReviewStore();
+  const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
   const isPrReview = !!metadata?.githubPr;
 
   // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
@@ -51,6 +52,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
           <AnnotationPanel
             annotations={annotations}
             onDismiss={dismissAnnotation}
+            agentReadAt={agentReadAt}
             onNavigate={(annotation) => {
               navigateToFile(annotation.file);
               // A dismissed thread isn't drawn on the diff, so there is nothing to scroll to.

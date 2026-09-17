@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getGitDiff, listBranches, listCommits } from "../local.js";
+import { getGitDiff, getGitHubRemotes, listBranches, listCommits } from "../local.js";
 
 // Mock child_process and fs
 vi.mock("node:child_process", () => ({
@@ -196,6 +196,34 @@ describe("getGitDiff", () => {
         expect(opts?.cwd).toBe("/tmp/my-repo");
       }
     });
+  });
+});
+
+describe("getGitHubRemotes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("lists each GitHub repo once, lowercased, from ssh and https remotes", () => {
+    mockExecSync.mockReturnValue(
+      [
+        "origin\tgit@github.com:CodeJonesW/park-smart.git (fetch)",
+        "origin\tgit@github.com:CodeJonesW/park-smart.git (push)",
+        "upstream\thttps://github.com/acme/widget (fetch)",
+        "mirror\thttps://gitlab.com/acme/other.git (fetch)",
+        "",
+      ].join("\n"),
+    );
+
+    expect(getGitHubRemotes({ cwd: "/repo" })).toEqual(["codejonesw/park-smart", "acme/widget"]);
+  });
+
+  it("is empty outside a git repository", () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error("not a git repository");
+    });
+
+    expect(getGitHubRemotes({ cwd: "/nowhere" })).toEqual([]);
   });
 });
 

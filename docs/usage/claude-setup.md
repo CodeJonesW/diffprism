@@ -273,6 +273,8 @@ Returns `{ sessionId, annotationId, replyId }`.
 
 Blocks until some thread is awaiting a reply, then returns `{ sessionId, threads }` with those threads. Returns `{ status: "timed_out" }` if nothing new was said — call it again.
 
+Nothing starts an agent for you. If no agent has read a reviewer's message within a few seconds, the thread says no agent is listening and names the session. Ask Claude Code to answer your DiffPrism comments on that session, and it runs this loop. A PR review opened from the dashboard is also found from any clone of the repo, via its GitHub remotes.
+
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | targeting | No       | See above |

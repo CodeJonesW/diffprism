@@ -13,6 +13,7 @@ import {
 import type { Annotation } from "../../types";
 import { CATEGORY_COLORS } from "../../lib/semantic-colors";
 import { awaitingAgent } from "../../lib/threads";
+import { useAgentPickup } from "../../hooks/useAgentPickup";
 
 /** Group label for the reviewer's own threads, which have no agent. */
 const YOUR_COMMENTS = "Your comments";
@@ -29,6 +30,8 @@ interface AnnotationPanelProps {
   onDismiss: (annotationId: string) => void;
   /** Go to the thread itself — its file, and its line within the file. */
   onNavigate: (annotation: Annotation) => void;
+  /** SessionSummary.agentReadAt of the review being shown. */
+  agentReadAt?: number;
 }
 
 function AnnotationBody({ body }: { body: string }) {
@@ -69,8 +72,10 @@ export function AnnotationPanel({
   annotations,
   onDismiss,
   onNavigate,
+  agentReadAt,
 }: AnnotationPanelProps) {
   const [showDismissed, setShowDismissed] = useState(false);
+  const pickup = useAgentPickup(annotations, agentReadAt);
 
   const grouped = useMemo(() => {
     const filtered = showDismissed
@@ -164,7 +169,11 @@ export function AnnotationPanel({
                     </div>
                     <AnnotationBody body={annotation.body} />
                     {awaitingAgent(annotation) ? (
-                      <p className="text-[10px] text-text-secondary italic mt-0.5">Waiting for an agent</p>
+                      pickup(annotation) === "unheard" ? (
+                        <p className="text-[10px] text-warning mt-0.5">No agent listening</p>
+                      ) : (
+                        <p className="text-[10px] text-text-secondary italic mt-0.5">Waiting for an agent</p>
+                      )
                     ) : (annotation.replies?.length ?? 0) > 0 ? (
                       <p className="text-[10px] text-text-secondary mt-0.5">
                         {annotation.replies!.length} {annotation.replies!.length === 1 ? "reply" : "replies"}

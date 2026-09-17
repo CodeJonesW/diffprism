@@ -392,6 +392,12 @@ export interface SessionSummary {
   /** The diff ref this session currently shows, e.g. "working-copy" or "staged". */
   diffRef?: string;
   source?: SessionSource;
+  /**
+   * Last time an agent — an MCP tool, or a CLI/hook caller blocked on the
+   * decision — read this session's threads. Unset until one does. A reviewer
+   * message newer than this hasn't reached any agent.
+   */
+  agentReadAt?: number;
 }
 
 export interface GlobalServerOptions {

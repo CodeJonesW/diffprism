@@ -181,6 +181,7 @@ export function DiffViewer() {
   // comment on a line opens a conversation with the agent instead.
   const { isAvailable: hasServer, startThread, replyToThread } = useHttpApi();
   const canThread = hasServer && !!reviewId;
+  const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -392,6 +393,8 @@ export function DiffViewer() {
               annotations={lineAnnotations}
               onDismiss={dismissAnnotation}
               onReply={canThread ? (annotationId, body) => replyToThread(reviewId!, annotationId, body) : undefined}
+              sessionId={reviewId ?? undefined}
+              agentReadAt={agentReadAt}
             />
           )}
           {isPrReview && canThread && activeCommentKey === changeKey && (
@@ -507,6 +510,7 @@ export function DiffViewer() {
     isPrReview,
     canThread,
     reviewId,
+    agentReadAt,
     startThread,
     replyToThread,
   ]);

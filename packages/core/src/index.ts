@@ -62,7 +62,7 @@ export {
   redactHome,
 } from "./feedback.js";
 export type { Environment, ErrorReport, FeedbackOptions } from "./feedback.js";
-export { awaitingAgent, lastAuthor } from "./threads.js";
+export { awaitingAgent, lastAuthor, lastMessageAt, pickedUpByAgent } from "./threads.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,

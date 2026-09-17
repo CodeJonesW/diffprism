@@ -12,6 +12,7 @@ import {
 import type { Annotation, AnnotationReply } from "../../types";
 import { CATEGORY_COLORS, CATEGORY_BADGE_STYLES } from "../../lib/semantic-colors";
 import { awaitingAgent } from "../../lib/threads";
+import { useAgentPickup } from "../../hooks/useAgentPickup";
 import { ThreadForm } from "./ThreadForm";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
@@ -28,6 +29,10 @@ interface InlineAnnotationThreadProps {
   onDismiss: (annotationId: string) => void;
   /** Present when replies can be posted — i.e. connected to a server session. */
   onReply?: (annotationId: string, body: string) => Promise<SendResult>;
+  /** The review these threads belong to — named when telling the reviewer how to reach an agent. */
+  sessionId?: string;
+  /** SessionSummary.agentReadAt of that review. */
+  agentReadAt?: number;
 }
 
 function AuthorLabel({ author, agent }: { author: "agent" | "reviewer"; agent?: string }) {
@@ -57,8 +62,11 @@ export function InlineAnnotationThread({
   annotations,
   onDismiss,
   onReply,
+  sessionId,
+  agentReadAt,
 }: InlineAnnotationThreadProps) {
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const pickup = useAgentPickup(annotations, agentReadAt);
 
   if (annotations.length === 0) return null;
 
@@ -122,11 +130,17 @@ export function InlineAnnotationThread({
               </div>
             )}
 
-            {awaitingAgent(annotation) && (
-              <p className="mt-1.5 text-[11px] text-text-secondary italic">
-                Waiting for the agent to reply.
-              </p>
-            )}
+            {awaitingAgent(annotation) &&
+              (pickup(annotation) === "unheard" ? (
+                <p className="mt-1.5 text-[11px] text-warning">
+                  No agent is listening, so nothing will answer this. In Claude Code, ask it to answer your
+                  DiffPrism comments{sessionId ? ` on ${sessionId}` : ""}.
+                </p>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-text-secondary italic">
+                  Waiting for the agent to reply.
+                </p>
+              ))}
 
             {onReply &&
               (replyingTo === annotation.id ? (
