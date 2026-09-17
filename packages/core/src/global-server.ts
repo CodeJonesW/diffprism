@@ -33,6 +33,7 @@ import type {
   PrReviewSubmission,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
+import { builtAt } from "./build-info.js";
 import {
   resolveUiDist,
   resolveUiRoot,
@@ -1707,6 +1708,10 @@ export async function startGlobalServer(
     pid: process.pid,
     startedAt: Date.now(),
   };
+  const serverBuiltAt = builtAt();
+  if (serverBuiltAt !== null) {
+    serverInfo.builtAt = serverBuiltAt;
+  }
   writeServerFile(serverInfo);
 
   if (!silent) {
