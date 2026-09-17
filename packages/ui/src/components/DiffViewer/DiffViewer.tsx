@@ -3,7 +3,6 @@ import {
   parseDiff,
   Diff,
   Hunk as DiffHunk,
-  tokenize,
   getChangeKey,
   isInsert,
   isDelete,
@@ -11,32 +10,15 @@ import {
 } from "react-diff-view";
 import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
 import type { DiffSide } from "../../types";
-import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread, ThreadForm } from "../InlineComment";
 import { useHttpApi } from "../../hooks/useHttpApi";
 import { useFocusedAnnotationScroll } from "../../hooks/useFocusedAnnotationScroll";
+import { tokenizeHunks, refractorAdapter } from "../../lib/tokenize-hunks";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
 import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
-
-/**
- * Adapter for refractor v4 to work with react-diff-view's tokenize function.
- *
- * react-diff-view expects `refractor.highlight(code, lang)` to return an array
- * of HAST nodes (the old refractor v2 API). Refractor v4 returns a Root node
- * with a `.children` property. This wrapper unwraps it.
- */
-const refractorAdapter = {
-  highlight(code: string, language: string) {
-    const root = refractor.highlight(code, language);
-    return root.children;
-  },
-  registered(language: string) {
-    return refractor.registered(language);
-  },
-};
 
 /**
  * Map common file extensions / language names to refractor grammar names.
@@ -246,7 +228,7 @@ export function DiffViewer() {
         highlight: true as const,
         language: lang,
       };
-      return tokenize(parsedFiles[0].hunks, options);
+      return tokenizeHunks(parsedFiles[0].hunks, options);
     } catch {
       // Syntax highlighting is best-effort
       return undefined;

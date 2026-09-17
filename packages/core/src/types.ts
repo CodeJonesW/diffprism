@@ -397,6 +397,14 @@ export interface SessionSummary {
 export interface GlobalServerOptions {
   httpPort?: number; // default 24680
   wsPort?: number; // default 24681
+  /**
+   * Dashboard port, default 24682. Preferred like the others so the dashboard's
+   * address survives a server restart: an open tab can reload into the new
+   * server instead of a new tab opening beside a dead one.
+   */
+  uiPort?: number;
+  /** How long after start to wait for an open dashboard to reconnect before opening a tab. */
+  reconnectGraceMs?: number;
   silent?: boolean;
   dev?: boolean;
   pollInterval?: number; // ms, default 2000 — while a client is viewing the session

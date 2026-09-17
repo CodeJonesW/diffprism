@@ -342,6 +342,9 @@ let watchSchedule: WatchScheduleOptions = DEFAULT_WATCH_SCHEDULE;
 // Module-level callback set by startGlobalServer to reopen browser when needed
 let reopenBrowserIfNeeded: (() => void) | null = null;
 
+/** Covers a dashboard's reconnect loop (one attempt a second) with room to spare. */
+const DASHBOARD_RECONNECT_GRACE_MS = 3000;
+
 // Module-level UI URL for /api/status
 let serverUiUrl: string | null = null;
 
@@ -1486,6 +1489,8 @@ export async function startGlobalServer(
   const {
     httpPort: preferredHttpPort = 24680,
     wsPort: preferredWsPort = 24681,
+    uiPort: preferredUiPort = 24682,
+    reconnectGraceMs = DASHBOARD_RECONNECT_GRACE_MS,
     silent = false,
     dev = false,
     pollInterval = DEFAULT_WATCH_SCHEDULE.viewedMs,
@@ -1514,11 +1519,11 @@ export async function startGlobalServer(
   let viteServer: { close: () => Promise<void> } | null = null;
 
   if (dev) {
-    uiPort = await getPort();
+    uiPort = await getPort({ port: preferredUiPort });
     const uiRoot = resolveUiRoot();
     viteServer = await startViteDevServer(uiRoot, uiPort, silent);
   } else {
-    uiPort = await getPort();
+    uiPort = await getPort({ port: preferredUiPort });
     const uiDist = resolveUiDist();
     uiHttpServer = await createStaticServer(uiDist, uiPort);
   }
@@ -1730,10 +1735,29 @@ export async function startGlobalServer(
     await open(uiUrl);
   }
 
-  // Re-open browser when a review arrives and no UI clients are connected
+  // Re-open browser when a review arrives and no UI clients are connected.
+  //
+  // Right after this server starts — often because the command that is now
+  // sending a review just replaced an older one — an already-open dashboard
+  // is still reconnecting. Deciding "nobody is watching" before it has had
+  // the chance opened a new tab on every restart.
+  const serverStartedAt = Date.now();
+  const pendingOpens = new Set<ReturnType<typeof setTimeout>>();
   reopenBrowserIfNeeded = (): void => {
-    if (!hasConnectedClients()) {
-      open(uiUrl);
+    const openIfUnwatched = (): void => {
+      if (reopenBrowserIfNeeded && !hasConnectedClients()) {
+        open(uiUrl);
+      }
+    };
+    const wait = serverStartedAt + reconnectGraceMs - Date.now();
+    if (wait > 0) {
+      const timer = setTimeout(() => {
+        pendingOpens.delete(timer);
+        openIfUnwatched();
+      }, wait);
+      pendingOpens.add(timer);
+    } else {
+      openIfUnwatched();
     }
   };
 
@@ -1751,6 +1775,10 @@ export async function startGlobalServer(
     }
     clientSessions.clear();
     sessions.clear();
+    // A stopped server must not open a tab later — least of all for whichever
+    // server starts next in this process.
+    for (const timer of pendingOpens) clearTimeout(timer);
+    pendingOpens.clear();
     reopenBrowserIfNeeded = null;
     serverUiUrl = null;
 
