@@ -218,6 +218,26 @@ pnpm run build
 pnpm cli review --staged            # Run CLI from source
 ```
 
+### Dogfooding a checkout
+
+To try unreleased changes in another project without publishing, point your global `diffprism` at a checkout:
+
+```bash
+git clone https://github.com/CodeJonesW/diffprism.git diffprism-dogfood
+cd diffprism-dogfood && pnpm install && pnpm build && npm link
+diffprism --version                 # 1.2.0 (dev build — /path/to/diffprism-dogfood)
+```
+
+Then, for each change you want to try:
+
+```bash
+git fetch && git checkout <branch> && git pull && pnpm build
+```
+
+The next `diffprism` command — a review, the commit gate — replaces the running server with the new build, unless a review is open in it. The dashboard picks up a rebuilt UI on reload. Go back to the release with `npm install -g diffprism@latest`.
+
+A server is only ever replaced by a **newer** build. Claude Code keeps `diffprism serve` running on the build it started with until you restart it, so restart Claude Code to put its MCP tools on the new build too.
+
 ### Project Structure
 
 ```

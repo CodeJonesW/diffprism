@@ -367,6 +367,8 @@ export interface GlobalServerInfo {
   wsPort: number;
   pid: number;
   startedAt: number;
+  /** When the server's bundle was built. Absent for servers from before #181, or run from source. */
+  builtAt?: number;
 }
 
 export type GlobalSessionStatus = "pending" | "in_review" | "submitted";

@@ -3,9 +3,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ─── Mocks ───
 
 const mockIsServerAlive = vi.fn();
+const mockReadServerFile = vi.fn();
+const mockRemoveServerFile = vi.fn();
 vi.mock("../server-file.js", () => ({
   isServerAlive: (...args: unknown[]) => mockIsServerAlive(...args),
+  readServerFile: (...args: unknown[]) => mockReadServerFile(...args),
+  removeServerFile: (...args: unknown[]) => mockRemoveServerFile(...args),
 }));
+
+// Tests run from source, where there is no build stamp; set one per test.
+const mockBuiltAt = vi.fn((): number | null => null);
+vi.mock("../build-info.js", () => ({ builtAt: () => mockBuiltAt() }));
 
 const mockSpawn = vi.fn();
 vi.mock("node:child_process", () => ({
@@ -29,7 +37,7 @@ vi.mock("node:fs", () => ({
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-import { ensureServer, submitReviewToServer, waitForDecision, ReviewerAskedError, ReviewTimeoutError } from "../server-client.js";
+import { ensureServer, decideOnRunningServer, submitReviewToServer, waitForDecision, ReviewerAskedError, ReviewTimeoutError } from "../server-client.js";
 import type { GlobalServerInfo, ReviewInitPayload } from "../types.js";
 
 // ─── Helpers ───
@@ -251,5 +259,89 @@ describe("waitForDecision", () => {
     mockFetch.mockImplementation(async () => ({ ok: false, status: 404, json: async () => ({}) }));
 
     await expect(waitForDecision(defaultServerInfo, "s-1", 10_000, 1)).rejects.toThrow("Session not found: s-1");
+  });
+});
+
+describe("replacing a server from an older build (#181)", () => {
+  const reviews = (...statuses: string[]) =>
+    mockFetch.mockImplementation(async (url: string) => {
+      if (url.endsWith("/api/reviews")) {
+        return { ok: true, json: async () => ({ sessions: statuses.map((status) => ({ status })) }) };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetch.mockReset();
+    mockBuiltAt.mockReturnValue(null);
+  });
+
+  it("keeps any server when this build has no stamp to compare", async () => {
+    expect(await decideOnRunningServer({ ...defaultServerInfo, builtAt: 1 }, null)).toEqual({ action: "keep" });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps a server from the same or a newer build — a stale MCP process must not downgrade it", async () => {
+    expect(await decideOnRunningServer({ ...defaultServerInfo, builtAt: 200 }, 200)).toEqual({ action: "keep" });
+    expect(await decideOnRunningServer({ ...defaultServerInfo, builtAt: 300 }, 200)).toEqual({ action: "keep" });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("replaces an older server, including one from before build stamps, when nothing is under review", async () => {
+    reviews("submitted");
+    expect(await decideOnRunningServer({ ...defaultServerInfo, builtAt: 100 }, 200)).toEqual({ action: "replace" });
+    expect(await decideOnRunningServer(defaultServerInfo, 200)).toEqual({ action: "replace" });
+  });
+
+  it("keeps an older server while a review is open in it", async () => {
+    reviews("in_review", "pending", "submitted");
+    expect(await decideOnRunningServer({ ...defaultServerInfo, builtAt: 100 }, 200)).toEqual({
+      action: "keep-busy",
+      openReviews: 2,
+    });
+  });
+
+  it("stops the older server and starts this build's", async () => {
+    mockBuiltAt.mockReturnValue(200);
+    reviews();
+    const stale = { ...defaultServerInfo, pid: 999, builtAt: 100 };
+    const fresh = { ...defaultServerInfo, pid: 1000, builtAt: 200 };
+    mockIsServerAlive.mockResolvedValueOnce(stale).mockResolvedValueOnce(fresh);
+    mockExistsSync.mockReturnValue(true);
+    mockOpenSync.mockReturnValue(42);
+    mockSpawn.mockReturnValue(mockChildProcess());
+    mockReadServerFile.mockReturnValue(null);
+    const signals: Array<number | string | undefined> = [];
+    const kill = vi.spyOn(process, "kill").mockImplementation(((_pid: number, signal?: number | string) => {
+      signals.push(signal);
+      if (signal === 0) throw new Error("ESRCH");
+      return true;
+    }) as never);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const result = await ensureServer({ spawnCommand: ["node", "server.js"] });
+
+    expect(signals[0]).toBe("SIGTERM");
+    expect(kill).toHaveBeenCalledWith(999, "SIGTERM");
+    expect(mockSpawn).toHaveBeenCalled();
+    expect(result).toEqual(fresh);
+    kill.mockRestore();
+  });
+
+  it("leaves a busy older server running and says why", async () => {
+    mockBuiltAt.mockReturnValue(200);
+    reviews("in_review");
+    mockIsServerAlive.mockResolvedValue({ ...defaultServerInfo, builtAt: 100 });
+    const kill = vi.spyOn(process, "kill");
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errors.push(a.join(" ")));
+
+    await ensureServer();
+
+    expect(kill).not.toHaveBeenCalled();
+    expect(mockSpawn).not.toHaveBeenCalled();
+    expect(errors.join("\n")).toContain("1 review is open");
+    kill.mockRestore();
   });
 });
