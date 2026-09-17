@@ -80,7 +80,25 @@ describe("InlineAnnotationThread", () => {
         vi.advanceTimersByTime(AGENT_PICKUP_GRACE_MS);
       });
       expect(screen.queryByText(/Waiting for the agent to reply/)).toBeNull();
-      expect(screen.getByText(/No agent is listening/).textContent).toContain("on session-abc");
+      expect(screen.getByText(/No agent is listening/)).toBeTruthy();
+      expect(screen.getByText("Answer my DiffPrism comments on session-abc")).toBeTruthy();
+    });
+
+    it("copies the prompt to give Claude Code", async () => {
+      const writeText = vi.fn(async () => {});
+      Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+      render(
+        <InlineAnnotationThread
+          annotations={[thread({ author: "reviewer", createdAt: 1 })]}
+          onDismiss={vi.fn()}
+          sessionId="session-abc"
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /Copy/ }));
+
+      expect(writeText).toHaveBeenCalledWith("Answer my DiffPrism comments on session-abc");
+      await waitFor(() => expect(screen.getByText("Copied")).toBeTruthy());
     });
 
     it("goes back to waiting once an agent reads it", () => {

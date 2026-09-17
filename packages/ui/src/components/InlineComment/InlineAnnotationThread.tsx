@@ -8,6 +8,8 @@ import {
   Bot,
   User,
   MessageSquare,
+  Copy,
+  Check,
 } from "lucide-react";
 import type { Annotation, AnnotationReply } from "../../types";
 import { CATEGORY_COLORS, CATEGORY_BADGE_STYLES } from "../../lib/semantic-colors";
@@ -54,6 +56,40 @@ function Reply({ reply }: { reply: AnnotationReply }) {
     <div className="pl-3 ml-1.5 border-l border-border/70 py-1">
       <AuthorLabel author={reply.author} agent={reply.agent} />
       <p className="text-text-primary text-sm whitespace-pre-wrap mt-0.5">{reply.body}</p>
+    </div>
+  );
+}
+
+/**
+ * Nothing will answer this thread until the reviewer starts an agent. The
+ * prompt to give it is its own snippet — one click selects all of it, and
+ * Copy puts it on the clipboard — rather than words inside a sentence.
+ */
+function UnheardNotice({ sessionId }: { sessionId?: string }) {
+  const prompt = `Answer my DiffPrism comments${sessionId ? ` on ${sessionId}` : ""}`;
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+
+  return (
+    <div className="mt-1.5 text-[11px]">
+      <p className="text-warning">No agent is listening, so nothing will answer this. Ask Claude Code:</p>
+      <div className="mt-1 flex items-center gap-2">
+        <code className="select-all px-1.5 py-0.5 rounded border border-border bg-background text-text-primary">
+          {prompt}
+        </code>
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(prompt).then(
+              () => setCopy("copied"),
+              () => setCopy("failed"),
+            );
+          }}
+          className="inline-flex items-center gap-1 text-text-secondary hover:text-accent transition-colors cursor-pointer"
+          title="Copy prompt"
+        >
+          {copy === "copied" ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          {copy === "copied" ? "Copied" : copy === "failed" ? "Copy failed — select the text instead" : "Copy"}
+        </button>
+      </div>
     </div>
   );
 }
@@ -132,10 +168,7 @@ export function InlineAnnotationThread({
 
             {awaitingAgent(annotation) &&
               (pickup(annotation) === "unheard" ? (
-                <p className="mt-1.5 text-[11px] text-warning">
-                  No agent is listening, so nothing will answer this. In Claude Code, ask it to answer your
-                  DiffPrism comments{sessionId ? ` on ${sessionId}` : ""}.
-                </p>
+                <UnheardNotice sessionId={sessionId} />
               ) : (
                 <p className="mt-1.5 text-[11px] text-text-secondary italic">
                   Waiting for the agent to reply.
