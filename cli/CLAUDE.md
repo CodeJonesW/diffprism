@@ -41,7 +41,8 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 
 ## Key Files
 
-- `src/index.ts` — Commander setup and routing
+- `src/index.ts` — Entry point: `createProgram().parse()`
+- `src/program.ts` — `createProgram()`: Commander setup and routing, without parsing (the docs check introspects it)
 - `src/commands/review.ts` — Review command handler
 - `src/commands/serve.ts` — MCP serve command (dynamic import)
 - `src/commands/setup.ts` — Setup command: git root detection, file merging, skill installation, global setup, `isGlobalSetupDone()`

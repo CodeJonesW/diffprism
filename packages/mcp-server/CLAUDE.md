@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ## Key Files
 
-- `src/index.ts` — `startMcpServer()` creates an McpServer, registers 12 tools, connects StdioServerTransport. `resolveTarget()` decides which session a tool acts on.
+- `src/index.ts` — `createMcpServer()` builds an McpServer with its 14 tools registered; `startMcpServer()` connects it to StdioServerTransport. `resolveTarget()` decides which session a tool acts on.
 
 ## Session targeting
 

@@ -11,7 +11,7 @@ packages/core       — Shared types (types.ts), server-client utilities, global
 packages/git        — Git diff execution + unified diff parser (no deps beyond Node built-ins)
 packages/analysis   — Deterministic review briefing (no deps beyond core types)
 packages/ui         — React 19 + Vite 6 + Tailwind 3 + Zustand 5 + react-diff-view + refractor
-packages/mcp-server — MCP tool server (12 tools), all reviews route through global server
+packages/mcp-server — MCP tool server (14 tools), all reviews route through global server
 packages/github     — GitHub PR fetching, normalization, and review submission
 cli/                — Commander CLI (review, serve, setup, server commands), bin shim using tsx
 ```
@@ -34,11 +34,13 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 | `packages/ui/src/store/review.ts` | Zustand store (all UI state) |
 | `packages/ui/src/hooks/useWebSocket.ts` | WS connection + state dispatch |
 | `packages/ui/vite.config.ts` | Vite config with inline PostCSS (Tailwind path fix) |
-| `packages/mcp-server/src/index.ts` | MCP server — 12 tools, all routed through global server; `resolveTarget()` picks the session |
+| `packages/mcp-server/src/index.ts` | MCP server — 14 tools, all routed through global server; `resolveTarget()` picks the session |
 | `cli/src/commands/setup.ts` | `diffprism setup` — one-command Claude Code integration |
 | `cli/src/commands/hook.ts` | `diffprism hook` — pre-commit review gate, plus its install/uninstall |
 | `packages/core/src/feedback.ts` | Prefilled GitHub-issue feedback and bug reports; the last-error record they include |
 | `cli/src/commands/server.ts` | `diffprism server` — start/status/stop global server |
+| `cli/src/program.ts` | `createProgram()` — the full Commander command tree, built without parsing argv |
+| `cli/scripts/check-docs.ts` | `pnpm docs:check` — fails CI when docs drift from the code |
 | `cli/src/templates/skill.ts` | Embedded `/review` skill content (SKILL.md template) |
 | `cli/bin/diffprism.mjs` | Executable shim (tsx → src/index.ts) |
 
@@ -69,8 +71,8 @@ All reviews flow through the global server (auto-started as a background daemon 
 6. UI shows session list, user selects a session, server sends `review:init`
 
 **WebSocket protocol:**
-- Server → Client: `review:init`, `diff:update`, `context:update`, `session:list`, `session:added`
-- Client → Server: `review:submit`, `session:select`
+- Server → Client: `review:init`, `diff:update`, `diff:error`, `context:update`, `session:list`, `session:added`, `session:updated`, `session:removed`, `annotation:added`, `annotation:dismissed`, `annotation:updated`
+- Client → Server: `review:submit`, `diff:change_ref`, `session:select`, `session:close`
 
 ## Conventions
 
@@ -91,15 +93,9 @@ All reviews flow through the global server (auto-started as a background daemon 
 
 ## Tests
 
-- **packages/git/src/__tests__/parser.test.ts** — 9 suites: empty input, simple modify, add/delete/rename, binary, multi-hunk, no-newline, language detection
-- **packages/git/src/__tests__/fixtures/** — 5 diff fixture files
-- **packages/analysis/src/__tests__/deterministic.test.ts** — 6 suites: categorize, stats, modules, tests, deps, summary, full analyze
-- **packages/core/src/__tests__/global-server.test.ts** — 9 tests: HTTP API for session CRUD, result submission, context updates
-- **packages/core/src/__tests__/server-file.test.ts** — 7 tests: server file read/write/remove, PID liveness checks
-- **packages/core/src/__tests__/server-client.test.ts** — ensureServer() auto-start, submitReviewToServer() HTTP client
-- **packages/ui/src/__tests__/store.test.ts** — 23 tests: review store, session management
-- **cli/src/__tests__/setup.test.ts** — 8 suites: git root detection, .mcp.json, .claude/settings.json, skill file, summary output, global setup, isGlobalSetupDone
+- Tests live beside the code in each package's `src/__tests__/` (vitest); diff fixtures in `packages/git/src/__tests__/fixtures/`.
 - **Run:** `pnpm test` or `npx vitest run` per package
+- **Docs:** `pnpm docs:check` fails when README, CLAUDE.md files, `docs/usage/` or the `/review` skill disagree with the code — tool names, parameters and counts, CLI commands and flags, repo paths, the WebSocket protocol. CI runs it. When it fails, fix the doc in the same PR.
 
 ## Lessons Learned (M0)
 
@@ -269,9 +265,10 @@ Replace `<N>` with the issue number. Always branch from latest `main`.
 ```bash
 pnpm test
 pnpm run build
+pnpm docs:check
 ```
 
-Both must pass. Fix any failures before proceeding.
+All must pass. If you changed a tool, command, flag, message type or file path, `docs:check` points at every doc that still describes the old one. Fix any failures before proceeding.
 
 ### 5. Review with diffprism
 
