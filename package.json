@@ -1,6 +1,6 @@
 {
   "name": "diffprism",
-  "version": "1.3.3",
+  "version": "1.4.0",
   "type": "module",
   "description": "Local-first code review tool for agent-generated code changes",
   "bin": {
