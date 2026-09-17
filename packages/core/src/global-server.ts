@@ -29,6 +29,8 @@ import type {
   AnnotationSource,
   AnnotationReply,
   ThreadAuthor,
+  DiffSide,
+  PrReviewSubmission,
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import {
@@ -40,6 +42,7 @@ import {
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { DEFAULT_DIFF_REF } from "./diff-scope.js";
 import { buildFeedbackUrl, readLastError } from "./feedback.js";
+import { buildGitHubReview, PR_EVENT_DECISION } from "./pr-review.js";
 import { watcherPollDelay, DEFAULT_WATCH_SCHEDULE } from "./watch-schedule.js";
 import type { WatchScheduleOptions } from "./watch-schedule.js";
 import { createDiffPoller } from "./diff-poller.js";
@@ -1054,9 +1057,10 @@ async function handleApiRequest(
 
     try {
       const body = await readBody(req);
-      const { file, line, body: annotationBody, type, confidence, category, source, author } = JSON.parse(body) as {
+      const { file, line, side, body: annotationBody, type, confidence, category, source, author } = JSON.parse(body) as {
         file: string;
         line: number;
+        side?: DiffSide;
         body: string;
         type: AnnotationType;
         confidence?: number;
@@ -1069,12 +1073,19 @@ async function handleApiRequest(
         jsonResponse(res, 400, { error: `Unknown author: ${String(author)}` });
         return true;
       }
+      if (side !== undefined && side !== "old" && side !== "new") {
+        jsonResponse(res, 400, { error: `Unknown side: ${String(side)}` });
+        return true;
+      }
 
       const annotation: Annotation = {
         id: randomUUID(),
         sessionId: session.id,
         file,
         line,
+        // Agents annotate lines of the changed file; only the dashboard can
+        // point at a deleted line, and it says so.
+        side: side ?? "new",
         body: annotationBody,
         type,
         confidence: confidence ?? 1,
@@ -1174,6 +1185,64 @@ async function handleApiRequest(
     } catch {
       jsonResponse(res, 400, { error: "Invalid request body" });
     }
+    return true;
+  }
+
+  // POST /api/reviews/:id/github-review — post the reviewer's decision on a PR to GitHub
+  const githubReviewParams = matchRoute(method, url, "POST", "/api/reviews/:id/github-review");
+  if (githubReviewParams) {
+    const session = sessions.get(githubReviewParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    const pr = session.payload.metadata.githubPr;
+    if (!pr) {
+      jsonResponse(res, 400, { error: "Not a pull request review" });
+      return true;
+    }
+
+    let submission: PrReviewSubmission;
+    try {
+      submission = JSON.parse(await readBody(req)) as PrReviewSubmission;
+    } catch {
+      jsonResponse(res, 400, { error: "Invalid request body" });
+      return true;
+    }
+
+    const built = buildGitHubReview(submission, session.annotations);
+    if ("error" in built) {
+      jsonResponse(res, 400, { error: built.error });
+      return true;
+    }
+
+    const { resolveGitHubToken, createGitHubClient, submitGitHubReview } = await import("@diffprism/github");
+    let token: string;
+    try {
+      token = resolveGitHubToken();
+    } catch (err) {
+      jsonResponse(res, 401, { error: err instanceof Error ? err.message : String(err) });
+      return true;
+    }
+
+    let posted: { url: string };
+    try {
+      posted = await submitGitHubReview(createGitHubClient(token), pr.owner, pr.repo, pr.number, built.review);
+    } catch (err) {
+      // Nothing is recorded: the review only counts once GitHub has it.
+      jsonResponse(res, 502, {
+        error: `GitHub rejected the review: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      return true;
+    }
+
+    recordVerdict(session, {
+      decision: PR_EVENT_DECISION[built.review.event],
+      comments: [],
+      summary: built.review.body || undefined,
+    });
+    broadcastSessionUpdate(session);
+    jsonResponse(res, 200, { url: posted.url });
     return true;
   }
 

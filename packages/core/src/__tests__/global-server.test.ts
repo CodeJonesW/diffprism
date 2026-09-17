@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import * as github from "@diffprism/github";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -110,6 +111,7 @@ vi.mock("@diffprism/github", () => ({
       },
     };
   }),
+  submitGitHubReview: vi.fn(async () => ({ reviewId: 1, url: "https://github.com/acme/widget/pull/7#pullrequestreview-1" })),
 }));
 
 // Mock @diffprism/analysis — watcher uses analyze
@@ -2271,5 +2273,109 @@ describe("threads", () => {
   it("404s a reply to a thread that doesn't exist", async () => {
     const { post } = await setup();
     expect((await post("/annotations/nope/replies", { author: "agent", body: "hi" })).status).toBe(404);
+  });
+});
+
+describe("github review", () => {
+  beforeEach(() => {
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+  });
+
+  const PR = {
+    owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
+    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+  };
+
+  async function setup(metadata: ReviewInitPayload["metadata"] = { title: "Add widget", githubPr: PR }) {
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload({ metadata }), projectPath: "github:acme/widget#7" }),
+    });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    const post = (path: string, body: unknown) =>
+      fetch(`${baseUrl}/api/reviews/${sessionId}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const thread = async (body: Record<string, unknown>) =>
+      ((await (await post("/annotations", {
+        file: "src/cache.ts", line: 4, type: "question", author: "reviewer",
+        source: { agent: "reviewer", tool: "dashboard" }, ...body,
+      })).json()) as { annotationId: string }).annotationId;
+    const session = async () =>
+      (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as { status: string; decision?: string };
+    return { post, thread, session };
+  }
+
+  it("posts the decision, summary and the picked threads — each on its own side of the diff", async () => {
+    const { post, thread, session } = await setup();
+    const onNew = await thread({ body: "Why lazily?", side: "new" });
+    const onOld = await thread({ body: "Why drop includes()?", line: 2, side: "old" });
+    await thread({ body: "Private question for the agent" });
+
+    const res = await post("/github-review", {
+      event: "REQUEST_CHANGES", summary: "Stale cache", threadIds: [onNew, onOld],
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ url: "https://github.com/acme/widget/pull/7#pullrequestreview-1" });
+    expect(github.submitGitHubReview).toHaveBeenCalledWith(expect.anything(), "acme", "widget", 7, {
+      event: "REQUEST_CHANGES",
+      body: "Stale cache",
+      comments: [
+        { path: "src/cache.ts", line: 4, side: "RIGHT", body: "Why lazily?" },
+        { path: "src/cache.ts", line: 2, side: "LEFT", body: "Why drop includes()?" },
+      ],
+    });
+    expect(await session()).toMatchObject({ status: "submitted", decision: "changes_requested" });
+  });
+
+  it("records nothing when GitHub rejects the review, and says why", async () => {
+    const { post, session } = await setup();
+    vi.mocked(github.submitGitHubReview).mockRejectedValueOnce(new Error("Can not approve your own pull request"));
+
+    const res = await post("/github-review", { event: "APPROVE" });
+
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toContain("Can not approve your own pull request");
+    expect((await session()).status).not.toBe("submitted");
+  });
+
+  it("401s with instructions when there is no GitHub token", async () => {
+    const { post } = await setup();
+    vi.mocked(github.resolveGitHubToken).mockImplementationOnce(() => {
+      throw new Error("GitHub token not found");
+    });
+
+    const res = await post("/github-review", { event: "APPROVE" });
+
+    expect(res.status).toBe(401);
+    expect(github.submitGitHubReview).not.toHaveBeenCalled();
+  });
+
+  it("refuses a review that isn't of a pull request", async () => {
+    const { post } = await setup({ title: "Local changes" });
+    const res = await post("/github-review", { event: "APPROVE" });
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects an agent's thread — only the reviewer's own words go out under their name", async () => {
+    const { post, thread } = await setup();
+    const agentThread = await thread({ body: "finding", author: "agent", type: "finding" });
+    const res = await post("/github-review", { event: "APPROVE", threadIds: [agentThread] });
+    expect(res.status).toBe(400);
+    expect(github.submitGitHubReview).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown side on a thread", async () => {
+    const { post } = await setup();
+    const res = await post("/annotations", {
+      file: "a.ts", line: 1, side: "left", body: "x", type: "question", source: { agent: "reviewer" },
+    });
+    expect(res.status).toBe(400);
   });
 });

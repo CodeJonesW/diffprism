@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { GitRefsPayload } from "../types";
+import type { DiffSide, GitRefsPayload, PrReviewSubmission } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -102,7 +102,7 @@ export function useHttpApi() {
 
   /** Open a conversation on a line, as the reviewer. */
   const startThread = useCallback(
-    (sessionId: string, thread: { file: string; line: number; body: string }) =>
+    (sessionId: string, thread: { file: string; line: number; side: DiffSide; body: string }) =>
       postJson(`/api/reviews/${sessionId}/annotations`, {
         ...thread,
         type: "question",
@@ -123,5 +123,28 @@ export function useHttpApi() {
     [postJson],
   );
 
-  return { isAvailable, fetchRefs, compareAgainst, resetCompare, startThread, replyToThread };
+  /**
+   * Post the reviewer's decision on a PR to GitHub. Resolves once GitHub has
+   * accepted it, with the review's URL, or with GitHub's reason for refusing.
+   */
+  const submitPrReview = useCallback(
+    async (sessionId: string, submission: PrReviewSubmission): Promise<{ ok: true; url: string } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/reviews/${sessionId}/github-review`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(submission),
+        });
+        const data = await response.json().catch(() => ({})) as { url?: string; error?: string };
+        if (response.ok && data.url) return { ok: true, url: data.url };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  return { isAvailable, fetchRefs, compareAgainst, resetCompare, startThread, replyToThread, submitPrReview };
 }

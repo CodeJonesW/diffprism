@@ -2,7 +2,7 @@ import { BriefingBar } from "./BriefingBar";
 import { ReasoningPanel } from "./ReasoningPanel";
 import { FileBrowser } from "./FileBrowser";
 import { DiffViewer } from "./DiffViewer";
-import { ActionBar } from "./ActionBar";
+import { ActionBar, PrReviewBar } from "./ActionBar";
 import { HotkeyGuide } from "./HotkeyGuide";
 import { WorkflowTips } from "./WorkflowTips";
 import { AnnotationPanel } from "./AnnotationPanel";
@@ -59,8 +59,10 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
         <DiffViewer />
       </div>
 
-      {/* Bottom — Action Bar (hidden for PR reviews) */}
-      {!isPrReview && (
+      {/* Bottom — the decision. A PR's goes to GitHub; a local review's goes back to the agent. */}
+      {isPrReview ? (
+        <PrReviewBar onDismiss={onDismiss} />
+      ) : (
         <ActionBar
           onSubmit={onSubmit}
           onDismiss={onDismiss}

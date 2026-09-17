@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, X, XCircle, MessageSquare, GitPullRequest, AlertTriangle } from "lucide-react";
+import { Check, X, XCircle, MessageSquare, AlertTriangle } from "lucide-react";
 import type { ReviewResult, ReviewDecision } from "../../types";
 import { useReviewStore } from "../../store/review";
 import { ACTION_BUTTON_STYLES } from "../../lib/semantic-colors";
@@ -14,10 +14,8 @@ interface ActionBarProps {
 
 export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
   const [summary, setSummary] = useState("");
-  const [postToGithub, setPostToGithub] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<ReviewDecision | null>(null);
-  const { diffSet, fileStatuses, comments, metadata, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment } = useReviewStore();
-  const isGitHubPr = !!metadata?.githubPr;
+  const { diffSet, fileStatuses, comments, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment } = useReviewStore();
 
   const totalAdditions =
     diffSet?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0;
@@ -36,7 +34,6 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
       comments: useReviewStore.getState().comments,
       fileStatuses: hasStatuses ? fileStatuses : undefined,
       summary: summary.trim() || undefined,
-      postToGithub: isGitHubPr && postToGithub ? true : undefined,
     });
   }
 
@@ -197,21 +194,6 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
           </>
         )}
 
-        {isGitHubPr && (
-          <>
-            <div className="w-px h-6 bg-border" />
-            <label className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={postToGithub}
-                onChange={(e) => setPostToGithub(e.target.checked)}
-                className="rounded border-border accent-accent"
-              />
-              <GitPullRequest className="w-3.5 h-3.5 text-accent" />
-              Post to GitHub
-            </label>
-          </>
-        )}
       </div>
     </div>
   );

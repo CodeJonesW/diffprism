@@ -62,7 +62,6 @@ export interface ReviewResult {
   fileStatuses?: Record<string, FileReviewStatus>;
   summary?: string;
   postReviewAction?: PostReviewAction;
-  postToGithub?: boolean;
 }
 
 // ─── Annotation Types ───
@@ -101,11 +100,29 @@ export interface AnnotationReply {
  * (a finding) or the reviewer can (a question about the code); either side can
  * reply.
  */
+/** Which file a diff line number counts in: the base ("old") or the change ("new"). */
+export type DiffSide = "old" | "new";
+
+/**
+ * The reviewer's decision on a pull request, posted to GitHub as a review.
+ * `threadIds` are the reviewer's own threads to include as inline comments —
+ * threads are a conversation with the agent, so none is posted unless picked.
+ */
+export type PrReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
+
+export interface PrReviewSubmission {
+  event: PrReviewEvent;
+  summary?: string;
+  threadIds?: string[];
+}
+
 export interface Annotation {
   id: string;
   sessionId: string;
   file: string;
   line: number;
+  /** A deleted line is numbered in the old file; everything else in the new one. */
+  side: DiffSide;
   body: string;
   type: AnnotationType;
   confidence: number; // 0-1
