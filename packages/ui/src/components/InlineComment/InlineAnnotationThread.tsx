@@ -124,7 +124,7 @@ export function InlineAnnotationThread({
 
             {awaitingAgent(annotation) && (
               <p className="mt-1.5 text-[11px] text-text-secondary italic">
-                Waiting for an agent to reply — it answers when it's listening with wait_for_comments.
+                Waiting for the agent to reply.
               </p>
             )}
 

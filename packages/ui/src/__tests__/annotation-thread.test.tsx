@@ -47,7 +47,7 @@ describe("InlineAnnotationThread", () => {
     const { rerender } = render(
       <InlineAnnotationThread annotations={[thread({ author: "reviewer" })]} onDismiss={vi.fn()} />,
     );
-    expect(screen.getByText(/Waiting for an agent to reply/)).toBeTruthy();
+    expect(screen.getByText(/Waiting for the agent to reply/)).toBeTruthy();
 
     rerender(
       <InlineAnnotationThread
@@ -55,7 +55,7 @@ describe("InlineAnnotationThread", () => {
         onDismiss={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/Waiting for an agent to reply/)).toBeNull();
+    expect(screen.queryByText(/Waiting for the agent to reply/)).toBeNull();
   });
 
   it("posts a reply and closes the form", async () => {

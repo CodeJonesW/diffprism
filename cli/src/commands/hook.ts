@@ -12,6 +12,7 @@ import {
 } from "@diffprism/core";
 import type { Annotation, ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
+import { replyCommandFor } from "./reply.js";
 
 /**
  * Default size at which a staged change is worth a browser review.
@@ -94,9 +95,9 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
   } catch (err) {
     stopWaiting();
     if (err instanceof ReviewerAskedError) {
-      printQuestions(err.threads);
+      printQuestions(err.sessionId, err.threads);
       fail(
-        `Commit blocked: the reviewer asked you something before deciding. Answer each question with the DiffPrism reply tool (session_id: ${err.sessionId}, annotation_id as listed), then run git commit again — the review stays open and the decision still comes.`,
+        "Commit blocked: the reviewer asked you something before deciding. Answer each question with the command under it — change the code too if that's what they asked for — then run git commit again. The review stays open and the decision still comes.",
       );
       return;
     }
@@ -147,16 +148,17 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
  * Whoever ran the command only sees its output, so the whole question has to
  * be here: where it was asked, what was said last, and which thread to answer.
  */
-export function printQuestions(threads: Annotation[]): void {
+export function printQuestions(sessionId: string, threads: Annotation[]): void {
   console.error("");
   for (const t of threads) {
     const last = t.replies?.at(-1)?.body ?? t.body;
-    console.error(`  ${t.file}:${t.line}  (annotation_id: ${t.id})`);
+    console.error(`  ${t.file}:${t.line}`);
     for (const line of last.split("\n")) {
       console.error(`    ${line}`);
     }
+    console.error(`  Answer: ${replyCommandFor(sessionId, t.id)}`);
+    console.error("");
   }
-  console.error("");
 }
 
 /**
