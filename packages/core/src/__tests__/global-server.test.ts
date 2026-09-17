@@ -47,6 +47,9 @@ vi.mock("@diffprism/git", () => ({
     rawDiff: "",
   }),
   getCurrentBranch: vi.fn().mockReturnValue("main"),
+  // Test paths like "/test" are not repositories, so identity falls back to
+  // the resolved path. Individual tests override this to model real repos.
+  getRepoRoot: vi.fn().mockReturnValue(null),
   listBranches: vi.fn().mockReturnValue({
     local: ["main", "feature-branch"],
     remote: ["origin/main", "origin/develop"],
@@ -60,6 +63,53 @@ vi.mock("@diffprism/git", () => ({
       date: "2025-01-15T10:30:00Z",
     },
   ]),
+}));
+
+// Mock node:child_process — only POST /api/pr/open uses it, to find a local
+// clone via `git remote -v`. Pretend the process runs inside acme/widget.
+vi.mock("node:child_process", () => ({
+  // Passed as an implementation, not via mockReturnValue: restoreAllMocks in
+  // afterEach wipes mockReturnValue state but keeps a vi.fn(impl).
+  execSync: vi.fn(
+    () =>
+      "origin\tgit@github.com:acme/widget.git (fetch)\norigin\tgit@github.com:acme/widget.git (push)\n",
+  ),
+}));
+
+// Mock @diffprism/github — POST /api/pr/open fetches the PR
+vi.mock("@diffprism/github", () => ({
+  isPrRef: vi.fn(() => true),
+  parsePrRef: vi.fn(() => ({ owner: "acme", repo: "widget", number: 7 })),
+  resolveGitHubToken: vi.fn(() => "test-token"),
+  createGitHubClient: vi.fn(() => ({})),
+  fetchPullRequest: vi.fn(async () => ({
+    title: "Add widget",
+    author: "someone",
+    url: "https://github.com/acme/widget/pull/7",
+    baseBranch: "main",
+    headBranch: "feature",
+  })),
+  fetchPullRequestDiff: vi.fn(async () => ""),
+  // A fresh payload per call: opening a session mutates it.
+  normalizePr: vi.fn(() => {
+    const diffSet = { baseRef: "main", headRef: "feature", files: [] };
+    return {
+      diffSet,
+      payload: {
+        reviewId: "",
+        diffSet,
+        rawDiff: "",
+        briefing: {
+          summary: "PR",
+          triage: { critical: [], notable: [], mechanical: [] },
+          impact: { affectedModules: [], affectedTests: [], publicApiChanges: false, breakingChanges: [], newDependencies: [] },
+          verification: { testsPass: null, typeCheck: null, lintClean: null },
+          fileStats: [],
+        },
+        metadata: { title: "Add widget" },
+      },
+    };
+  }),
 }));
 
 // Mock @diffprism/analysis — watcher uses analyze
@@ -1459,5 +1509,342 @@ describe("closing a session", () => {
       sessions: SessionSummary[];
     };
     expect(body.sessions.map((s) => s.id)).toContain(sessionId);
+  });
+});
+
+// ─── #163: one session per repo, one rule for every open path ───
+
+describe("session identity", () => {
+  beforeEach(async () => {
+    // Earlier tests' afterEach restoreAllMocks wipes mockReturnValue state on
+    // these module mocks, so set what this suite relies on explicitly.
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+    vi.mocked(git.getCurrentBranch).mockReturnValue("main");
+    vi.mocked(git.getDiff).mockReturnValue({
+      diffSet: { baseRef: "HEAD", headRef: "working-copy", files: [] },
+      rawDiff: "",
+    });
+    const analysis = await import("@diffprism/analysis");
+    vi.mocked(analysis.analyze).mockReturnValue({
+      summary: "Mock analysis",
+      triage: { critical: [], notable: [], mechanical: [] },
+      impact: {
+        affectedModules: [],
+        affectedTests: [],
+        publicApiChanges: false,
+        breakingChanges: [],
+        newDependencies: [],
+      },
+      verification: { testsPass: null, typeCheck: null, lintClean: null },
+      fileStats: [],
+    });
+  });
+
+  async function post(baseUrl: string, route: string, body: unknown) {
+    return fetch(`${baseUrl}${route}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function openLocal(baseUrl: string, projectPath: string, diffRef?: string) {
+    const response = await post(baseUrl, "/api/reviews", {
+      payload: makePayload(),
+      projectPath,
+      diffRef,
+    });
+    return ((await response.json()) as { sessionId: string }).sessionId;
+  }
+
+  async function listSessions(baseUrl: string): Promise<SessionSummary[]> {
+    const body = (await (await fetch(`${baseUrl}/api/reviews`)).json()) as {
+      sessions: SessionSummary[];
+    };
+    return body.sessions;
+  }
+
+  async function annotate(baseUrl: string, sessionId: string, type: string) {
+    const response = await post(baseUrl, `/api/reviews/${sessionId}/annotations`, {
+      file: "src/index.ts",
+      line: 1,
+      body: `a ${type}`,
+      type,
+      source: { agent: "test", tool: "test" },
+    });
+    return ((await response.json()) as { annotationId: string }).annotationId;
+  }
+
+  describe("reuse", () => {
+    it("keeps annotations when a second review lands on the same repo", async () => {
+      // Reuse used to wipe them, destroying an agent's findings whenever a
+      // hook or a second open hit the repo.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const sessionId = await openLocal(baseUrl, "/repo");
+      await annotate(baseUrl, sessionId, "finding");
+      await openLocal(baseUrl, "/repo");
+
+      const body = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`)).json()) as {
+        annotations: Annotation[];
+      };
+      expect(body.annotations).toHaveLength(1);
+    });
+
+    it("does not reset a session that is mid-review", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const sessionId = await openLocal(baseUrl, "/repo");
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+      await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      await openLocal(baseUrl, "/repo");
+      ws.close();
+
+      const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+      expect(session?.status).toBe("in_review");
+    });
+
+    it("clears a previous verdict so a blocked caller waits for a new one", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const sessionId = await openLocal(baseUrl, "/repo");
+      await post(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "approved", comments: [] });
+      await openLocal(baseUrl, "/repo");
+
+      const body = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}/result`)).json()) as {
+        result: ReviewResult | null;
+      };
+      expect(body.result).toBeNull();
+    });
+
+    it("switches to the new ref", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const sessionId = await openLocal(baseUrl, "/repo", "working-copy");
+      await openLocal(baseUrl, "/repo", "staged");
+
+      const body = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as SessionSummary;
+      expect(body.diffRef).toBe("staged");
+    });
+
+    it("raises the new-changes signal when nobody is watching", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const sessionId = await openLocal(baseUrl, "/repo");
+      await openLocal(baseUrl, "/repo");
+
+      const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+      expect(session?.hasNewChanges).toBe(true);
+    });
+  });
+
+  describe("one rule for every open path", () => {
+    it("reuses a UI-opened session when a hook or agent opens the same repo", async () => {
+      // The reported collision: "Open Project" never deduped, agent opens did,
+      // so the two produced separate live-watching sessions for one repo.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const opened = await post(baseUrl, "/api/projects/open", { projectPath: tmpDir });
+      const { sessionId: manualId } = (await opened.json()) as { sessionId: string };
+
+      const agentId = await openLocal(baseUrl, tmpDir);
+
+      expect(agentId).toBe(manualId);
+      expect(await listSessions(baseUrl)).toHaveLength(1);
+    });
+
+    it("treats a subdirectory and its repo root as the same repo", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockReturnValue("/work/app");
+
+      const fromRoot = await openLocal(baseUrl, "/work/app");
+      const fromSubdir = await openLocal(baseUrl, "/work/app/packages/core");
+
+      expect(fromSubdir).toBe(fromRoot);
+    });
+
+    it("keeps worktrees independent", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockImplementation(({ cwd } = {}) => cwd ?? null);
+
+      const main = await openLocal(baseUrl, "/work/app");
+      const worktree = await openLocal(baseUrl, "/work/app/.claude/worktrees/feature");
+
+      expect(worktree).not.toBe(main);
+    });
+
+    it("does not let a PR review and a working-copy review of the same repo overwrite each other", async () => {
+      // A PR session reads from the local clone, so keying it by repo would
+      // collide with a working-copy review of that clone.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockReturnValue("/work/widget");
+
+      const localId = await openLocal(baseUrl, "/work/widget");
+      const prResponse = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+      const { sessionId: prId } = (await prResponse.json()) as { sessionId: string };
+
+      expect(prId).not.toBe(localId);
+      expect(await listSessions(baseUrl)).toHaveLength(2);
+    });
+
+    it("reuses a PR session when the same PR is opened again", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const first = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+      const second = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+
+      const a = ((await first.json()) as { sessionId: string }).sessionId;
+      const b = ((await second.json()) as { sessionId: string }).sessionId;
+      expect(b).toBe(a);
+      expect(second.status).toBe(200);
+    });
+  });
+
+  describe("GET /api/reviews/resolve", () => {
+    it("finds nothing for a repo with no session", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      const body = (await (await fetch(`${baseUrl}/api/reviews/resolve?path=/nowhere`)).json()) as {
+        sessions: SessionSummary[];
+      };
+      expect(body.sessions).toEqual([]);
+    });
+
+    it("finds the one session for a repo", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockReturnValue("/work/app");
+
+      const sessionId = await openLocal(baseUrl, "/work/app");
+      const body = (await (await fetch(`${baseUrl}/api/reviews/resolve?path=/work/app/src`)).json()) as {
+        sessions: SessionSummary[];
+      };
+      expect(body.sessions.map((s) => s.id)).toEqual([sessionId]);
+    });
+
+    it("returns every match rather than picking one", async () => {
+      // A PR review and a working-copy review can share a clone. The resolver
+      // must not guess between them.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      vi.mocked(git.getRepoRoot).mockReturnValue("/work/widget");
+
+      await openLocal(baseUrl, "/work/widget");
+      await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+
+      const body = (await (await fetch(`${baseUrl}/api/reviews/resolve?path=/work/widget`)).json()) as {
+        sessions: SessionSummary[];
+      };
+      expect(body.sessions).toHaveLength(2);
+    });
+
+    it("requires a path", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const response = await fetch(`http://localhost:${handle.httpPort}/api/reviews/resolve`);
+      expect(response.status).toBe(400);
+    });
+  });
+
+  describe("attention", () => {
+    it("flags a session a warning lands on, and tells every client", async () => {
+      // annotation:added only reaches clients viewing that session, so this
+      // used to be unable to flag a session you were not looking at.
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl, "/repo");
+      // With exactly one session the handshake auto-selects it, which would
+      // make this client a viewer — and a viewer has already seen the warning.
+      await openLocal(baseUrl, "/other-repo");
+
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+      const messages: ServerMessage[] = [];
+      ws.on("message", (data) => messages.push(JSON.parse(data.toString()) as ServerMessage));
+      await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+
+      await annotate(baseUrl, sessionId, "warning");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ws.close();
+
+      const update = messages.find(
+        (m) => m.type === "session:updated" && (m.payload as SessionSummary).id === sessionId,
+      );
+      expect((update?.payload as SessionSummary | undefined)?.needsAttention).toBe(true);
+    });
+
+    it("does not flag for findings, only warnings", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl, "/repo");
+
+      await annotate(baseUrl, sessionId, "finding");
+
+      const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+      expect(session?.needsAttention).toBe(false);
+    });
+
+    it("survives a session list push — it is server state, not client state", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl, "/repo");
+      await annotate(baseUrl, sessionId, "warning");
+
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+      const messages: ServerMessage[] = [];
+      ws.on("message", (data) => messages.push(JSON.parse(data.toString()) as ServerMessage));
+      await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ws.close();
+
+      const list = messages.find((m) => m.type === "session:list");
+      const session = (list?.payload as SessionSummary[]).find((s) => s.id === sessionId);
+      expect(session?.needsAttention).toBe(true);
+    });
+
+    it("clears once the session is selected", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl, "/repo");
+      await annotate(baseUrl, sessionId, "warning");
+      await new Promise((resolve) => setTimeout(resolve, 5));
+
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+      await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      ws.close();
+
+      const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+      expect(session?.needsAttention).toBe(false);
+    });
+
+    it("clears when the warning is dismissed", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl, "/repo");
+      const annotationId = await annotate(baseUrl, sessionId, "warning");
+
+      await post(baseUrl, `/api/reviews/${sessionId}/annotations/${annotationId}/dismiss`, {});
+
+      const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+      expect(session?.needsAttention).toBe(false);
+    });
   });
 });

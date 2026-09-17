@@ -29,7 +29,7 @@ Then in Claude Code:
   → calls get_file_diff + get_file_context → full file from your local clone
 
 > Flag line 47 as a concern
-  → calls add_review_comment → annotation appears on the diff in your browser
+  → calls annotate → annotation appears on the diff in your browser
 ```
 
 ## Setup
@@ -57,24 +57,16 @@ The server auto-detects your local clone by matching `git remote -v` against the
 
 ## MCP Tools
 
-DiffPrism exposes 14 MCP tools to your AI:
+DiffPrism exposes 12 MCP tools to your AI.
 
-### PR Review
+Reviews are **one per repo**: opening a review for a repo that already has one updates it instead of starting another, and keeps its annotations. Tools that work on an open review act on the one for the repo your AI is running in, or take `session_id` / `repo_path` — and if that's ambiguous they say so rather than guess.
+
+### Opening and deciding
 | Tool | Purpose |
 |------|---------|
-| `get_pr_context` | High-level PR overview: metadata, briefing, file list, local repo status |
-| `get_file_diff` | Diff hunks for a specific file with triage category |
-| `get_file_context` | Full file content from local repo via `git show` |
-| `add_review_comment` | Post a comment that appears inline on the diff in real-time |
-| `get_review_comments` | Read all comments and annotations on the session |
-| `get_user_focus` | What file/line the user is currently viewing in the browser |
-
-### Review Lifecycle
-| Tool | Purpose |
-|------|---------|
-| `open_review` | Open browser review UI for local changes or a GitHub PR |
-| `get_review_result` | Fetch result from a previous review |
-| `update_review_context` | Push updated reasoning/description to a running session |
+| `open_review` | Open a review of local changes and **wait for the decision** (`wait: false` to return at once) |
+| `get_review_result` | Check the decision on a review already open |
+| `update_review_context` | Push updated reasoning/description to an open review |
 
 ### Analysis
 | Tool | Purpose |
@@ -82,12 +74,18 @@ DiffPrism exposes 14 MCP tools to your AI:
 | `analyze_diff` | Returns analysis JSON (patterns, complexity, test gaps) |
 | `get_diff` | Returns structured diff JSON (file-level and hunk-level changes) |
 
-### Annotation
+### Working in an open review
 | Tool | Purpose |
 |------|---------|
-| `add_annotation` | Post a structured finding on a specific line |
-| `flag_for_attention` | Mark files for human attention |
-| `get_review_state` | Get current state of a session including all annotations |
+| `annotate` | Post findings inline on the diff; `warning` flags the session for attention |
+| `get_review_comments` | Read all comments and annotations on the session |
+| `get_review_state` | Session status, attention and new-changes flags, and annotations |
+| `get_user_focus` | What file/line the user is currently viewing in the browser |
+| `get_pr_context` | High-level PR overview: metadata, briefing, file list, local repo status |
+| `get_file_diff` | Diff hunks for a specific file with triage category |
+| `get_file_context` | Full file content from local repo via `git show` |
+
+PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above.
 
 ## Local Agent Review
 
@@ -139,7 +137,7 @@ the rest of your hook alone. Repos using `core.hooksPath` are handled.
 
 ## Features
 
-- **AI-powered PR review** — Your AI gets full codebase context via 14 MCP tools
+- **AI-powered PR review** — Your AI gets full codebase context via 12 MCP tools
 - **Live annotations** — AI findings appear inline on the diff in real-time
 - **Local repo context** — Full file content from your clone, not just diff hunks
 - **No vendor lock-in** — Works with Claude Code, Cursor, or any MCP client
@@ -182,7 +180,7 @@ packages/core       — Server, types, server-client utilities
 packages/git        — Git diff extraction + parser
 packages/analysis   — Deterministic review briefing
 packages/ui         — React 19 + Vite 6 + Tailwind + Zustand
-packages/mcp-server — MCP tool server (14 tools)
+packages/mcp-server — MCP tool server (12 tools)
 packages/github     — GitHub PR fetching + review submission
 cli/                — Commander CLI
 ```

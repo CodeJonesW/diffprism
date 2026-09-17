@@ -295,3 +295,25 @@ function getUntrackedDiffs(cwd: string): string {
 
   return result;
 }
+
+/**
+ * The top-level directory of the working tree that contains `cwd`, or null
+ * when `cwd` is not inside a git repository.
+ *
+ * This is what identifies "a repo" for session purposes. A subdirectory
+ * resolves to its repo's root, so an agent running from `packages/core` and a
+ * hook firing at the root land on the same session. A linked worktree has its
+ * own top level, so worktrees stay independent of each other.
+ */
+export function getRepoRoot(options?: { cwd?: string }): string | null {
+  const cwd = options?.cwd ?? process.cwd();
+  try {
+    return execSync("git rev-parse --show-toplevel", {
+      cwd,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}

@@ -125,14 +125,17 @@ By default, Claude Code prompts for confirmation each time an MCP tool is called
   "permissions": {
     "allow": [
       "mcp__diffprism__open_review",
-      "mcp__diffprism__update_review_context",
       "mcp__diffprism__get_review_result",
+      "mcp__diffprism__update_review_context",
       "mcp__diffprism__get_diff",
       "mcp__diffprism__analyze_diff",
-      "mcp__diffprism__add_annotation",
+      "mcp__diffprism__annotate",
+      "mcp__diffprism__get_review_comments",
       "mcp__diffprism__get_review_state",
-      "mcp__diffprism__flag_for_attention",
-      "mcp__diffprism__review_pr"
+      "mcp__diffprism__get_user_focus",
+      "mcp__diffprism__get_pr_context",
+      "mcp__diffprism__get_file_diff",
+      "mcp__diffprism__get_file_context"
     ]
   }
 }
@@ -162,102 +165,120 @@ Claude will call the `open_review` MCP tool. The DiffPrism server auto-starts as
 
 ## Tool Reference
 
-The MCP server exposes 14 tools:
+The MCP server exposes 12 tools.
+
+**Reviews are one per repo.** Opening a review for a repo that already has one updates that session — new diff, same id, annotations kept. A git worktree counts as its own repo.
+
+**Targeting.** Every tool that acts on an open review accepts:
+
+| Parameter    | Required | Description |
+|--------------|----------|-------------|
+| `session_id` | No       | The review to act on. Takes precedence over `repo_path`. |
+| `repo_path`  | No       | Any directory inside the repo whose review to act on. Defaults to the directory the MCP server runs in. |
+
+If neither resolves to exactly one open review, the tool returns an error — listing the candidates when there are several — instead of guessing.
 
 ### `open_review`
 
-Opens a browser-based code review. Blocks until the engineer submits their decision. Auto-starts the DiffPrism server daemon if not running.
+Opens a review of local changes and **blocks until the reviewer decides**, returning the `ReviewResult`. Auto-starts the DiffPrism server daemon if needed. Does not open pull requests — use `diffprism review <PR URL>` or the dashboard for those.
 
-| Parameter     | Required | Description                                                       |
-|---------------|----------|-------------------------------------------------------------------|
-| `diff_ref`    | Yes      | `"staged"`, `"unstaged"`, `"working-copy"` (staged+unstaged grouped), or a git ref range (e.g. `"HEAD~3..HEAD"`, `"main..feature"`) |
-| `title`       | No       | Title displayed in the review UI                                  |
-| `description` | No       | Description of the changes                                        |
-| `reasoning`   | No       | Agent reasoning about why the changes were made                   |
-| `annotations` | No       | Array of initial annotations to attach to the review              |
-
-### `update_review_context`
-
-Pushes reasoning/context to a running review session. Non-blocking — returns immediately. Requires a prior `open_review` call.
-
-| Parameter     | Required | Description                                    |
-|---------------|----------|------------------------------------------------|
-| `reasoning`   | No       | Agent reasoning about the current changes      |
-| `title`       | No       | Updated title for the review                   |
-| `description` | No       | Updated description of the changes             |
+| Parameter     | Required | Description |
+|---------------|----------|-------------|
+| `diff_ref`    | Yes      | `"working-copy"` (staged + unstaged, grouped), `"staged"`, `"unstaged"`, or a ref range (e.g. `"HEAD~3..HEAD"`) |
+| `title`       | No       | Title displayed in the review UI |
+| `description` | No       | Description of the changes |
+| `reasoning`   | No       | What the agent was trying to accomplish; shown as the session subtitle |
+| `annotations` | No       | Findings to attach when the review opens (same shape as `annotate`) |
+| `wait`        | No       | Wait for the decision (default `true`). `false` returns `{ status: "open", sessionId }` at once. |
+| `timeout_ms`  | No       | How long to wait (default 600000). On expiry returns `{ status: "timed_out", sessionId }`; the review stays open. |
 
 ### `get_review_result`
 
-Fetches the most recent review result. `open_review` already blocks and returns the result — this tool is for advanced workflows where you check results separately.
+Checks the decision on a review that is already open — after `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`.
 
-| Parameter | Required | Description                                                      |
-|-----------|----------|------------------------------------------------------------------|
-| `wait`    | No       | If `true`, poll until a review result is available (blocks up to timeout) |
-| `timeout` | No       | Max wait time in seconds when `wait=true` (default: 300, max: 600) |
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| targeting | No       | See above |
+| `wait`    | No       | Block until a decision arrives |
+| `timeout` | No       | Max wait in seconds when `wait` is true (default 300, max 600) |
+
+### `update_review_context`
+
+Pushes reasoning, title, or description to an open review. Returns immediately.
+
+| Parameter     | Required | Description |
+|---------------|----------|-------------|
+| targeting     | No       | See above |
+| `reasoning`   | No       | Agent reasoning about the current changes |
+| `title`       | No       | Updated title |
+| `description` | No       | Updated description |
 
 ### `get_diff`
 
-Returns a structured `DiffSet` as JSON without opening a browser. Runs locally — no server needed.
+Returns a structured `DiffSet` as JSON. Runs locally — no server needed.
 
-| Parameter  | Required | Description                                                      |
-|------------|----------|------------------------------------------------------------------|
-| `diff_ref` | Yes      | Git diff reference (same options as `open_review`)               |
+| Parameter  | Required | Description |
+|------------|----------|-------------|
+| `diff_ref` | Yes      | Same options as `open_review` |
 
 ### `analyze_diff`
 
-Returns a `ReviewBriefing` with summary, file triage, impact detection, complexity scores, and pattern flags. Runs locally — no server needed.
+Returns a `ReviewBriefing`: summary, file triage, impact detection, complexity scores, and pattern flags. Runs locally — no server needed.
 
-| Parameter  | Required | Description                                                      |
-|------------|----------|------------------------------------------------------------------|
-| `diff_ref` | Yes      | Git diff reference (same options as `open_review`)               |
+| Parameter  | Required | Description |
+|------------|----------|-------------|
+| `diff_ref` | Yes      | Same options as `open_review` |
 
-### `add_annotation`
+### `annotate`
 
-Posts a structured finding to a review session.
+Posts one or more findings to an open review. `warning` annotations flag the session for attention in the sidebar. Replaces `add_annotation`, `add_review_comment`, and `flag_for_attention`.
 
-| Parameter      | Required | Description                                              |
-|----------------|----------|----------------------------------------------------------|
-| `session_id`   | Yes      | Review session ID from `open_review`                     |
-| `file`         | Yes      | File path within the diff to annotate                    |
-| `line`         | Yes      | Line number to annotate                                  |
-| `body`         | Yes      | The annotation text                                      |
-| `type`         | Yes      | `"finding"`, `"suggestion"`, `"question"`, or `"warning"` |
-| `confidence`   | No       | 0-1 confidence score (default: 1)                        |
-| `category`     | No       | Category: security, performance, convention, etc.        |
-| `source_agent` | No       | Agent identifier (e.g., 'security-reviewer')             |
+| Parameter      | Required | Description |
+|----------------|----------|-------------|
+| targeting      | No       | See above |
+| `annotations`  | Yes      | Array of `{ file, line?, body, type, confidence?, category? }`. `type` is `finding`, `suggestion`, `question`, or `warning`; `line` defaults to 1. |
+| `source_agent` | No       | Who posted these, e.g. `security-reviewer` |
+
+Returns `{ sessionId, annotationIds, failed? }`. Partial failures are listed in `failed`; the call is an error only if nothing was posted.
+
+### `get_review_comments`
+
+Every comment and annotation on an open review. Takes targeting.
 
 ### `get_review_state`
 
-Returns session metadata, status, and annotations.
+Session summary — status, decision, `diffRef`, `hasNewChanges`, `needsAttention` — plus annotations. Takes targeting.
 
-| Parameter    | Required | Description                                                  |
-|--------------|----------|--------------------------------------------------------------|
-| `session_id` | No       | Review session ID. Defaults to the most recently created session. |
+### `get_user_focus`
 
-### `flag_for_attention`
+The file and line range the reviewer is currently looking at. Takes targeting.
 
-Marks files for human attention by posting warning annotations.
+### `get_pr_context`
 
-| Parameter      | Required | Description                                              |
-|----------------|----------|----------------------------------------------------------|
-| `session_id`   | No       | Review session ID. Defaults to most recent.              |
-| `files`        | Yes      | Array of `{ path, reason, line? }` objects               |
-| `source_agent` | No       | Agent identifier                                         |
+For a PR review: metadata (title, author, branches, URL), briefing summary, file list, and whether a local clone is connected. Takes targeting.
 
-### `review_pr`
+### `get_file_diff`
 
-Opens a browser-based code review for a GitHub pull request. Optionally posts the review back to GitHub.
+Hunks for one file, with its triage category.
 
-| Parameter        | Required | Description                                              |
-|------------------|----------|----------------------------------------------------------|
-| `pr`             | Yes      | `"owner/repo#123"` or `"https://github.com/owner/repo/pull/123"` |
-| `title`          | No       | Override review title                                    |
-| `reasoning`      | No       | Agent reasoning about the PR changes                     |
-| `post_to_github` | No       | Post the review back to GitHub after submission (default: false) |
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `file`    | Yes      | File path within the diff |
+| targeting | No       | See above |
+
+### `get_file_context`
+
+Full file content from the local clone via `git show`, at the PR's head branch by default.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `file`    | Yes      | Path relative to the repo root |
+| `ref`     | No       | Git ref to read from |
+| targeting | No       | See above |
 
 ### ReviewResult (return type)
 
-**Returned by** `open_review`, `get_review_result`, and `review_pr`:
+**Returned by** `open_review` and `get_review_result`:
 
 ```json
 {

@@ -2,7 +2,7 @@ import type { DiffSet, DiffFile } from "@diffprism/core";
 import { getGitDiff } from "./local.js";
 import { parseDiff } from "./parser.js";
 
-export { getGitDiff, getCurrentBranch, listBranches, listCommits, detectWorktree } from "./local.js";
+export { getGitDiff, getCurrentBranch, listBranches, listCommits, detectWorktree, getRepoRoot } from "./local.js";
 export type { WorktreeInfo } from "./local.js";
 export { parseDiff } from "./parser.js";
 

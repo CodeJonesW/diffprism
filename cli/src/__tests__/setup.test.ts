@@ -33,6 +33,7 @@ vi.mock("node:readline", () => ({
   },
 }));
 
+import { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "@diffprism/core";
 import { setup, isGlobalSetupDone, GITIGNORE_ENTRIES } from "../commands/setup.js";
 
 const mockExistsSync = vi.mocked(fs.existsSync);
@@ -362,17 +363,7 @@ describe("setup command", () => {
         if (s.includes("settings.json")) {
           return JSON.stringify({
             permissions: {
-              allow: [
-                "mcp__diffprism__open_review",
-                "mcp__diffprism__update_review_context",
-                "mcp__diffprism__get_review_result",
-                "mcp__diffprism__get_diff",
-                "mcp__diffprism__analyze_diff",
-                "mcp__diffprism__add_annotation",
-                "mcp__diffprism__get_review_state",
-                "mcp__diffprism__flag_for_attention",
-                "mcp__diffprism__review_pr",
-              ],
+              allow: MCP_TOOL_NAMES.map(mcpToolPermission),
             },
           });
         }
@@ -386,6 +377,53 @@ describe("setup command", () => {
         (call) => call[0].toString().includes("settings.json"),
       );
       expect(settingsWrites).toHaveLength(0);
+    });
+
+    it("prunes permissions for retired tools when upgrading", async () => {
+      // Settings written by an older version name tools this one no longer
+      // registers. Upgrading should replace them, not pile the new ones on top.
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s.includes("settings.json")) return true;
+        return false;
+      });
+
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: {
+              allow: [
+                "Bash(npm test)",
+                "mcp__diffprism__open_review",
+                "mcp__diffprism__add_annotation",
+                "mcp__diffprism__flag_for_attention",
+                "mcp__diffprism__review_pr",
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const settingsWrite = mockWriteFileSync.mock.calls.find((call) =>
+        call[0].toString().includes("settings.json"),
+      );
+      expect(settingsWrite).toBeDefined();
+      const written = JSON.parse(settingsWrite![1] as string) as { permissions: { allow: string[] } };
+      const allow = written.permissions.allow;
+
+      for (const retired of RETIRED_MCP_TOOL_NAMES) {
+        expect(allow).not.toContain(mcpToolPermission(retired));
+      }
+      for (const current of MCP_TOOL_NAMES) {
+        expect(allow.filter((t) => t === mcpToolPermission(current))).toHaveLength(1);
+      }
+      // Permissions that aren't DiffPrism's are left alone.
+      expect(allow).toContain("Bash(npm test)");
     });
   });
 
