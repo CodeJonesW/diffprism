@@ -11,6 +11,7 @@ You have 12 DiffPrism MCP tools. Use the analysis tools proactively; open a huma
 
 - **One review per repo.** Opening a review for a repo that already has one updates it — new diff, same session, existing annotations kept. A git worktree is its own repo.
 - **`open_review` waits for the decision.** It blocks until the reviewer approves, requests changes, or dismisses, and returns their `ReviewResult`. Pass `wait: false` to get the session id back immediately instead.
+- **Scope defaults to the working copy everywhere.** `open_review`, `get_diff` and `analyze_diff` all review `"working-copy"` unless you pass `diff_ref` — the same default as `diffprism review` and the dashboard, so your self-review and the human review look at the same changes.
 - **A decision stands while its diff is unchanged.** If your wait is cut short, open the same review again or re-run the same commit and you get the decision the reviewer already gave — not a second review request. Change the diff and it becomes a new question.
 - **Tools act on the review for your repo.** Every tool that works on an open review takes `session_id` or `repo_path`, and otherwise uses the repo you are running in. If that is ambiguous the tool says so and lists the sessions — pass `session_id`. It never guesses.
 
@@ -18,7 +19,7 @@ You have 12 DiffPrism MCP tools. Use the analysis tools proactively; open a huma
 
 After making multi-file changes, **proactively self-review before requesting human review**:
 
-1. Run `mcp__diffprism__analyze_diff` with `diff_ref: "working-copy"`
+1. Run `mcp__diffprism__analyze_diff` (it covers the working copy by default)
 2. Check the response for:
    - **Pattern flags** — console.logs left in, TODO comments, security issues (hardcoded secrets, SQL injection, XSS)
    - **Test coverage gaps** — new code paths without corresponding tests
@@ -31,7 +32,7 @@ This should happen automatically after significant changes. You don't need the u
 ## Workflow 2: Annotated Human Review
 
 1. Call `mcp__diffprism__open_review` with:
-   - `diff_ref`: `"working-copy"` (or what the user specified, e.g. `"staged"`, `"HEAD~3..HEAD"`)
+   - `diff_ref`: omit it for the working copy, or pass what the user asked for — see *Choosing a scope*
    - `title`: Brief summary of the changes
    - `reasoning`: What you were trying to accomplish — this is how the reviewer tells sessions apart
    - `annotations`: Findings to show when the review opens
@@ -51,9 +52,18 @@ This should happen automatically after significant changes. You don't need the u
 
 To add findings while a review is open, call `mcp__diffprism__annotate`.
 
+## Choosing a scope
+
+| `diff_ref` | Shows | Use when |
+|---|---|---|
+| `"working-copy"` *(default)* | Everything uncommitted; staged and unstaged as separate groups | Almost always — "review my changes" |
+| `"staged"` | Only what the next commit contains | Reviewing exactly what is about to be committed |
+| `"unstaged"` | Only edits not yet staged | Rarely — reviewing work in progress beside a staged commit |
+| `"HEAD~3..HEAD"`, `"main..feature"` | A range of commits | Reviewing work that is already committed |
+
 ## Commit gate
 
-If the repo has the DiffPrism pre-commit gate installed (`diffprism hook install`), a `git commit` of a large enough change opens a review and **waits for a human**.
+If the repo has the DiffPrism pre-commit gate installed (`diffprism hook install`), a `git commit` of a large enough change opens a review and **waits for a human**. It reviews **staged** changes only — unlike every other entry point — because a commit contains exactly the index; unstaged edits aren't part of what is being approved.
 
 - Run `git commit` with a shell timeout long enough for someone to read the change — up to 600000 ms — not the short default.
 - If the commit is interrupted, or reports no decision, the review is still open. Once the reviewer decides, run the **same** `git commit` again: their decision is picked up immediately. Don't change the staged files first — that makes it a new question.

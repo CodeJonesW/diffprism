@@ -45,6 +45,7 @@ export { startGlobalServer } from "./global-server.js";
 export { ensureServer, submitReviewToServer, ReviewTimeoutError } from "./server-client.js";
 export { getBuildInfo, describeVersion } from "./build-info.js";
 export { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "./mcp-tools.js";
+export { DEFAULT_DIFF_REF, COMMIT_GATE_DIFF_REF, DIFF_REF_DESCRIPTION } from "./diff-scope.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,

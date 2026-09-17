@@ -36,6 +36,7 @@ import {
   createStaticServer,
 } from "./ui-server.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
+import { DEFAULT_DIFF_REF } from "./diff-scope.js";
 import { createDiffPoller } from "./diff-poller.js";
 import type { DiffPoller } from "./diff-poller.js";
 import { appendHistory, generateEntryId, getRecentHistory } from "./review-history.js";
@@ -100,6 +101,12 @@ interface Session {
    * specific diff, so re-opening the review with that same diff keeps it.
    */
   verdictDiffHash?: string;
+  /**
+   * The ref the session was opened with. Comparing against another ref
+   * overwrites diffRef, so without this "reset" had nothing to go back to and
+   * guessed the working copy — the wrong diff for a staged commit-gate review.
+   */
+  openedDiffRef?: string;
 }
 
 const sessions = new Map<string, Session>();
@@ -178,6 +185,7 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
       createdAt: Date.now(),
       result: null,
       diffRef,
+      openedDiffRef: diffRef,
       lastDiffHash: diffRef ? hashDiff(payload.rawDiff) : undefined,
       lastDiffSet: diffRef ? payload.diffSet : undefined,
       hasNewChanges: false,
@@ -227,6 +235,7 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
   existing.repoRoot = request.repoRoot;
   // Ref-on-reuse: the freshest thing someone asked to look at wins.
   existing.diffRef = diffRef;
+  existing.openedDiffRef = diffRef;
   existing.lastDiffHash = diffRef ? incomingHash : undefined;
   existing.lastDiffSet = diffRef ? payload.diffSet : undefined;
   existing.createdAt = Date.now();
@@ -570,6 +579,9 @@ async function handleApiRequest(
       uptime: process.uptime(),
       uiUrl: serverUiUrl,
       cwd: process.cwd(),
+      // The dashboard reads its default scope from here rather than keeping
+      // its own copy — Vite can't import @diffprism/core, and a copy drifts.
+      defaultDiffRef: DEFAULT_DIFF_REF,
     });
     return true;
   }
@@ -608,7 +620,7 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/projects/open") {
     try {
       const body = await readBody(req);
-      const { projectPath, diffRef = "working-copy" } = JSON.parse(body) as {
+      const { projectPath, diffRef = DEFAULT_DIFF_REF } = JSON.parse(body) as {
         projectPath: string;
         diffRef?: string;
       };
@@ -1169,8 +1181,11 @@ async function handleApiRequest(
 
     try {
       const body = await readBody(req);
-      const { ref } = JSON.parse(body) as { ref: string };
+      const { ref: requestedRef, reset } = JSON.parse(body) as { ref?: string; reset?: boolean };
 
+      // `reset` returns to the ref the session was opened with. The server
+      // decides that, because it is the only place that still knows it.
+      const ref = reset ? (session.openedDiffRef ?? DEFAULT_DIFF_REF) : requestedRef;
       if (!ref) {
         jsonResponse(res, 400, { error: "Missing ref in request body" });
         return true;

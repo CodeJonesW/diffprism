@@ -77,9 +77,11 @@ interface OpenProjectFormProps {
   onSuccess?: () => void;
 }
 
-function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
+export function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
   const [serverCwd, setServerCwd] = useState<string | undefined>();
-  const [diffRef, setDiffRef] = useState("working-copy");
+  // null until the server says what its default is. Opening before then sends
+  // no scope at all, so the server's default applies either way.
+  const [diffRef, setDiffRef] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { listing, loadingDir, fetchDir } = useDirListing(serverCwd);
@@ -92,8 +94,12 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
     fetch(`http://localhost:${httpPort}/api/status`)
       .then((res) => res.json())
       .then((data) => {
-        const status = data as { cwd?: string };
+        const status = data as { cwd?: string; defaultDiffRef?: string };
         if (status.cwd) setServerCwd(status.cwd);
+        if (status.defaultDiffRef) {
+          const serverDefault = status.defaultDiffRef;
+          setDiffRef((chosen) => chosen ?? serverDefault);
+        }
       })
       .catch(() => {});
   }, []);
@@ -109,7 +115,7 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
       const res = await fetch(`http://localhost:${httpPort}/api/projects/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectPath, diffRef }),
+        body: JSON.stringify(diffRef ? { projectPath, diffRef } : { projectPath }),
       });
       const data = await res.json() as { error?: string; sessionId?: string };
 
@@ -196,7 +202,8 @@ function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
       <div>
         <label className="block text-text-secondary text-xs mb-1">Diff scope</label>
         <select
-          value={diffRef}
+          value={diffRef ?? ""}
+          disabled={diffRef === null}
           onChange={(e) => setDiffRef(e.target.value)}
           className="w-full bg-background border border-border rounded px-3 py-1.5 text-text-primary text-xs focus:outline-none focus:border-accent"
         >

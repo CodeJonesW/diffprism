@@ -87,6 +87,19 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 
 PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above.
 
+## Choosing a scope
+
+Every review — CLI, dashboard, and the MCP tools — defaults to the **working copy**.
+
+| Scope | Shows |
+|---|---|
+| `working-copy` *(default)* | Everything uncommitted; staged and unstaged as separate groups |
+| `staged` | Only what the next commit contains |
+| `unstaged` | Only edits not yet staged |
+| `HEAD~3..HEAD`, `main..feature` | A range of commits |
+
+The one exception is the [commit gate](#commit-gate), which always reviews `staged`.
+
 ## Local Agent Review
 
 DiffPrism also works for reviewing local agent-generated changes:
@@ -111,7 +124,9 @@ diffprism hook install              # Add the gate to this repo's pre-commit hoo
 diffprism hook uninstall            # Remove it
 ```
 
-By default a staged diff of **120+ changed lines** opens a review; anything smaller
+It reviews **staged** changes only, where every other entry point defaults to the whole
+working copy: a commit contains exactly the index, so unstaged edits aren't part of what
+is being approved. By default a staged diff of **120+ changed lines** opens a review; anything smaller
 commits untouched. A gate that stops every commit is one you learn to skip with
 `--no-verify`, and a skipped gate is worse than none. Tune it per repo:
 

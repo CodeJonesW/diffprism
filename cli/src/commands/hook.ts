@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { ensureServer, submitReviewToServer, ReviewTimeoutError } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, ReviewTimeoutError, COMMIT_GATE_DIFF_REF } from "@diffprism/core";
 import type { ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 
@@ -39,7 +39,8 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
 
   let changedLines: number;
   try {
-    const { diffSet } = getDiff("staged", { cwd });
+    // Staged only, unlike every interactive review — see COMMIT_GATE_DIFF_REF.
+    const { diffSet } = getDiff(COMMIT_GATE_DIFF_REF, { cwd });
     changedLines = diffSet.files.reduce(
       (total, file) => total + file.additions + file.deletions,
       0,
@@ -75,9 +76,9 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
   let review: ReviewResult | null = null;
   try {
     const serverInfo = await ensureServer({ dev: flags.dev });
-    const { result } = await submitReviewToServer(serverInfo, "staged", {
+    const { result } = await submitReviewToServer(serverInfo, COMMIT_GATE_DIFF_REF, {
       cwd,
-      diffRef: "staged",
+      diffRef: COMMIT_GATE_DIFF_REF,
       title: "Pre-commit review",
     });
     review = result;

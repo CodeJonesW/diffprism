@@ -6,6 +6,8 @@ import {
   submitReviewToServer,
   isServerAlive,
   ReviewTimeoutError,
+  DEFAULT_DIFF_REF,
+  DIFF_REF_DESCRIPTION,
 } from "@diffprism/core";
 import type {
   ContextUpdatePayload,
@@ -144,6 +146,9 @@ async function withSession(
   }
 }
 
+/** Every tool that takes a scope accepts it the same way, with the same default. */
+const diffRefParam = z.string().optional().describe(DIFF_REF_DESCRIPTION);
+
 const annotationSchema = z.object({
   file: z.string().describe("File path within the diff"),
   line: z
@@ -187,11 +192,7 @@ export async function startMcpServer(): Promise<void> {
     "open_review",
     "Open a review of local git changes in the DiffPrism dashboard and wait for the reviewer's decision. Blocks until they approve, request changes, or dismiss, then returns their ReviewResult (decision, inline comments, summary). Reviews are one per repo: opening again for the same repo updates the review already open instead of starting another, and keeps its annotations. Pass wait: false to get the session id back immediately instead. Pull requests are not opened here — open them with `diffprism review <PR URL>` or the dashboard, then use the PR tools.",
     {
-      diff_ref: z
-        .string()
-        .describe(
-          'What to review: "working-copy" (staged and unstaged, grouped), "staged", "unstaged", or a ref range like "HEAD~3..HEAD"',
-        ),
+      diff_ref: diffRefParam,
       title: z.string().optional().describe("Title for the review"),
       description: z.string().optional().describe("Description of the changes"),
       reasoning: z
@@ -217,7 +218,7 @@ export async function startMcpServer(): Promise<void> {
           `How long to wait for a decision (default ${DEFAULT_WAIT_MS}ms). If it runs out the review stays open, and the session id comes back so you can check again with get_review_result.`,
         ),
     },
-    async ({ diff_ref, title, description, reasoning, annotations, wait, timeout_ms }) => {
+    async ({ diff_ref = DEFAULT_DIFF_REF, title, description, reasoning, annotations, wait, timeout_ms }) => {
       if (isPrRef(diff_ref)) {
         return toolError(
           "open_review does not open pull requests. Open a PR review with `diffprism review <PR URL>` or the DiffPrism dashboard, then use get_pr_context, get_file_diff, get_file_context and annotate on that session.",
@@ -348,13 +349,9 @@ export async function startMcpServer(): Promise<void> {
     "get_diff",
     "Get a structured diff (DiffSet) for local git changes. Returns file-level and hunk-level change data as JSON without opening a browser. Use this to inspect what changed before deciding whether to open a full review.",
     {
-      diff_ref: z
-        .string()
-        .describe(
-          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
-        ),
+      diff_ref: diffRefParam,
     },
-    async ({ diff_ref }) => {
+    async ({ diff_ref = DEFAULT_DIFF_REF }) => {
       try {
         const { diffSet } = getDiff(diff_ref, { cwd: process.cwd() });
         return jsonResult(diffSet);
@@ -368,13 +365,9 @@ export async function startMcpServer(): Promise<void> {
     "analyze_diff",
     "Analyze local git changes and return a ReviewBriefing with summary, file triage (critical/notable/mechanical), impact detection (affected modules, tests, dependencies, breaking changes), complexity scores, test coverage gaps, and pattern flags (security issues, TODOs, console.logs). Same analysis shown in the DiffPrism briefing bar, but returned as JSON without opening a browser.",
     {
-      diff_ref: z
-        .string()
-        .describe(
-          'Git diff reference: "staged", "unstaged", "working-copy" (staged+unstaged grouped), or a ref range like "HEAD~3..HEAD"',
-        ),
+      diff_ref: diffRefParam,
     },
-    async ({ diff_ref }) => {
+    async ({ diff_ref = DEFAULT_DIFF_REF }) => {
       try {
         const { diffSet } = getDiff(diff_ref, { cwd: process.cwd() });
 

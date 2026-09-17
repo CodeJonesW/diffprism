@@ -3,11 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock @diffprism/core before importing the review command
 const mockEnsureServer = vi.fn();
 const mockSubmitReviewToServer = vi.fn();
-vi.mock("@diffprism/core", () => ({
-  ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
-  submitReviewToServer: (...args: unknown[]) =>
-    mockSubmitReviewToServer(...args),
-}));
+vi.mock("@diffprism/core", async () => {
+  // Scope constants come from the real module so these tests assert against
+  // the actual default, not a retyped copy of it.
+  const actual = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
+  return {
+    ensureServer: (...args: unknown[]) => mockEnsureServer(...args),
+    submitReviewToServer: (...args: unknown[]) =>
+      mockSubmitReviewToServer(...args),
+    DEFAULT_DIFF_REF: actual.DEFAULT_DIFF_REF,
+  };
+});
 
 // Mock @diffprism/github
 const mockIsPrRef = vi.fn();
