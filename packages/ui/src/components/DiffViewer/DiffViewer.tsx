@@ -16,6 +16,7 @@ import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread, ThreadForm } from "../InlineComment";
 import { useHttpApi } from "../../hooks/useHttpApi";
+import { useFocusedAnnotationScroll } from "../../hooks/useFocusedAnnotationScroll";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
 import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
@@ -527,6 +528,9 @@ export function DiffViewer() {
     startThread,
     replyToThread,
   ]);
+
+  // A thread picked in the annotation panel: scroll to it once it has rendered.
+  useFocusedAnnotationScroll(widgets);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 

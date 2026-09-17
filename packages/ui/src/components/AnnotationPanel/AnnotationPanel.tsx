@@ -27,7 +27,8 @@ const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
 interface AnnotationPanelProps {
   annotations: Annotation[];
   onDismiss: (annotationId: string) => void;
-  onNavigate: (file: string) => void;
+  /** Go to the thread itself — its file, and its line within the file. */
+  onNavigate: (annotation: Annotation) => void;
 }
 
 function AnnotationBody({ body }: { body: string }) {
@@ -142,7 +143,7 @@ export function AnnotationPanel({
                   className={`px-4 py-2 flex items-start gap-2 hover:bg-text-primary/5 cursor-pointer group ${
                     annotation.dismissed ? "opacity-40" : ""
                   }`}
-                  onClick={() => onNavigate(annotation.file)}
+                  onClick={() => onNavigate(annotation)}
                 >
                   <Icon
                     className={`w-3.5 h-3.5 mt-0.5 flex-shrink-0 ${colorClass}`}
