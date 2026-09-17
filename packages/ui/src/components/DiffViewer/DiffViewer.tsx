@@ -13,7 +13,8 @@ import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } f
 import { refractor } from "refractor";
 import { useReviewStore } from "../../store/review";
 import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
-import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread } from "../InlineComment";
+import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread, ThreadForm } from "../InlineComment";
+import { useHttpApi } from "../../hooks/useHttpApi";
 import { ThemeToggle } from "../ThemeToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
 import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
@@ -181,9 +182,16 @@ export function DiffViewer() {
     annotations,
     dismissAnnotation,
     metadata,
+    reviewId,
   } = useReviewStore();
 
   const isPrReview = !!metadata?.githubPr;
+
+  // Threads live on the server, so they need a session to post to. A PR review
+  // has no local review comments (the verdict happens on GitHub) — there, a
+  // comment on a line opens a conversation with the agent instead.
+  const { isAvailable: hasServer, startThread, replyToThread } = useHttpApi();
+  const canThread = hasServer && !!reviewId;
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -285,16 +293,17 @@ export function DiffViewer() {
     return map;
   }, [fileAnnotations]);
 
-  // Gutter click handler — toggle comment form for the clicked line (disabled for PR reviews)
+  // Gutter click handler — open a comment form (local reviews) or a new
+  // conversation (PR reviews, when a server session can hold it).
   const gutterEvents: EventMap = useMemo(
-    () => isPrReview ? {} : ({
+    () => (isPrReview && !canThread) ? {} : ({
       onClick({ change }: ChangeEventArgs) {
         if (!change) return;
         const key = getChangeKey(change);
         setActiveCommentKey(activeCommentKey === key ? null : key);
       },
     }),
-    [activeCommentKey, setActiveCommentKey, isPrReview],
+    [activeCommentKey, setActiveCommentKey, isPrReview, canThread],
   );
 
   // Custom gutter renderer — show "+" on hover, indicators for comments/annotations
@@ -306,7 +315,7 @@ export function DiffViewer() {
         fileComments.some((c) => c.comment.line === line);
       const hasAnnotations = annotationsByLine.has(line);
 
-      if (inHoverState && !isPrReview) {
+      if (inHoverState && (!isPrReview || canThread)) {
         return (
           <>
             <span className="diff-gutter-add-comment">+</span>
@@ -335,7 +344,7 @@ export function DiffViewer() {
 
       return renderDefault();
     },
-    [selectedFile, fileComments, annotationsByLine, isPrReview],
+    [selectedFile, fileComments, annotationsByLine, isPrReview, canThread],
   );
 
   // Build widgets — inline annotation threads (+ comment threads for non-PR reviews)
@@ -373,7 +382,22 @@ export function DiffViewer() {
             <InlineAnnotationThread
               annotations={lineAnnotations}
               onDismiss={dismissAnnotation}
+              onReply={canThread ? (annotationId, body) => replyToThread(reviewId!, annotationId, body) : undefined}
             />
+          )}
+          {isPrReview && canThread && activeCommentKey === changeKey && (
+            <div className="border-t border-border bg-surface">
+              <ThreadForm
+                placeholder="Start another conversation on this line…"
+                submitLabel="Comment"
+                onSubmit={async (body) => {
+                  const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, body });
+                  if (result.ok) setActiveCommentKey(null);
+                  return result;
+                }}
+                onCancel={() => setActiveCommentKey(null)}
+              />
+            </div>
           )}
           {!isPrReview && lineComments && lineComments.length > 0 && (
             <InlineCommentThread
@@ -394,6 +418,29 @@ export function DiffViewer() {
           )}
         </>
       );
+    }
+
+    // A PR review line with nothing on it yet: start a conversation. Threads are
+    // matched to the file by display path, so post with that — the file key
+    // would save a thread that never shows up.
+    if (isPrReview && canThread && activeCommentKey && !w[activeCommentKey]) {
+      const line = keyToLineMap[activeCommentKey];
+      if (line !== undefined) {
+        w[activeCommentKey] = (
+          <div className="border-t border-border bg-surface">
+            <ThreadForm
+              placeholder="Ask the agent about this line…"
+              submitLabel="Comment"
+              onSubmit={async (body) => {
+                const result = await startThread(reviewId!, { file: getDisplayPath(selectedFile), line, body });
+                if (result.ok) setActiveCommentKey(null);
+                return result;
+              }}
+              onCancel={() => setActiveCommentKey(null)}
+            />
+          </div>
+        );
+      }
     }
 
     // Render standalone form for active key with no existing content (skip for PR reviews)
@@ -431,6 +478,10 @@ export function DiffViewer() {
     dismissAnnotation,
     setActiveCommentKey,
     isPrReview,
+    canThread,
+    reviewId,
+    startThread,
+    replyToThread,
   ]);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);

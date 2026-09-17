@@ -57,7 +57,7 @@ The server auto-detects your local clone by matching `git remote -v` against the
 
 ## MCP Tools
 
-DiffPrism exposes 12 MCP tools to your AI.
+DiffPrism exposes 14 MCP tools to your AI.
 
 Reviews are **one per repo**: opening a review for a repo that already has one updates it instead of starting another, and keeps its annotations. Tools that work on an open review act on the one for the repo your AI is running in, or take `session_id` / `repo_path` — and if that's ambiguous they say so rather than guess.
 
@@ -78,14 +78,16 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 | Tool | Purpose |
 |------|---------|
 | `annotate` | Post findings inline on the diff; `warning` flags the session for attention |
-| `get_review_comments` | Read all comments and annotations on the session |
+| `get_review_comments` | Read every thread on the session; `awaiting_reply` narrows to unanswered ones |
+| `reply` | Reply to a thread — answer the reviewer's question on a line |
+| `wait_for_comments` | Block until the reviewer writes something the agent hasn't answered |
 | `get_review_state` | Session status, attention and new-changes flags, and annotations |
 | `get_user_focus` | What file/line the user is currently viewing in the browser |
 | `get_pr_context` | High-level PR overview: metadata, briefing, file list, local repo status |
 | `get_file_diff` | Diff hunks for a specific file with triage category |
 | `get_file_context` | Full file content from local repo via `git show` |
 
-PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above.
+PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread.
 
 ## Choosing a scope
 
@@ -159,7 +161,7 @@ skill tells them so.
 
 ## Features
 
-- **AI-powered PR review** — Your AI gets full codebase context via 12 MCP tools
+- **AI-powered PR review** — Your AI gets full codebase context via 14 MCP tools
 - **Live annotations** — AI findings appear inline on the diff in real-time
 - **Local repo context** — Full file content from your clone, not just diff hunks
 - **No vendor lock-in** — Works with Claude Code, Cursor, or any MCP client
@@ -216,7 +218,7 @@ packages/core       — Server, types, server-client utilities
 packages/git        — Git diff extraction + parser
 packages/analysis   — Deterministic review briefing
 packages/ui         — React 19 + Vite 6 + Tailwind + Zustand
-packages/mcp-server — MCP tool server (12 tools)
+packages/mcp-server — MCP tool server (14 tools)
 packages/github     — GitHub PR fetching + review submission
 cli/                — Commander CLI
 ```

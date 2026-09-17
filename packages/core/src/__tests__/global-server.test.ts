@@ -2173,3 +2173,103 @@ describe("GET /api/feedback", () => {
     expect(parsed.searchParams.get("body")).toContain("server refused the review");
   });
 });
+
+// ─── #160: conversation threads ───
+
+describe("threads", () => {
+  beforeEach(() => {
+    vi.mocked(git.getRepoRoot).mockReturnValue(null);
+  });
+
+  async function setup() {
+    handle = await startGlobalServer({ silent: true });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/threads" }),
+    });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    const post = (path: string, body: unknown) =>
+      fetch(`${baseUrl}/api/reviews/${sessionId}${path}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const annotations = async () =>
+      ((await (await fetch(`${baseUrl}/api/reviews/${sessionId}/annotations`)).json()) as { annotations: Annotation[] }).annotations;
+    return { baseUrl, sessionId, post, annotations };
+  }
+
+  it("lets the reviewer open a thread on a line", async () => {
+    const { post, annotations } = await setup();
+    const res = await post("/annotations", {
+      file: "src/a.ts", line: 3, body: "why a map here?", type: "question",
+      author: "reviewer", source: { agent: "reviewer", tool: "dashboard" },
+    });
+    expect(res.ok).toBe(true);
+    const [thread] = await annotations();
+    expect(thread).toMatchObject({ author: "reviewer", body: "why a map here?", replies: [] });
+  });
+
+  it("defaults a thread without an author to an agent's, as before threads", async () => {
+    const { post, annotations } = await setup();
+    await post("/annotations", { file: "a.ts", line: 1, body: "finding", type: "finding", source: { agent: "bot" } });
+    expect((await annotations())[0].author).toBe("agent");
+  });
+
+  it("appends replies in order, from either side", async () => {
+    const { post, annotations } = await setup();
+    const opened = await post("/annotations", {
+      file: "a.ts", line: 1, body: "why?", type: "question", author: "reviewer", source: { agent: "reviewer" },
+    });
+    const { annotationId } = (await opened.json()) as { annotationId: string };
+
+    await post(`/annotations/${annotationId}/replies`, { author: "agent", agent: "pr-reviewer", body: "because O(1)" });
+    await post(`/annotations/${annotationId}/replies`, { author: "reviewer", body: "fair" });
+
+    const [thread] = await annotations();
+    expect(thread.replies?.map((r) => [r.author, r.body])).toEqual([
+      ["agent", "because O(1)"],
+      ["reviewer", "fair"],
+    ]);
+    expect(thread.replies?.[0].agent).toBe("pr-reviewer");
+  });
+
+  it("pushes a reply to everyone viewing the session, live", async () => {
+    const { post, sessionId } = await setup();
+    const opened = await post("/annotations", {
+      file: "a.ts", line: 1, body: "why?", type: "question", author: "reviewer", source: { agent: "reviewer" },
+    });
+    const { annotationId } = (await opened.json()) as { annotationId: string };
+
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle!.wsPort}`);
+    const messages: ServerMessage[] = [];
+    ws.on("message", (data) => messages.push(JSON.parse(data.toString()) as ServerMessage));
+    await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+    ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    await post(`/annotations/${annotationId}/replies`, { author: "agent", body: "answer" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+
+    const update = messages.find((m) => m.type === "annotation:updated");
+    expect((update?.payload as Annotation | undefined)?.replies?.[0].body).toBe("answer");
+  });
+
+  it("rejects a reply with no body or an unknown author", async () => {
+    const { post } = await setup();
+    const opened = await post("/annotations", { file: "a.ts", line: 1, body: "x", type: "finding", source: { agent: "bot" } });
+    const { annotationId } = (await opened.json()) as { annotationId: string };
+
+    expect((await post(`/annotations/${annotationId}/replies`, { author: "agent", body: "  " })).status).toBe(400);
+    expect((await post(`/annotations/${annotationId}/replies`, { author: "someone", body: "hi" })).status).toBe(400);
+  });
+
+  it("404s a reply to a thread that doesn't exist", async () => {
+    const { post } = await setup();
+    expect((await post("/annotations/nope/replies", { author: "agent", body: "hi" })).status).toBe(404);
+  });
+});

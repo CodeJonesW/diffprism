@@ -63,8 +63,16 @@ There is no module-level "last session" and no "most recent session across all r
 - **Behavior:** Session summary (status, decision, `hasNewChanges`, `needsAttention`, `diffRef`) plus annotations.
 
 #### `get_review_comments`
-- **Params:** targeting
-- **Behavior:** Every annotation and comment on the review.
+- **Params:** targeting, `awaiting_reply`
+- **Behavior:** Every thread on the review, each with `awaitingReply` (from core's `awaitingAgent`). `awaiting_reply: true` keeps only those.
+
+#### `reply`
+- **Params:** targeting, `annotation_id`, `body`, `source_agent`
+- **Behavior:** POSTs `{ author: "agent" }` to `/api/reviews/:id/annotations/:annotationId/replies`. The server broadcasts `annotation:updated`.
+
+#### `wait_for_comments`
+- **Params:** targeting, `timeout` (seconds, default and max 600)
+- **Behavior:** Polls the session's threads every 2s until one awaits a reply, then returns them; `{ status: "timed_out" }` otherwise.
 
 #### `get_user_focus`
 - **Params:** targeting

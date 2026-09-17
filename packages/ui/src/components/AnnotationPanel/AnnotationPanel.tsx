@@ -8,9 +8,14 @@ import {
   Eye,
   EyeOff,
   Bot,
+  MessageSquare,
 } from "lucide-react";
 import type { Annotation } from "../../types";
 import { CATEGORY_COLORS } from "../../lib/semantic-colors";
+import { awaitingAgent } from "../../lib/threads";
+
+/** Group label for the reviewer's own threads, which have no agent. */
+const YOUR_COMMENTS = "Your comments";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
   finding: AlertCircle,
@@ -73,14 +78,18 @@ export function AnnotationPanel({
 
     const groups = new Map<string, Annotation[]>();
     for (const a of filtered) {
-      const agent = a.source.agent;
-      if (!groups.has(agent)) groups.set(agent, []);
-      groups.get(agent)!.push(a);
+      // A thread the reviewer opened isn't an agent's finding, whatever its
+      // source says — grouping by source.agent filed the reviewer's own
+      // questions under an "agent" called "reviewer".
+      const group = (a.author ?? "agent") === "reviewer" ? YOUR_COMMENTS : a.source.agent;
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group)!.push(a);
     }
     return groups;
   }, [annotations, showDismissed]);
 
   const activeCount = annotations.filter((a) => !a.dismissed).length;
+  const hasReviewerThreads = annotations.some((a) => (a.author ?? "agent") === "reviewer");
 
   if (annotations.length === 0) return null;
 
@@ -88,9 +97,13 @@ export function AnnotationPanel({
     <div className="border-t border-border flex-shrink-0 max-h-[40%] overflow-hidden flex flex-col">
       <div className="px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Bot className="w-4 h-4 text-text-secondary" />
+          {hasReviewerThreads ? (
+            <MessageSquare className="w-4 h-4 text-text-secondary" />
+          ) : (
+            <Bot className="w-4 h-4 text-text-secondary" />
+          )}
           <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-            Agent Annotations ({activeCount})
+            {hasReviewerThreads ? "Annotations & comments" : "Agent Annotations"} ({activeCount})
           </span>
         </div>
         {annotations.some((a) => a.dismissed) && (
@@ -140,13 +153,22 @@ export function AnnotationPanel({
                       <span className="text-xs text-text-secondary font-mono truncate">
                         {annotation.file}:{annotation.line}
                       </span>
-                      <span
-                        className={`text-[10px] font-semibold uppercase ${colorClass}`}
-                      >
-                        {annotation.category}
-                      </span>
+                      {(annotation.author ?? "agent") === "agent" && (
+                        <span
+                          className={`text-[10px] font-semibold uppercase ${colorClass}`}
+                        >
+                          {annotation.category}
+                        </span>
+                      )}
                     </div>
                     <AnnotationBody body={annotation.body} />
+                    {awaitingAgent(annotation) ? (
+                      <p className="text-[10px] text-text-secondary italic mt-0.5">Waiting for an agent</p>
+                    ) : (annotation.replies?.length ?? 0) > 0 ? (
+                      <p className="text-[10px] text-text-secondary mt-0.5">
+                        {annotation.replies!.length} {annotation.replies!.length === 1 ? "reply" : "replies"}
+                      </p>
+                    ) : null}
                   </div>
 
                   {!annotation.dismissed && (

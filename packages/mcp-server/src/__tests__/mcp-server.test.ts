@@ -5,7 +5,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const mockEnsureServer = vi.fn();
 const mockSubmitReviewToServer = vi.fn();
 const mockIsServerAlive = vi.fn();
-vi.mock("@diffprism/core", () => {
+vi.mock("@diffprism/core", async () => {
+  const actual = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
   class ReviewTimeoutError extends Error {
     readonly sessionId: string;
     readonly waitedMs: number;
@@ -25,6 +26,7 @@ vi.mock("@diffprism/core", () => {
     currentVersion: () => "0.0.0-test",
     recordError: vi.fn(),
     REPORT_HINT: "report hint",
+    awaitingAgent: actual.awaitingAgent,
   };
 });
 
@@ -442,5 +444,82 @@ describe("diff scope", () => {
     await (await tool("open_review"))({ diff_ref: "staged", wait: false });
 
     expect(mockSubmitReviewToServer).toHaveBeenCalledWith(serverInfo, "staged", expect.anything());
+  });
+});
+
+// ─── #160: conversation threads ───
+
+describe("threads", () => {
+  const base_ = base;
+  function annotation(id: string, over: Record<string, unknown> = {}) {
+    return { id, sessionId: "s1", file: "a.ts", line: 1, body: `thread ${id}`, type: "question", confidence: 1, category: "other", source: { agent: "reviewer" }, createdAt: 1, ...over };
+  }
+
+  it("marks which threads are waiting for an agent", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({
+          annotations: [
+            annotation("asked", { author: "reviewer" }),
+            annotation("answered", { author: "reviewer", replies: [{ id: "r", author: "agent", body: "ok", createdAt: 2 }] }),
+            annotation("finding", { author: "agent" }),
+          ],
+        }),
+    });
+
+    const result = await (await tool("get_review_comments"))({ session_id: "s1" });
+    const byId = Object.fromEntries(
+      (parse(result).annotations as Array<{ id: string; awaitingReply: boolean }>).map((a) => [a.id, a.awaitingReply]),
+    );
+    expect(byId).toEqual({ asked: true, answered: false, finding: false });
+  });
+
+  it("can return only the threads waiting for a reply", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({ annotations: [annotation("asked", { author: "reviewer" }), annotation("finding")] }),
+    });
+
+    const result = await (await tool("get_review_comments"))({ session_id: "s1", awaiting_reply: true });
+    expect((parse(result).annotations as Array<{ id: string }>).map((a) => a.id)).toEqual(["asked"]);
+  });
+
+  it("replies as an agent", async () => {
+    const fetchMock = stubFetch({
+      [`${base_}/api/reviews/s1/annotations/a1/replies`]: () => json({ replyId: "r1" }),
+    });
+
+    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "because", source_agent: "pr-reviewer" });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body ?? "{}")).toEqual({ author: "agent", agent: "pr-reviewer", body: "because" });
+    expect(parse(result)).toMatchObject({ annotationId: "a1", replyId: "r1" });
+  });
+
+  it("reports a rejected reply as an error", async () => {
+    stubFetch({ [`${base_}/api/reviews/s1/annotations/gone/replies`]: () => json({ error: "Annotation not found" }, 404) });
+    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "gone", body: "x" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Annotation not found");
+  });
+
+  it("wait_for_comments returns as soon as the reviewer has asked something", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({ annotations: [annotation("finding"), annotation("asked", { author: "reviewer" })] }),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
+    expect((parse(result).threads as Array<{ id: string }>).map((t) => t.id)).toEqual(["asked"]);
+  });
+
+  it("wait_for_comments ignores threads already answered, and says to keep listening", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({ annotations: [annotation("answered", { author: "reviewer", replies: [{ id: "r", author: "agent", body: "ok", createdAt: 2 }] })] }),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1", timeout: 0 });
+    expect(parse(result)).toMatchObject({ status: "timed_out", sessionId: "s1" });
+    expect(String(parse(result).message)).toContain("wait_for_comments again");
   });
 });

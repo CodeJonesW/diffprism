@@ -83,6 +83,23 @@ export interface AnnotationSource {
   tool?: string; // MCP tool that created it (e.g., "add_annotation")
 }
 
+/** Who wrote a message in a review thread. */
+export type ThreadAuthor = "agent" | "reviewer";
+
+export interface AnnotationReply {
+  id: string;
+  author: ThreadAuthor;
+  /** Which agent, when an agent wrote it. */
+  agent?: string;
+  body: string;
+  createdAt: number; // Unix timestamp ms
+}
+
+/**
+ * A finding on a line, and the conversation under it. An agent can open one
+ * (a finding) or the reviewer can (a question about the code); either side can
+ * reply.
+ */
 export interface Annotation {
   id: string;
   sessionId: string;
@@ -95,6 +112,9 @@ export interface Annotation {
   source: AnnotationSource;
   createdAt: number; // Unix timestamp ms
   dismissed?: boolean;
+  /** Who opened the thread. Absent means an agent — every annotation from before threads was one. */
+  author?: ThreadAuthor;
+  replies?: AnnotationReply[];
 }
 
 export interface SessionState {
@@ -233,7 +253,8 @@ export type ServerMessage =
   | { type: "session:updated"; payload: SessionSummary }
   | { type: "session:removed"; payload: { sessionId: string } }
   | { type: "annotation:added"; payload: Annotation }
-  | { type: "annotation:dismissed"; payload: { annotationId: string } };
+  | { type: "annotation:dismissed"; payload: { annotationId: string } }
+  | { type: "annotation:updated"; payload: Annotation };
 
 export type ClientMessage =
   | { type: "review:submit"; payload: ReviewResult }

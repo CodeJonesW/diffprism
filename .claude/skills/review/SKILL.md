@@ -5,7 +5,7 @@ description: Open current code changes in DiffPrism's browser-based review UI fo
 
 # DiffPrism Review
 
-You have 12 DiffPrism MCP tools. Use the analysis tools proactively; open a human review only when asked.
+You have 14 DiffPrism MCP tools. Use the analysis tools proactively; open a human review only when asked.
 
 ## How reviews work
 
@@ -80,6 +80,12 @@ Pull requests are opened by the user — `diffprism review <PR URL>` or "Review 
 5. `mcp__diffprism__get_review_comments` — what has already been said, before you add to it.
 6. `mcp__diffprism__annotate` — post findings inline on the diff.
 
+The reviewer can also ask you questions on lines of the PR. Hold that conversation in the dashboard, not the terminal:
+
+1. `mcp__diffprism__wait_for_comments` — blocks until the reviewer writes something you haven't answered, then returns those threads.
+2. `mcp__diffprism__reply` — answer each thread, passing its `annotation_id`.
+3. Wait again. On `timed_out`, nothing new was said — keep waiting until the user tells you to stop.
+
 A PR review and a working-copy review can be open for the same clone at once. If a tool reports more than one session, pass the `session_id` of the one you mean.
 
 ## Tool Reference
@@ -101,7 +107,9 @@ A PR review and a working-copy review can be open for the same clone at once. If
 | Tool | Purpose |
 |------|---------|
 | `annotate` | Post one or more findings. `warning` flags the session for attention. |
-| `get_review_comments` | Every comment and annotation on the review. |
+| `get_review_comments` | Every thread on the review; `awaiting_reply` narrows to threads waiting for an answer. |
+| `reply` | Reply to a thread — answer the reviewer's question or follow up on a finding. |
+| `wait_for_comments` | Block until the reviewer writes something you haven't answered. |
 | `get_review_state` | Session status, attention and new-changes flags, and annotations. |
 | `get_user_focus` | What the user is currently looking at. |
 | `get_pr_context` | PR overview: metadata, briefing, file list, local clone status. |
