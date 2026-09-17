@@ -10,6 +10,7 @@ import { server, serverStatus, serverStop } from "./commands/server.js";
 import { defaultAction } from "./commands/default.js";
 import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
 import { feedback } from "./commands/feedback.js";
+import { reply } from "./commands/reply.js";
 import { describeVersion, currentVersion } from "@diffprism/core";
 
 const program = new Command();
@@ -71,6 +72,13 @@ program
   .option("-m, --message <text>", "Start the issue with this text")
   .option("--print", "Print the issue URL instead of opening a browser")
   .action((flags) => feedback(flags));
+
+program
+  .command("reply <annotation-id> <message...>")
+  .description("Answer a reviewer's question on an open review, as the agent")
+  .requiredOption("--session <id>", "The review the question is on")
+  .option("--agent <name>", "Name shown on the reply", "agent")
+  .action((annotationId: string, message: string[], flags) => reply(annotationId, message, flags));
 
 program
   .command("serve")

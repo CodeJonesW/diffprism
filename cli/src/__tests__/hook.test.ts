@@ -419,10 +419,11 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     expect(await run()).toBe(1);
     const output = errors.join("\n");
     // The last thing said in the thread is the question to answer.
-    expect(output).toContain("src/a.ts:3  (annotation_id: q1)");
+    expect(output).toContain("src/a.ts:3");
     expect(output).toContain("And why not a Set?");
+    // An agent with only a shell can act on this: the exact command, not an MCP tool it may not have (#179).
+    expect(output).toContain('Answer: diffprism reply --session s1 q1 "<your answer>"');
     const last = errors.at(-1) ?? "";
-    expect(last).toContain("reply tool (session_id: s1");
     expect(last).toContain("run git commit again");
   });
 

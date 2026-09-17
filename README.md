@@ -130,6 +130,8 @@ diffprism hook install              # Add the gate to this repo's pre-commit hoo
 diffprism hook uninstall            # Remove it
 ```
 
+If you ask the agent something while the commit waits, the commit stops and prints each question with the command that answers it (`diffprism reply --session <id> <annotation-id> "…"`). The agent answers, commits again, and the review picks up where it left off — no MCP server needed.
+
 It reviews **staged** changes only, where every other entry point defaults to the whole
 working copy: a commit contains exactly the index, so unstaged edits aren't part of what
 is being approved. By default a staged diff of **120+ changed lines** opens a review; anything smaller
@@ -187,6 +189,7 @@ diffprism server status             # Check server status
 diffprism server stop               # Stop the server
 diffprism hook install              # Gate commits on a review
 diffprism hook uninstall            # Remove the gate
+diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent
 diffprism feedback                  # Share feedback as a prefilled GitHub issue
 diffprism feedback --bug            # Report a bug, including the last error
 diffprism teardown                  # Remove configuration

@@ -69,7 +69,7 @@ If the repo has the DiffPrism pre-commit gate installed (`diffprism hook install
 - Run `git commit` with a shell timeout long enough for someone to read the change — up to 600000 ms — not the short default.
 - If the commit is interrupted, or reports no decision, the review is still open. Once the reviewer decides, run the **same** `git commit` again: their decision is picked up immediately. Don't change the staged files first — that makes it a new question.
 - If it's blocked with changes requested, the reviewer's summary and comments are printed. Address them, stage, and commit again.
-- If it's blocked because the reviewer asked something, their questions are printed with an `annotation_id` each. Answer each with `mcp__diffprism__reply`, then run the same `git commit` again — the review is still open.
+- If it's blocked because the reviewer asked something, each question is printed with the command that answers it — `diffprism reply --session <id> <annotation-id> "<your answer>"`. Run it for each, then run the same `git commit` again — the review is still open.
 
 ## Workflow 3: PR Review
 
