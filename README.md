@@ -113,7 +113,7 @@ DiffPrism also works for reviewing local agent-generated changes:
 ```bash
 diffprism review                    # Review all changes (staged + unstaged)
 diffprism review --staged           # Staged changes only
-diffprism review HEAD~3             # Last 3 commits
+diffprism review HEAD~3..HEAD       # Last 3 commits
 diffprism review main..feature      # Branch diff
 ```
 
@@ -218,6 +218,7 @@ cd diffprism
 pnpm install
 pnpm test
 pnpm run build
+pnpm docs:check                     # Fail if docs disagree with the code (runs in CI)
 pnpm cli review --staged            # Run CLI from source
 ```
 
