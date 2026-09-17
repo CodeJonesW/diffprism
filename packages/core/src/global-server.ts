@@ -95,6 +95,11 @@ interface Session {
    * warning lands while it is already being viewed.
    */
   attentionClearedAt: number;
+  /**
+   * Hash of the diff the current verdict was given on. A verdict answers a
+   * specific diff, so re-opening the review with that same diff keeps it.
+   */
+  verdictDiffHash?: string;
 }
 
 const sessions = new Map<string, Session>();
@@ -194,21 +199,35 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
   const wasClosed = existing.closedAt !== undefined;
   existing.closedAt = undefined;
 
-  // A verdict belongs to the round it was given in. A new round needs a new
-  // decision, or a caller blocked on this session would read the old verdict
-  // straight back. A round still in progress keeps its status — resetting an
-  // in_review session would pull it out from under the person reviewing it.
-  if (existing.result !== null) {
+  const incomingHash = hashDiff(payload.rawDiff);
+  const contentChanged = hashDiff(existing.payload.rawDiff) !== incomingHash;
+
+  // A verdict answers a specific diff. If the same diff comes back, so does
+  // the verdict: a caller that re-opens because its wait was cut off — an
+  // agent whose `git commit` hit its shell timeout mid-review, or whose
+  // open_review returned timed_out — picks up the decision the reviewer
+  // already gave instead of wiping it and asking them again. A changed diff
+  // is a new question and needs a new decision. Dismissal is not a verdict on
+  // the diff, only "not now", so it never carries over.
+  const stillAnswered =
+    existing.result !== null &&
+    existing.result.decision !== "dismissed" &&
+    existing.verdictDiffHash === incomingHash;
+
+  if (existing.result !== null && !stillAnswered) {
     existing.result = null;
     existing.status = "pending";
+    existing.verdictDiffHash = undefined;
   }
+  // A round still in progress keeps its status — resetting an in_review
+  // session would pull it out from under the person reviewing it.
 
   existing.payload = payload;
   existing.projectPath = request.projectPath;
   existing.repoRoot = request.repoRoot;
   // Ref-on-reuse: the freshest thing someone asked to look at wins.
   existing.diffRef = diffRef;
-  existing.lastDiffHash = diffRef ? hashDiff(payload.rawDiff) : undefined;
+  existing.lastDiffHash = diffRef ? incomingHash : undefined;
   existing.lastDiffSet = diffRef ? payload.diffSet : undefined;
   existing.createdAt = Date.now();
   // Annotations are deliberately kept. Reuse used to wipe them, destroying an
@@ -229,7 +248,9 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
     for (const annotation of existing.annotations) {
       sendToSessionClients(id, { type: "annotation:added", payload: annotation });
     }
-  } else {
+  } else if (contentChanged || wasClosed) {
+    // Only a real change is news. A retry of the identical diff — the case the
+    // kept verdict above exists for — should not light up the sidebar.
     existing.hasNewChanges = true;
   }
 
@@ -467,6 +488,14 @@ function hasConnectedClients(): boolean {
 function broadcastSessionList(): void {
   const summaries = listedSummaries();
   broadcastToAll({ type: "session:list", payload: summaries });
+}
+
+/** Record a reviewer's decision, noting which diff it was a decision about. */
+function recordVerdict(session: Session, result: ReviewResult): void {
+  session.result = result;
+  session.status = "submitted";
+  session.verdictDiffHash = hashDiff(session.payload.rawDiff);
+  recordReviewHistory(session, result);
 }
 
 function recordReviewHistory(session: Session, result: ReviewResult): void {
@@ -867,9 +896,7 @@ async function handleApiRequest(
     try {
       const body = await readBody(req);
       const result = JSON.parse(body) as ReviewResult;
-      session.result = result;
-      session.status = "submitted";
-      recordReviewHistory(session, result);
+      recordVerdict(session, result);
       if (result.decision === "dismissed") {
         broadcastSessionRemoved(postResultParams.id);
       } else {
@@ -1358,9 +1385,7 @@ export async function startGlobalServer(
           if (sid) {
             const session = sessions.get(sid);
             if (session) {
-              session.result = msg.payload;
-              session.status = "submitted";
-              recordReviewHistory(session, msg.payload);
+              recordVerdict(session, msg.payload);
               if (msg.payload.decision === "dismissed") {
                 broadcastSessionRemoved(sid);
               } else {

@@ -26,6 +26,8 @@ There is no module-level "last session" and no "most recent session across all r
 - **Behavior:** Calls `ensureServer()` then `submitReviewToServer()`. Blocks until the reviewer decides and returns the `ReviewResult`. With `wait: false`, returns `{ status: "open", sessionId }` at once. If the wait runs out, `submitReviewToServer` throws `ReviewTimeoutError` and the tool returns `{ status: "timed_out", sessionId }` — the review is still open.
 - **Rejects PR refs.** Pull requests are opened by `diffprism review <PR>` or the dashboard; agents then participate with the PR tools.
 - **One session per repo:** a second open for the same repo reuses the session, keeps its annotations, switches it to the new ref, and raises its new-changes signal.
+- **A decision stands while its diff is unchanged.** Re-opening with the identical diff returns a decision already given instead of clearing it — so a caller whose wait was cut short converges on the reviewer's answer. A changed diff clears it; a dismissal never carries over.
+- **Why ten minutes (#161):** Claude Code aborts a stdio tool call that sends nothing for its idle window (30 min), and per-server `timeout` is a hard limit often set to 10 min. Ending the wait ourselves means the agent gets `timed_out` with a session id and instructions to keep waiting, rather than a bare client error it fills by asking the user something.
 
 #### `get_review_result`
 - **Params:** targeting, `wait`, `timeout` (seconds, default 300, max 600)

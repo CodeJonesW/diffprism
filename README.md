@@ -135,6 +135,13 @@ Commit blocked: the review requested changes.
 Install adds one line between markers, so uninstall removes exactly that and leaves
 the rest of your hook alone. Repos using `core.hooksPath` are handled.
 
+**Reviews take as long as they take.** An agent's shell command usually times out long
+before a person finishes reading, so the review outlives the `git commit` that opened it.
+A decision stands for as long as the staged diff it answered is unchanged: re-run the
+same commit after the reviewer decides and it is picked up immediately, with no second
+review. Agents running `git commit` should use a long shell timeout — the `/review`
+skill tells them so.
+
 ## Features
 
 - **AI-powered PR review** — Your AI gets full codebase context via 12 MCP tools

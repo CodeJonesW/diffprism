@@ -881,7 +881,11 @@ describe("global-server", () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          payload: makePayload({ metadata: { title: "New review" } }),
+          // A different diff: a new question, so the old verdict must not stand.
+          payload: makePayload({
+            metadata: { title: "New review" },
+            rawDiff: "diff --git a/src/other.ts b/src/other.ts\n",
+          }),
           projectPath: "/test/project",
         }),
       });
@@ -1548,9 +1552,9 @@ describe("session identity", () => {
     });
   }
 
-  async function openLocal(baseUrl: string, projectPath: string, diffRef?: string) {
+  async function openLocal(baseUrl: string, projectPath: string, diffRef?: string, rawDiff?: string) {
     const response = await post(baseUrl, "/api/reviews", {
-      payload: makePayload(),
+      payload: rawDiff ? makePayload({ rawDiff }) : makePayload(),
       projectPath,
       diffRef,
     });
@@ -1610,18 +1614,100 @@ describe("session identity", () => {
       expect(session?.status).toBe("in_review");
     });
 
-    it("clears a previous verdict so a blocked caller waits for a new one", async () => {
+    it("clears a previous verdict when the diff has changed", async () => {
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
 
       const sessionId = await openLocal(baseUrl, "/repo");
       await post(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "approved", comments: [] });
-      await openLocal(baseUrl, "/repo");
+      await openLocal(baseUrl, "/repo", undefined, "diff --git a/changed.ts b/changed.ts\n");
 
       const body = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}/result`)).json()) as {
         result: ReviewResult | null;
       };
       expect(body.result).toBeNull();
+    });
+
+    describe("a verdict answers a specific diff (#161)", () => {
+      // The retry case: an agent's `git commit` hits its shell timeout while
+      // the human is still reviewing, or open_review returns timed_out. The
+      // reviewer decides; the agent tries again with the same diff. It must get
+      // that decision, not a wiped session and a second review request.
+      async function resultOf(baseUrl: string, sessionId: string) {
+        return ((await (await fetch(`${baseUrl}/api/reviews/${sessionId}/result`)).json()) as {
+          result: ReviewResult | null;
+        }).result;
+      }
+
+      it("keeps an approval when the identical diff is reopened", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const sessionId = await openLocal(baseUrl, "/repo");
+        await post(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "approved", comments: [] });
+        await openLocal(baseUrl, "/repo");
+
+        expect((await resultOf(baseUrl, sessionId))?.decision).toBe("approved");
+        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+        expect(session?.status).toBe("submitted");
+      });
+
+      it("keeps requested changes — and their feedback — for an unchanged diff", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const sessionId = await openLocal(baseUrl, "/repo");
+        await post(baseUrl, `/api/reviews/${sessionId}/result`, {
+          decision: "changes_requested",
+          comments: [],
+          summary: "what is this?",
+        });
+        await openLocal(baseUrl, "/repo");
+
+        const result = await resultOf(baseUrl, sessionId);
+        expect(result?.decision).toBe("changes_requested");
+        expect(result?.summary).toBe("what is this?");
+      });
+
+      it("does not carry a dismissal over, since dismissing is not a decision", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const sessionId = await openLocal(baseUrl, "/repo");
+        await post(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "dismissed", comments: [] });
+        await openLocal(baseUrl, "/repo");
+
+        expect(await resultOf(baseUrl, sessionId)).toBeNull();
+      });
+
+      it("keeps a verdict given over the WebSocket too", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+        const sessionId = await openLocal(baseUrl, "/repo");
+
+        const { WebSocket } = await import("ws");
+        const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+        await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+        ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        ws.send(JSON.stringify({ type: "review:submit", payload: { decision: "approved", comments: [] } }));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        ws.close();
+
+        await openLocal(baseUrl, "/repo");
+        expect((await resultOf(baseUrl, sessionId))?.decision).toBe("approved");
+      });
+
+      it("does not report a retry of the identical diff as new changes", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const sessionId = await openLocal(baseUrl, "/repo");
+        await openLocal(baseUrl, "/repo");
+
+        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+        expect(session?.hasNewChanges).toBe(false);
+      });
     });
 
     it("switches to the new ref", async () => {
@@ -1640,7 +1726,7 @@ describe("session identity", () => {
       const baseUrl = `http://localhost:${handle.httpPort}`;
 
       const sessionId = await openLocal(baseUrl, "/repo");
-      await openLocal(baseUrl, "/repo");
+      await openLocal(baseUrl, "/repo", undefined, "diff --git a/changed.ts b/changed.ts\n");
 
       const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
       expect(session?.hasNewChanges).toBe(true);
