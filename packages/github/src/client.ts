@@ -10,6 +10,11 @@ export interface PrMetadata {
   baseBranch: string;
   headBranch: string;
   body: string | null;
+  /**
+   * The GitHub login DiffPrism acts as — whose token it holds. Null when the
+   * token has no user to ask about (an Actions or GitHub App token).
+   */
+  viewer: string | null;
 }
 
 export interface PrRef {
@@ -26,7 +31,22 @@ export function createGitHubClient(token: string): Octokit {
 }
 
 /**
- * Fetch PR metadata (title, author, branches, etc.).
+ * Who the token belongs to. GitHub answers 403 or 404 for a token with no user
+ * behind it; that means "nobody to name", not a failure. Anything else is.
+ */
+async function fetchViewer(client: Octokit): Promise<string | null> {
+  try {
+    const { data } = await client.users.getAuthenticated();
+    return data.login;
+  } catch (err) {
+    const status = (err as { status?: number }).status;
+    if (status === 403 || status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Fetch PR metadata (title, author, branches, etc.), and who is reading it.
  */
 export async function fetchPullRequest(
   client: Octokit,
@@ -34,7 +54,10 @@ export async function fetchPullRequest(
   repo: string,
   number: number,
 ): Promise<PrMetadata> {
-  const { data } = await client.pulls.get({ owner, repo, pull_number: number });
+  const [{ data }, viewer] = await Promise.all([
+    client.pulls.get({ owner, repo, pull_number: number }),
+    fetchViewer(client),
+  ]);
 
   return {
     owner,
@@ -46,6 +69,7 @@ export async function fetchPullRequest(
     baseBranch: data.base.ref,
     headBranch: data.head.ref,
     body: data.body,
+    viewer,
   };
 }
 

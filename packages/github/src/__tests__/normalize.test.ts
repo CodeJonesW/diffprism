@@ -26,6 +26,7 @@ const FIXTURE_PR: PrMetadata = {
   baseBranch: "main",
   headBranch: "feature/type-annotation",
   body: "This PR adds type annotations and logging.",
+  viewer: "reviewer-bot",
 };
 
 describe("normalizePr", () => {
@@ -60,6 +61,7 @@ describe("normalizePr", () => {
       url: "https://github.com/anthropics/diffprism/pull/42",
       baseBranch: "main",
       headBranch: "feature/type-annotation",
+      viewer: "reviewer-bot",
     });
   });
 
