@@ -2,6 +2,7 @@
 title: Resize and hide the dashboard's panels
 date: 2026-09-18
 kind: feature
+pr: 205
 ---
 
 ## What changed
