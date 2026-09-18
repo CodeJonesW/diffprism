@@ -1,6 +1,6 @@
 {
   "name": "diffprism",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "type": "module",
   "description": "Local-first code review tool for agent-generated code changes",
   "bin": {
@@ -17,6 +17,7 @@
     "lint": "pnpm -r run lint",
     "test": "pnpm -r run test",
     "docs:check": "pnpm -F diffprism-cli docs:check",
+    "journal": "pnpm -F diffprism-cli journal",
     "cli": "pnpm -F @diffprism/ui build && tsx cli/src/index.ts",
     "prepublishOnly": "pnpm run build"
   },
