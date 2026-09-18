@@ -41,6 +41,7 @@ function makeComment(overrides: Partial<ReviewComment> = {}): ReviewComment {
   return {
     file: "src/file0.ts",
     line: 10,
+    side: "new",
     body: "Consider renaming this",
     type: "suggestion",
     ...overrides,

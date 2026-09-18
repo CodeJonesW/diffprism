@@ -10,7 +10,7 @@ import {
   recordError,
   REPORT_HINT,
 } from "@diffprism/core";
-import type { Annotation, ReviewComment, ReviewResult } from "@diffprism/core";
+import type { Annotation, DiffSide, ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
 import { replyCommandFor } from "./reply.js";
 
@@ -143,6 +143,15 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
 }
 
 /**
+ * Where a comment or question is, as the reader will look for it. A deleted
+ * line's number counts in the old file, so `a.ts:12` alone would send them to
+ * the wrong line 12 (#175).
+ */
+export function lineLabel(at: { file: string; line: number; side: DiffSide }): string {
+  return at.side === "old" ? `${at.file}:${at.line} (deleted line)` : `${at.file}:${at.line}`;
+}
+
+/**
  * Print the threads waiting on the agent, with the ids a reply needs.
  *
  * Whoever ran the command only sees its output, so the whole question has to
@@ -152,7 +161,7 @@ export function printQuestions(sessionId: string, threads: Annotation[]): void {
   console.error("");
   for (const t of threads) {
     const last = t.replies?.at(-1)?.body ?? t.body;
-    console.error(`  ${t.file}:${t.line}`);
+    console.error(`  ${lineLabel(t)}`);
     for (const line of last.split("\n")) {
       console.error(`    ${line}`);
     }
@@ -200,7 +209,7 @@ export function printFeedback(review: ReviewResult | null): void {
   }
 
   for (const c of comments) {
-    console.error(`  ${c.file}:${c.line}  [${c.type}]  ${c.body}`);
+    console.error(`  ${lineLabel(c)}  [${c.type}]  ${c.body}`);
   }
 
   console.error("");

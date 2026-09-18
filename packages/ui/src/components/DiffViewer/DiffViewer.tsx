@@ -92,7 +92,16 @@ function getSideFromChange(change: ChangeData): DiffSide {
 }
 
 /**
- * Build a mapping from "file:line" to change keys for widget placement.
+ * Which line a comment or thread is on. The number alone doesn't say: deleted
+ * line 12 counts in the old file and new line 12 in the new one, so keyed by
+ * number, a comment on one also showed on the other (#175).
+ */
+function lineId(side: DiffSide, line: number): string {
+  return `${side}:${line}`;
+}
+
+/**
+ * Build a mapping from "file:side:line" to change keys for widget placement.
  */
 function buildLineToKeyMap(
   hunks: HunkData[],
@@ -102,7 +111,7 @@ function buildLineToKeyMap(
   for (const hunk of hunks) {
     for (const change of hunk.changes) {
       const line = getLineFromChange(change);
-      const compositeKey = `${filePath}:${line}`;
+      const compositeKey = `${filePath}:${lineId(getSideFromChange(change), line)}`;
       if (!map[compositeKey]) {
         map[compositeKey] = getChangeKey(change);
       }
@@ -285,12 +294,13 @@ export function DiffViewer() {
     );
   }, [annotations, selectedFile]);
 
-  // Annotations grouped by line number
+  // Annotations grouped by line — side and number, see lineId
   const annotationsByLine = useMemo(() => {
-    const map = new Map<number, typeof fileAnnotations>();
+    const map = new Map<string, typeof fileAnnotations>();
     for (const a of fileAnnotations) {
-      if (!map.has(a.line)) map.set(a.line, []);
-      map.get(a.line)!.push(a);
+      const id = lineId(a.side, a.line);
+      if (!map.has(id)) map.set(id, []);
+      map.get(id)!.push(a);
     }
     return map;
   }, [fileAnnotations]);
@@ -311,11 +321,11 @@ export function DiffViewer() {
   // Custom gutter renderer — show "+" on hover, indicators for comments/annotations
   const renderGutter = useCallback(
     ({ change, inHoverState, renderDefault }: GutterOptions) => {
-      const line = getLineFromChange(change);
+      const id = lineId(getSideFromChange(change), getLineFromChange(change));
       const hasComments =
         !isPrReview && selectedFile &&
-        fileComments.some((c) => c.comment.line === line);
-      const hasAnnotations = annotationsByLine.has(line);
+        fileComments.some((c) => lineId(c.comment.side, c.comment.line) === id);
+      const hasAnnotations = annotationsByLine.has(id);
 
       if (inHoverState && (!isPrReview || canThread)) {
         return (
@@ -354,13 +364,13 @@ export function DiffViewer() {
     if (!selectedFile) return {};
     const w: Record<string, ReactNode> = {};
 
-    // Group file comments by line (skip for PR reviews)
-    const commentsByLine = new Map<number, { comment: typeof comments[0]; index: number }[]>();
+    // Group file comments by line — side and number, see lineId (skip for PR reviews)
+    const commentsByLine = new Map<string, { comment: typeof comments[0]; index: number }[]>();
     if (!isPrReview) {
       for (const fc of fileComments) {
-        const line = fc.comment.line;
-        if (!commentsByLine.has(line)) commentsByLine.set(line, []);
-        commentsByLine.get(line)!.push(fc);
+        const id = lineId(fc.comment.side, fc.comment.line);
+        if (!commentsByLine.has(id)) commentsByLine.set(id, []);
+        commentsByLine.get(id)!.push(fc);
       }
     }
 
@@ -373,18 +383,20 @@ export function DiffViewer() {
         : undefined;
 
     // Collect all lines that have either comments or annotations
-    const allLines = new Set<number>([
+    const allLines = new Set<string>([
       ...commentsByLine.keys(),
       ...annotationsByLine.keys(),
     ]);
 
     // Render widgets for lines with existing comments and/or annotations
-    for (const line of allLines) {
-      const changeKey = lineToKeyMap[`${selectedFile}:${line}`];
+    for (const id of allLines) {
+      const changeKey = lineToKeyMap[`${selectedFile}:${id}`];
       if (!changeKey) continue;
 
-      const lineComments = commentsByLine.get(line);
-      const lineAnnotations = annotationsByLine.get(line);
+      const line = keyToLineMap[changeKey];
+      const location = { file: selectedFile, line, side: keyToSideMap[changeKey] };
+      const lineComments = commentsByLine.get(id);
+      const lineAnnotations = annotationsByLine.get(id);
 
       w[changeKey] = (
         <>
@@ -415,14 +427,13 @@ export function DiffViewer() {
             <InlineCommentThread
               comments={lineComments}
               isFormOpen={activeCommentKey === changeKey}
-              file={selectedFile}
-              line={line}
+              location={location}
               onAdd={(body, type) => {
-                addComment({ file: selectedFile, line, body, type });
+                addComment({ ...location, body, type });
               }}
               onAsk={askAgent(line, changeKey)}
               onUpdate={(index, body, type) => {
-                updateComment(index, { file: selectedFile, line, body, type });
+                updateComment(index, { ...location, body, type });
               }}
               onDelete={deleteComment}
               onOpenForm={() => setActiveCommentKey(changeKey)}
@@ -433,10 +444,9 @@ export function DiffViewer() {
           {!isPrReview && !lineComments?.length && activeCommentKey === changeKey && (
             <div className="border-t border-border bg-surface">
               <InlineCommentForm
-                file={selectedFile}
-                line={line}
+                location={location}
                 onSave={(body, type) => {
-                  addComment({ file: selectedFile, line, body, type });
+                  addComment({ ...location, body, type });
                   setActiveCommentKey(null);
                 }}
                 onAsk={askAgent(line, changeKey)}
@@ -475,13 +485,13 @@ export function DiffViewer() {
     if (!isPrReview && activeCommentKey && !w[activeCommentKey]) {
       const line = keyToLineMap[activeCommentKey];
       if (line !== undefined) {
+        const location = { file: selectedFile, line, side: keyToSideMap[activeCommentKey] };
         w[activeCommentKey] = (
           <div className="border-t border-border bg-surface">
             <InlineCommentForm
-              file={selectedFile}
-              line={line}
+              location={location}
               onSave={(body, type) => {
-                addComment({ file: selectedFile, line, body, type });
+                addComment({ ...location, body, type });
                 setActiveCommentKey(null);
               }}
               onAsk={askAgent(line, activeCommentKey)}

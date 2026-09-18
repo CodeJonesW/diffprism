@@ -274,7 +274,7 @@ describe("printFeedback", () => {
     printFeedback({
       decision: "changes_requested",
       comments: [
-        { file: "src/a.ts", line: 12, body: "drops the error", type: "must_fix" },
+        { file: "src/a.ts", line: 12, side: "new", body: "drops the error", type: "must_fix" },
       ],
     });
 
@@ -284,12 +284,23 @@ describe("printFeedback", () => {
     expect(out).toContain("drops the error");
   });
 
+  it("says when a comment is on a deleted line, whose number counts in the old file (#175)", () => {
+    printFeedback({
+      decision: "changes_requested",
+      comments: [
+        { file: "src/a.ts", line: 12, side: "old", body: "why remove this?", type: "question" },
+      ],
+    });
+
+    expect(captured()).toContain("src/a.ts:12 (deleted line)");
+  });
+
   it("prints both when the reviewer left both", () => {
     printFeedback({
       decision: "changes_requested",
       summary: "this needs rethinking",
       comments: [
-        { file: "src/a.ts", line: 3, body: "here", type: "question" },
+        { file: "src/a.ts", line: 3, side: "new", body: "here", type: "question" },
       ],
     });
 

@@ -328,7 +328,7 @@ Full file content from the local clone via `git show`, at the PR's head branch b
 ```
 
 - `decision` — one of: `approved`, `changes_requested`, `approved_with_comments`, or `dismissed`
-- `comments` — array of `{ file, line, body, type }` where type is `must_fix`, `suggestion`, `question`, or `nitpick`
+- `comments` — array of `{ file, line, side, body, type }` where type is `must_fix`, `suggestion`, `question`, or `nitpick`. `side` says which file `line` counts in: `"old"` for a deleted line, numbered in the old file, `"new"` for everything else
 - `fileStatuses` — (optional) map of file path to review status (`unreviewed`, `reviewed`, `approved`, `needs_changes`)
 - `summary` — (optional) free-text summary from the reviewer
 - `postReviewAction` — (optional) `"commit"` or `"commit_and_pr"` — set when the user selects a quick action from the review UI

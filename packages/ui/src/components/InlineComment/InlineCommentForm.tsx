@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { ReviewComment } from "../../types";
+import type { CommentLocation } from "../../store/review";
 import { useReviewStore } from "../../store/review";
 
 type CommentType = ReviewComment["type"];
@@ -21,8 +22,12 @@ interface InlineCommentFormProps {
   onCancel: () => void;
   initialBody?: string;
   initialType?: CommentType;
-  file?: string;
-  line?: number;
+  /**
+   * The line a new comment is for. Given, an unsent comment is kept as the
+   * store's draft so submitting the review can warn about it. All three or
+   * none: a comment without its side lands on the wrong line (#175).
+   */
+  location?: CommentLocation;
 }
 
 export function InlineCommentForm({
@@ -31,8 +36,7 @@ export function InlineCommentForm({
   onCancel,
   initialBody = "",
   initialType = "suggestion",
-  file,
-  line,
+  location,
 }: InlineCommentFormProps) {
   const [body, setBody] = useState(initialBody);
   const [type, setType] = useState<CommentType>(initialType);
@@ -45,16 +49,19 @@ export function InlineCommentForm({
     textareaRef.current?.focus();
   }, []);
 
-  // Sync draft state to store so ActionBar can detect unsaved comments
+  // Sync draft state to store so ActionBar can detect unsaved comments.
+  // Keyed on the location's values, not the object: callers build a fresh one
+  // each render, and a draft write re-renders them.
+  const { file, line, side } = location ?? {};
   useEffect(() => {
-    if (file !== undefined && line !== undefined) {
+    if (file !== undefined && line !== undefined && side !== undefined) {
       if (body.trim()) {
-        setDraftComment({ body, type, file, line });
+        setDraftComment({ body, type, file, line, side });
       } else {
         setDraftComment(null);
       }
     }
-  }, [body, type, file, line, setDraftComment]);
+  }, [body, type, file, line, side, setDraftComment]);
 
   function handleSave() {
     if (body.trim()) {
