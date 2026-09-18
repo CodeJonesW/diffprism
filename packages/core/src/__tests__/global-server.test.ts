@@ -2297,7 +2297,7 @@ describe("github review", () => {
 
   const PR = {
     owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
-    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature", viewer: "reviewer",
   };
 
   async function setup(metadata: ReviewInitPayload["metadata"] = { title: "Add widget", githubPr: PR }) {

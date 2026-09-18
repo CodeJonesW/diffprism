@@ -40,6 +40,7 @@ export function normalizePr(
     url: prMetadata.url,
     baseBranch: prMetadata.baseBranch,
     headBranch: prMetadata.headBranch,
+    viewer: prMetadata.viewer,
   };
 
   const metadata: ReviewMetadata = {

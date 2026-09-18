@@ -14,7 +14,7 @@ function thread(over: Partial<Annotation>): Annotation {
 
 const PR = {
   owner: "acme", repo: "widget", number: 7, title: "t", author: "a",
-  url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "f",
+  url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "f", viewer: "reviewer",
 };
 
 describe("PrReviewBar", () => {
@@ -43,6 +43,36 @@ describe("PrReviewBar", () => {
   const respond = (status: number, body: unknown) =>
     fetchMock.mockResolvedValue(new Response(JSON.stringify(body), { status }));
   const sent = () => JSON.parse(fetchMock.mock.calls[0][1].body as string);
+
+  // GitHub refuses an approval or a change request from the PR's author (#191).
+  it("offers only a comment on your own pull request, and says why", () => {
+    useReviewStore.setState({ metadata: { title: "t", githubPr: { ...PR, author: "cj", viewer: "cj" } } });
+    render(<PrReviewBar />);
+
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Request changes" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Comment" })).toBeDefined();
+    expect(screen.getByText(/This is your pull request/)).toBeDefined();
+  });
+
+  it("knows it's your pull request whatever the case of the login", () => {
+    useReviewStore.setState({ metadata: { title: "t", githubPr: { ...PR, author: "CodeJonesW", viewer: "codejonesw" } } });
+    render(<PrReviewBar />);
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  });
+
+  it("offers every decision when it can't tell who you are", () => {
+    // A token with no user behind it: let GitHub decide, as before.
+    useReviewStore.setState({ metadata: { title: "t", githubPr: { ...PR, viewer: null } } });
+    render(<PrReviewBar />);
+    expect(screen.getByRole("button", { name: "Approve" })).toBeDefined();
+    expect(screen.queryByText(/This is your pull request/)).toBeNull();
+  });
+
+  it("says who the review posts as", () => {
+    render(<PrReviewBar />);
+    expect(screen.getByText(/Submit your review to GitHub as @reviewer/)).toBeDefined();
+  });
 
   it("needs a summary before it can request changes or comment", () => {
     render(<PrReviewBar />);
