@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Pencil, Trash2, Plus } from "lucide-react";
 import type { ReviewComment } from "../../types";
+import type { CommentLocation } from "../../store/review";
 import { InlineCommentForm } from "./InlineCommentForm";
 import { COMMENT_TYPE_STYLES } from "../../lib/semantic-colors";
 
@@ -14,8 +15,7 @@ const TYPE_LABELS: Record<ReviewComment["type"], string> = {
 interface InlineCommentThreadProps {
   comments: { comment: ReviewComment; index: number }[];
   isFormOpen: boolean;
-  file: string;
-  line: number;
+  location: CommentLocation;
   onAdd: (body: string, type: ReviewComment["type"]) => void;
   /** Ask the agent now instead — see InlineCommentForm. */
   onAsk?: (body: string) => Promise<{ ok: boolean; error?: string }>;
@@ -28,8 +28,7 @@ interface InlineCommentThreadProps {
 export function InlineCommentThread({
   comments,
   isFormOpen,
-  file,
-  line,
+  location,
   onAdd,
   onAsk,
   onUpdate,
@@ -48,8 +47,7 @@ export function InlineCommentThread({
               key={index}
               initialBody={comment.body}
               initialType={comment.type}
-              file={file}
-              line={line}
+              location={location}
               onSave={(body, type) => {
                 onUpdate(index, body, type);
                 setEditingIndex(null);
@@ -71,7 +69,7 @@ export function InlineCommentThread({
                 {TYPE_LABELS[comment.type]}
               </span>
               <span className="text-text-secondary text-[10px] font-mono">
-                {file}:{line}
+                {location.file}:{location.line}
               </span>
               <div className="flex-1" />
               <button
@@ -98,8 +96,7 @@ export function InlineCommentThread({
 
       {isFormOpen && editingIndex === null && (
         <InlineCommentForm
-          file={file}
-          line={line}
+          location={location}
           onSave={(body, type) => {
             onAdd(body, type);
             onCloseForm();

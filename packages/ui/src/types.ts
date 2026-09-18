@@ -50,6 +50,8 @@ export type FileReviewStatus =
 export interface ReviewComment {
   file: string;
   line: number;
+  /** Which file `line` counts in — a deleted line is numbered in the old one (#175). */
+  side: DiffSide;
   body: string;
   type: "must_fix" | "suggestion" | "question" | "nitpick";
 }
