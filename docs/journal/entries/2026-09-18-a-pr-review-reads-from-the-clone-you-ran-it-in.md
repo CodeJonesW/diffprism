@@ -2,6 +2,7 @@
 title: A PR review reads from the clone you ran it in
 date: 2026-09-18
 kind: fix
+pr: 210
 ---
 
 ## What changed
