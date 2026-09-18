@@ -79,7 +79,7 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 |------|---------|
 | `annotate` | Post findings inline on the diff; `warning` flags the session for attention |
 | `get_review_comments` | Read every thread on the session; `awaiting_reply` narrows to unanswered ones |
-| `reply` | Reply to a thread — answer the reviewer's question on a line |
+| `reply` | Reply to a thread, then keep listening for what the reviewer does next |
 | `wait_for_comments` | Block until the reviewer writes something the agent hasn't answered |
 | `get_review_state` | Session status, attention and new-changes flags, and annotations |
 | `get_user_focus` | What file/line the user is currently viewing in the browser |
@@ -89,7 +89,7 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 
 In a local review, **Ask agent now** in a line's comment form asks the agent while you're still reviewing: the agent's wait for your decision ends with your question, it answers in the thread, and goes back to waiting.
 
-PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread. Nothing starts an agent for you: if none has picked a question up, the thread says so and names the session to ask Claude Code about.
+PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread, and stays listening for your next question until you tell it to stop. Nothing starts an agent for you: if none has picked a question up, the thread says so and names the session to ask Claude Code about. That one prompt is enough — the agent is handed the checkout, branch, PR and the code you asked about along with the question.
 
 When you're done, **Approve**, **Request changes** or **Comment** from the bar at the bottom: DiffPrism posts it to GitHub as a pull request review. Your threads are a conversation with the agent, so none of them goes to GitHub unless you tick it; a ticked thread posts your opening message as an inline review comment. The token comes from `GITHUB_TOKEN`, `gh auth token`, or `~/.diffprism/config.json`.
 

@@ -18,7 +18,11 @@ import {
 import type {
   Annotation,
   ContextUpdatePayload,
+  DiffSet,
+  GitHubPrMetadata,
   GlobalServerInfo,
+  Hunk,
+  ReviewMetadata,
   ReviewResult,
   SessionSummary,
 } from "@diffprism/core";
@@ -147,14 +151,117 @@ async function readThreads(
 }
 
 /**
+ * Where a review is, for an agent that has only its session id.
+ *
+ * The dashboard's prompt for an absent agent names a session and nothing else,
+ * so a conversation starts without knowing which checkout the review is of,
+ * which branch it is on, or which pull request it belongs to. Every answer
+ * needs that, and an agent that has to ask for it first spends several round
+ * trips before it says anything. So it travels with the questions.
+ */
+interface ReviewBriefing {
+  sessionId: string;
+  /** The directory on disk, or `github:owner/repo#n` for a PR with no clone here. */
+  projectPath: string;
+  localRepoConnected: boolean;
+  branch?: string;
+  pr: GitHubPrMetadata | null;
+  title?: string;
+}
+
+interface ReviewContext {
+  review: ReviewBriefing;
+  diffSet: DiffSet;
+}
+
+/**
+ * Reads the session's payload once — the source of both the briefing and the
+ * code under each thread.
+ *
+ * Null when it can't be read, and every caller then returns the threads
+ * unadorned. This is orientation wrapped around an answer the agent already
+ * has; losing the reviewer's actual questions because the payload fetch failed
+ * would be the worse trade by far.
+ */
+async function readReview(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+): Promise<ReviewContext | null> {
+  let response: Response;
+  try {
+    response = await fetch(
+      `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/payload`,
+    );
+  } catch {
+    return null;
+  }
+  if (!response.ok) {
+    return null;
+  }
+  const { payload, projectPath } = (await response.json()) as {
+    payload: { diffSet: DiffSet; metadata: ReviewMetadata };
+    projectPath: string;
+  };
+  return {
+    review: {
+      sessionId,
+      projectPath,
+      localRepoConnected: !projectPath.startsWith("github:"),
+      branch: payload.metadata.currentBranch,
+      pr: payload.metadata.githubPr ?? null,
+      title: payload.metadata.title,
+    },
+    diffSet: payload.diffSet,
+  };
+}
+
+/**
+ * The hunk a thread sits on, so the code being asked about arrives with the
+ * question. A deleted line is numbered in the old file, everything else in the
+ * new one, which is what `side` records.
+ */
+function hunkFor(diffSet: DiffSet, annotation: Annotation): Hunk | null {
+  const file = diffSet.files.find((f) => f.path === annotation.file);
+  if (!file) {
+    return null;
+  }
+  return (
+    file.hunks.find((hunk) =>
+      annotation.side === "old"
+        ? annotation.line >= hunk.oldStart && annotation.line < hunk.oldStart + hunk.oldLines
+        : annotation.line >= hunk.newStart && annotation.line < hunk.newStart + hunk.newLines,
+    ) ?? null
+  );
+}
+
+/** Questions to answer, with the review they are in and the code they are on. */
+function answerableThreads(context: ReviewContext, threads: Annotation[]): unknown {
+  return {
+    sessionId: context.review.sessionId,
+    review: context.review,
+    threads: threads.map((thread) => ({
+      ...thread,
+      awaitingReply: true,
+      hunk: hunkFor(context.diffSet, thread),
+    })),
+  };
+}
+
+/**
  * What a wait for a decision returns when the reviewer asks something first.
  * The agent is the one being asked, and it can't answer while it waits.
  */
-function reviewerAskedResult(err: ReviewerAskedError, waitWith: string): McpToolResult {
+async function reviewerAskedResult(
+  serverInfo: GlobalServerInfo,
+  err: ReviewerAskedError,
+  waitWith: string,
+): Promise<McpToolResult> {
+  const context = await readReview(serverInfo, err.sessionId);
   return jsonResult({
     status: "reviewer_asked",
-    sessionId: err.sessionId,
-    threads: err.threads.map((t) => ({ ...t, awaitingReply: true })),
+    ...(context
+      ? (answerableThreads(context, err.threads) as object)
+      : { sessionId: err.sessionId, threads: err.threads.map((t) => ({ ...t, awaitingReply: true })) }),
     message: `The reviewer asked you something before deciding. Answer each thread with reply (session_id: ${err.sessionId}, annotation_id from threads) — change the code too if that's what they asked for. Then ${waitWith}. The review stays open; the decision still comes.`,
   });
 }
@@ -285,7 +392,7 @@ export function createMcpServer(): McpServer {
           });
         } catch (err) {
           if (err instanceof ReviewerAskedError) {
-            return reviewerAskedResult(err, `wait for the decision with get_review_result (session_id: ${err.sessionId}, wait: true)`);
+            return await reviewerAskedResult(serverInfo, err, `wait for the decision with get_review_result (session_id: ${err.sessionId}, wait: true)`);
           }
           if (err instanceof ReviewTimeoutError) {
             return jsonResult({
@@ -333,7 +440,7 @@ export function createMcpServer(): McpServer {
           return jsonResult(await waitForDecision(serverInfo, sessionId, Math.min(timeout ?? 300, 600) * 1000));
         } catch (err) {
           if (err instanceof ReviewerAskedError) {
-            return reviewerAskedResult(err, "call get_review_result with wait: true again");
+            return await reviewerAskedResult(serverInfo, err, "call get_review_result with wait: true again");
           }
           if (err instanceof ReviewTimeoutError) {
             return jsonResult({
@@ -530,14 +637,20 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     "reply",
-    "Reply to a thread on an open review — answer the reviewer's question, or follow up on a finding. The reply appears under the thread in the dashboard straight away.",
+    "Reply to a thread on an open review — answer the reviewer's question, or follow up on a finding. The reply appears under the thread in the dashboard straight away, and then this goes back to listening and returns whatever happens next: the reviewer's next question, their decision, or `timed_out`. Stay in that loop until they tell you to stop.",
     {
       ...targetParams,
       annotation_id: z.string().describe("The thread to reply to (an annotation id from get_review_comments or wait_for_comments)"),
       body: z.string().describe("Your reply"),
       source_agent: z.string().optional().describe("Who is replying, e.g. 'pr-reviewer'"),
+      then_wait: z
+        .boolean()
+        .optional()
+        .describe(
+          "Keep listening after replying (default true). With false, returns as soon as the reply is posted — use it when you have several threads to answer and want to post them all first.",
+        ),
     },
-    async ({ session_id, repo_path, annotation_id, body, source_agent }) =>
+    async ({ session_id, repo_path, annotation_id, body, source_agent, then_wait }) =>
       withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
         const response = await fetch(
           `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations/${annotation_id}/replies`,
@@ -551,7 +664,44 @@ export function createMcpServer(): McpServer {
         if (!response.ok) {
           return toolError(`Error: ${data.error ?? `server returned ${response.status}`}`);
         }
-        return jsonResult({ sessionId, annotationId: annotation_id, replyId: data.replyId });
+
+        const posted = { sessionId, annotationId: annotation_id, replyId: data.replyId };
+        if (then_wait === false) {
+          return jsonResult(posted);
+        }
+
+        // Answering and going back to listening are one act. Left as two, an
+        // agent posts its answer, the call ends, and the conversation dies
+        // there — the reviewer's next question reaches nobody (#193). Waiting
+        // on the decision covers both kinds of review: it returns as soon as
+        // another thread is waiting, so a batch of questions still answers one
+        // by one, and a local review's decision is not missed while listening.
+        try {
+          const result = await waitForDecision(serverInfo, sessionId, DEFAULT_WAIT_MS);
+          return jsonResult({ ...posted, next: { status: "decided", result } });
+        } catch (err) {
+          if (err instanceof ReviewerAskedError) {
+            const context = await readReview(serverInfo, sessionId);
+            return jsonResult({
+              ...posted,
+              next: context
+                ? { status: "reviewer_asked", ...(answerableThreads(context, err.threads) as object) }
+                : { status: "reviewer_asked", sessionId, threads: err.threads },
+            });
+          }
+          if (err instanceof ReviewTimeoutError) {
+            return jsonResult({
+              ...posted,
+              next: {
+                status: "timed_out",
+                sessionId,
+                message:
+                  "Your reply is posted and the reviewer hasn't said anything since. Keep listening: wait_for_comments in a PR review, or get_review_result with wait: true if you're waiting for their decision. Don't ask them in the terminal.",
+              },
+            });
+          }
+          throw err;
+        }
       }),
   );
 
@@ -576,7 +726,10 @@ export function createMcpServer(): McpServer {
           }
           const waiting = threads.filter((t) => t.awaitingReply);
           if (waiting.length > 0) {
-            return jsonResult({ sessionId, threads: waiting });
+            const context = await readReview(serverInfo, sessionId);
+            return jsonResult(
+              context ? answerableThreads(context, waiting) : { sessionId, threads: waiting },
+            );
           }
           if (Date.now() - start >= maxWaitMs) {
             return jsonResult({
