@@ -10,7 +10,7 @@ that doesn't (`pnpm journal check --base origin/main`).
 
 ## Writing an entry
 
-One file per change: `docs/journal/entries/YYYY-MM-DD-short-slug.md`, dated
+One file per change: `docs/journal/entries/YYYY-MM-DD-<slug>.md`, dated
 the day the change lands.
 
 ```markdown
