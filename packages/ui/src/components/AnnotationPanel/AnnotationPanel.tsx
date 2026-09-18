@@ -9,6 +9,7 @@ import {
   EyeOff,
   Bot,
   MessageSquare,
+  PanelBottomClose,
 } from "lucide-react";
 import type { Annotation } from "../../types";
 import { CATEGORY_COLORS } from "../../lib/semantic-colors";
@@ -32,6 +33,18 @@ interface AnnotationPanelProps {
   onNavigate: (annotation: Annotation) => void;
   /** SessionSummary.agentReadAt of the review being shown. */
   agentReadAt?: number;
+  /** Given, the header offers to hide the panel. */
+  onHide?: () => void;
+}
+
+/**
+ * What the panel calls itself — also shown on the bar that brings it back when
+ * it's hidden, so both say the same thing.
+ */
+export function annotationPanelTitle(annotations: Annotation[]): string {
+  const hasReviewerThreads = annotations.some((a) => (a.author ?? "agent") === "reviewer");
+  const activeCount = annotations.filter((a) => !a.dismissed).length;
+  return `${hasReviewerThreads ? "Annotations & comments" : "Agent Annotations"} (${activeCount})`;
 }
 
 function AnnotationBody({ body }: { body: string }) {
@@ -73,6 +86,7 @@ export function AnnotationPanel({
   onDismiss,
   onNavigate,
   agentReadAt,
+  onHide,
 }: AnnotationPanelProps) {
   const [showDismissed, setShowDismissed] = useState(false);
   const pickup = useAgentPickup(annotations, agentReadAt);
@@ -94,13 +108,12 @@ export function AnnotationPanel({
     return groups;
   }, [annotations, showDismissed]);
 
-  const activeCount = annotations.filter((a) => !a.dismissed).length;
   const hasReviewerThreads = annotations.some((a) => (a.author ?? "agent") === "reviewer");
 
   if (annotations.length === 0) return null;
 
   return (
-    <div className="border-t border-border flex-shrink-0 max-h-[40%] overflow-hidden flex flex-col">
+    <div className="h-full overflow-hidden flex flex-col">
       <div className="px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {hasReviewerThreads ? (
@@ -109,9 +122,10 @@ export function AnnotationPanel({
             <Bot className="w-4 h-4 text-text-secondary" />
           )}
           <span className="text-xs font-semibold text-text-secondary uppercase tracking-wide">
-            {hasReviewerThreads ? "Annotations & comments" : "Agent Annotations"} ({activeCount})
+            {annotationPanelTitle(annotations)}
           </span>
         </div>
+        <div className="flex items-center gap-3">
         {annotations.some((a) => a.dismissed) && (
           <button
             onClick={() => setShowDismissed(!showDismissed)}
@@ -125,6 +139,16 @@ export function AnnotationPanel({
             {showDismissed ? "Hide dismissed" : "Show dismissed"}
           </button>
         )}
+        {onHide && (
+          <button
+            onClick={onHide}
+            className="text-text-secondary hover:text-text-primary cursor-pointer"
+            title="Hide threads"
+          >
+            <PanelBottomClose className="w-3.5 h-3.5" />
+          </button>
+        )}
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto">

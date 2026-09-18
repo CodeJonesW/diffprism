@@ -7,6 +7,9 @@ import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
 import { FileCode, Terminal, Settings, FolderOpen, Folder, ChevronUp, GitBranch, GitPullRequest } from "lucide-react";
 import { useState, useEffect, useCallback } from "react";
+import { Splitter } from "@mantine/core";
+import { PanelLeftOpen } from "lucide-react";
+import { useSavedPane } from "../../hooks/useSavedPane";
 
 const DIFF_REF_OPTIONS = [
   { value: "working-copy", label: "Working Copy" },
@@ -236,86 +239,114 @@ export function Dashboard({
   onToggleNotifications,
 }: DashboardProps) {
   const [detailView, setDetailView] = useState<DetailPaneView>("none");
+  const sessionsPane = useSavedPane("dashboard-sessions", 0);
 
   return (
     <div className="h-screen flex bg-background">
-      {/* Session sidebar — always visible */}
-      <div className="w-[260px] flex-shrink-0 flex flex-col">
-        <SessionSidebar
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSelect={onSelectSession}
-          onClose={onCloseSession}
-          onOpenProject={() => setDetailView("open-project")}
-          onReviewPr={() => setDetailView("review-pr")}
-        />
-        {/* Sidebar footer: notifications and feedback */}
-        <div className="px-3 py-2 border-t border-border border-r border-r-border bg-surface space-y-1.5">
-          {onToggleNotifications && notificationPermission && (
-            <NotificationToggle
-              permission={notificationPermission}
-              enabled={notificationsEnabled ?? false}
-              onToggle={onToggleNotifications}
-            />
-          )}
-          <FeedbackLink />
+      {/* Hidden, the sidebar leaves a rail to bring it back. Every detail view
+          has its own layout, so the way back can't live inside any of them. */}
+      {sessionsPane.collapsed && (
+        <div className="w-9 flex-shrink-0 flex flex-col items-center py-3 bg-surface">
+          <button
+            onClick={() => sessionsPane.setCollapsed(false)}
+            className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+            title="Show sessions"
+          >
+            <PanelLeftOpen className="w-3.5 h-3.5" />
+          </button>
         </div>
-      </div>
-
-      {/* Detail pane — review or empty state */}
-      <div className="flex-1 min-w-0">
-        {hasDiffLoaded ? (
-          <ReviewView
-            onSubmit={onSubmit}
-            onDismiss={onDismiss}
-            isWatchMode={true}
-            watchSubmitted={false}
-            hasUnreviewedChanges={true}
-          />
-        ) : detailView === "open-project" ? (
-          <div className="flex flex-col items-center justify-center h-full px-8">
-            <div className="max-w-sm w-full">
-              <div className="flex items-center gap-2 mb-4">
-                <FolderOpen className="w-5 h-5 text-accent" />
-                <h2 className="text-text-primary text-lg font-semibold">Open Project</h2>
-              </div>
-              <div className="bg-surface border border-border rounded-lg p-5">
-                <OpenProjectForm onSuccess={() => setDetailView("none")} />
-              </div>
-              <button
-                onClick={() => setDetailView("none")}
-                className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : detailView === "review-pr" ? (
-          <div className="flex flex-col items-center justify-center h-full px-8">
-            <div className="max-w-sm w-full">
-              <div className="flex items-center gap-2 mb-4">
-                <GitPullRequest className="w-5 h-5 text-accent" />
-                <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
-              </div>
-              <div className="bg-surface border border-border rounded-lg p-5">
-                <PrInput onSuccess={() => setDetailView("none")} />
-              </div>
-              <button
-                onClick={() => setDetailView("none")}
-                className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <EmptyDetailPane
-            hasAnySessions={sessions.length > 0}
+      )}
+      <Splitter
+        className="flex-1 min-w-0"
+        withHandle={false}
+        lineSize={1}
+        classNames={{ handle: "bg-border" }}
+        {...sessionsPane.splitterProps}
+      >
+        <Splitter.Pane
+          defaultSize={sessionsPane.defaultSize}
+          min="200px"
+          max="480px"
+          collapsible
+          className="flex flex-col overflow-hidden"
+        >
+          <SessionSidebar
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            onSelect={onSelectSession}
+            onClose={onCloseSession}
             onOpenProject={() => setDetailView("open-project")}
             onReviewPr={() => setDetailView("review-pr")}
+            onHide={() => sessionsPane.setCollapsed(true)}
           />
-        )}
-      </div>
+          {/* Sidebar footer: notifications and feedback */}
+          <div className="px-3 py-2 border-t border-border bg-surface space-y-1.5">
+            {onToggleNotifications && notificationPermission && (
+              <NotificationToggle
+                permission={notificationPermission}
+                enabled={notificationsEnabled ?? false}
+                onToggle={onToggleNotifications}
+              />
+            )}
+            <FeedbackLink />
+          </div>
+        </Splitter.Pane>
+
+        {/* Detail pane — review or empty state */}
+        <Splitter.Pane defaultSize={1} className="min-w-0 overflow-hidden">
+          {hasDiffLoaded ? (
+            <ReviewView
+              onSubmit={onSubmit}
+              onDismiss={onDismiss}
+              isWatchMode={true}
+              watchSubmitted={false}
+              hasUnreviewedChanges={true}
+            />
+          ) : detailView === "open-project" ? (
+            <div className="flex flex-col items-center justify-center h-full px-8">
+              <div className="max-w-sm w-full">
+                <div className="flex items-center gap-2 mb-4">
+                  <FolderOpen className="w-5 h-5 text-accent" />
+                  <h2 className="text-text-primary text-lg font-semibold">Open Project</h2>
+                </div>
+                <div className="bg-surface border border-border rounded-lg p-5">
+                  <OpenProjectForm onSuccess={() => setDetailView("none")} />
+                </div>
+                <button
+                  onClick={() => setDetailView("none")}
+                  className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : detailView === "review-pr" ? (
+            <div className="flex flex-col items-center justify-center h-full px-8">
+              <div className="max-w-sm w-full">
+                <div className="flex items-center gap-2 mb-4">
+                  <GitPullRequest className="w-5 h-5 text-accent" />
+                  <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
+                </div>
+                <div className="bg-surface border border-border rounded-lg p-5">
+                  <PrInput onSuccess={() => setDetailView("none")} />
+                </div>
+                <button
+                  onClick={() => setDetailView("none")}
+                  className="mt-3 text-text-secondary text-xs hover:text-text-primary transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <EmptyDetailPane
+              hasAnySessions={sessions.length > 0}
+              onOpenProject={() => setDetailView("open-project")}
+              onReviewPr={() => setDetailView("review-pr")}
+            />
+          )}
+        </Splitter.Pane>
+      </Splitter>
     </div>
   );
 }

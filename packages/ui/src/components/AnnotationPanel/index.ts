@@ -1,1 +1,1 @@
-export { AnnotationPanel } from "./AnnotationPanel.js";
+export { AnnotationPanel, annotationPanelTitle } from "./AnnotationPanel.js";

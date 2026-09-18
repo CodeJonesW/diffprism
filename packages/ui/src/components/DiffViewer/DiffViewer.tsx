@@ -17,6 +17,7 @@ import { useHttpApi } from "../../hooks/useHttpApi";
 import { useFocusedAnnotationScroll } from "../../hooks/useFocusedAnnotationScroll";
 import { tokenizeHunks, refractorAdapter } from "../../lib/tokenize-hunks";
 import { ThemeToggle } from "../ThemeToggle";
+import { SidebarToggle } from "../SidebarToggle";
 import { getFileKey, getDisplayPath } from "../../lib/file-key";
 import { STAGE_BADGE_STYLES } from "../../lib/semantic-colors";
 
@@ -567,8 +568,12 @@ export function DiffViewer() {
 
   // No file selected state
   if (!selectedFile || !diffSet) {
+    // The toggle has to be reachable here too: picking a file needs the sidebar.
     return (
-      <div className="flex-1 flex items-center justify-center bg-background">
+      <div className="relative flex-1 flex items-center justify-center bg-background">
+        <div className="absolute top-2.5 left-4">
+          <SidebarToggle />
+        </div>
         <div className="text-center">
           <FileCode className="w-12 h-12 text-text-secondary/40 mx-auto mb-3" />
           <p className="text-text-secondary text-sm">
@@ -669,6 +674,7 @@ function FileHeader({
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-surface border-b border-border flex-shrink-0">
+      <SidebarToggle />
       <FileCode className="w-4 h-4 text-text-secondary flex-shrink-0" />
       <span className="text-text-primary text-sm font-mono truncate">
         {path}

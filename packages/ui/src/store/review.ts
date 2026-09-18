@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { SplitterPaneSize } from "@mantine/hooks";
 import type {
   DiffSet,
   FileReviewStatus,
@@ -21,6 +22,44 @@ const FILE_STATUS_CYCLE: FileReviewStatus[] = [
 ];
 
 export type Theme = "dark" | "light";
+
+/** The resizable panes. Each new one adds its id here and its default below. */
+export type PaneId = "review-sidebar" | "review-threads" | "dashboard-sessions";
+
+/** A pane's size (in the unit it was declared in) and whether it's collapsed. */
+export interface PaneLayout {
+  size: SplitterPaneSize;
+  collapsed: boolean;
+}
+
+const DEFAULT_PANES: Record<PaneId, PaneLayout> = {
+  "review-sidebar": { size: "280px", collapsed: false },
+  // Threads share the review sidebar with the file list, which takes the rest.
+  "review-threads": { size: 40, collapsed: false },
+  "dashboard-sessions": { size: "260px", collapsed: false },
+};
+
+const PANES_STORAGE_KEY = "diffprism-panes";
+
+/**
+ * The layout the viewer left, per pane, over the defaults. Stored values are
+ * a preference, not a prerequisite: one that is missing or unreadable (hand-
+ * edited, from an older build) gives that pane its default, never a broken
+ * dashboard.
+ */
+function loadPanes(): Record<PaneId, PaneLayout> {
+  let stored: Partial<Record<PaneId, Partial<PaneLayout>>> = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(PANES_STORAGE_KEY) ?? "{}");
+  } catch {
+    stored = {};
+  }
+  const panes = { ...DEFAULT_PANES };
+  for (const id of Object.keys(DEFAULT_PANES) as PaneId[]) {
+    panes[id] = { ...DEFAULT_PANES[id], ...stored[id] };
+  }
+  return panes;
+}
 
 /** Where a comment is: the file, the line, and which side of the diff numbers it. */
 export type CommentLocation = Pick<ReviewComment, "file" | "line" | "side">;
@@ -46,6 +85,7 @@ export interface ReviewState {
   focusedAnnotationId: string | null;
   draftComment: DraftComment | null;
   theme: Theme;
+  panes: Record<PaneId, PaneLayout>;
   isWatchMode: boolean;
   watchSubmitted: boolean;
   hasUnreviewedChanges: boolean;
@@ -69,6 +109,7 @@ export interface ReviewState {
 
   // Actions
   toggleHotkeyGuide: () => void;
+  setPane: (id: PaneId, change: Partial<PaneLayout>) => void;
   toggleWorkflowTips: () => void;
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
@@ -121,6 +162,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   focusedAnnotationId: null,
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
+  panes: loadPanes(),
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
@@ -258,6 +300,16 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     const next = get().theme === "dark" ? "light" : "dark";
     localStorage.setItem("diffprism-theme", next);
     set({ theme: next });
+  },
+
+  setPane: (id: PaneId, change: Partial<PaneLayout>) => {
+    // A splitter reports every collapse and expand, including ones this store
+    // asked for. Only a real change is saved.
+    const current = get().panes[id];
+    if ((Object.keys(change) as Array<keyof PaneLayout>).every((key) => change[key] === current[key])) return;
+    const panes = { ...get().panes, [id]: { ...current, ...change } };
+    localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(panes));
+    set({ panes });
   },
 
   updateDiff: (payload: DiffUpdatePayload) => {
