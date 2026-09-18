@@ -2,6 +2,7 @@
 title: A decision that doesn't arrive says so
 date: 2026-09-18
 kind: fix
+pr: 207
 ---
 
 ## What changed
