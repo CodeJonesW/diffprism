@@ -1741,6 +1741,60 @@ describe("session identity", () => {
       expect(await listSessions(baseUrl)).toHaveLength(2);
     });
 
+    // #197: the clone to read a PR from is where the command ran, not wherever
+    // the background server happened to start.
+    describe("which clone a PR review reads from", () => {
+      /** /clones/widget is a clone of acme/widget; /clones/other is a clone of something else. */
+      function clones() {
+        vi.mocked(git.getRepoRoot).mockImplementation((options) => {
+          const dir = options?.cwd ?? "";
+          if (dir.startsWith("/clones/widget")) return "/clones/widget";
+          if (dir.startsWith("/clones/other")) return "/clones/other";
+          return null;
+        });
+        vi.mocked(git.getGitHubRemotes).mockImplementation((options) =>
+          options?.cwd === "/clones/widget" ? ["acme/widget"] : options?.cwd === "/clones/other" ? ["acme/other"] : [],
+        );
+      }
+
+      it("reads from the clone the command ran in, at its root", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+        clones();
+
+        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", cwd: "/clones/widget/src/lib" });
+        const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string | null };
+
+        expect(localRepoPath).toBe("/clones/widget");
+        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+        expect(session?.projectPath).toBe("/clones/widget");
+      });
+
+      it("reads from no clone when the command ran in a clone of another repo", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+        clones();
+
+        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", cwd: "/clones/other" });
+        const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string | null };
+
+        expect(localRepoPath).toBeNull();
+        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+        expect(session?.projectPath).toBe("github:acme/widget#7");
+      });
+
+      it("uses the server's own folder when the request has none, as the dashboard's does", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+        const serverDir = process.cwd();
+        vi.mocked(git.getRepoRoot).mockImplementation((options) => (options?.cwd === serverDir ? "/clones/widget" : null));
+        vi.mocked(git.getGitHubRemotes).mockImplementation((options) => (options?.cwd === "/clones/widget" ? ["acme/widget"] : []));
+
+        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+        expect(((await response.json()) as { localRepoPath: string | null }).localRepoPath).toBe("/clones/widget");
+      });
+    });
+
     it("reuses a PR session when the same PR is opened again", async () => {
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
