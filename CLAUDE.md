@@ -41,6 +41,8 @@ cli/                — Commander CLI (review, serve, setup, server commands), b
 | `cli/src/commands/server.ts` | `diffprism server` — start/status/stop global server |
 | `cli/src/program.ts` | `createProgram()` — the full Commander command tree, built without parsing argv |
 | `cli/scripts/check-docs.ts` | `pnpm docs:check` — fails CI when docs drift from the code |
+| `cli/scripts/journal.ts` | `pnpm journal` — validates build journal entries, exports them for blog posts |
+| `docs/journal/README.md` | Build journal: one plain-language entry per change, the source for landing-page posts |
 | `cli/src/templates/skill.ts` | Embedded `/review` skill content (SKILL.md template) |
 | `cli/bin/diffprism.mjs` | Executable shim (tsx → src/index.ts) |
 
@@ -57,6 +59,8 @@ pnpm cli server                                 # Start global multi-session ser
 pnpm cli hook install                           # Gate commits in this repo on a review
 pnpm cli feedback --bug --print                 # Print a prefilled bug-report issue URL
 pnpm cli setup -- --global                      # Global setup (no git repo needed)
+pnpm journal check                              # Validate build journal entries
+pnpm journal export --since 2026-09-01          # Journal entries as one markdown bundle for a post
 ```
 
 ## Data Flow
@@ -260,17 +264,25 @@ Replace `<N>` with the issue number. Always branch from latest `main`.
 - Follow existing conventions (ESM, named exports, kebab-case files, etc.)
 - Read surrounding code before editing — understand context first
 
-### 4. Test
+### 4. Record it in the build journal
+
+Add `docs/journal/entries/YYYY-MM-DD-<slug>.md` describing what changed, why,
+and any decision you made along the way (format in `docs/journal/README.md`).
+Write it for a developer reading our blog, not for a code reviewer. CI fails
+a PR without one. Add `pr: <N>` to the frontmatter once the PR exists.
+
+### 5. Test
 
 ```bash
 pnpm test
 pnpm run build
 pnpm docs:check
+pnpm journal check
 ```
 
 All must pass. If you changed a tool, command, flag, message type or file path, `docs:check` points at every doc that still describes the old one. Fix any failures before proceeding.
 
-### 5. Review with diffprism
+### 6. Review with diffprism
 
 Before committing, **always** open a review for the user with `mcp__diffprism__open_review`:
 - `diff_ref`: the appropriate ref (e.g. `"working-copy"`, `"staged"`, or a range like `"HEAD~3..HEAD"`)
@@ -284,7 +296,7 @@ If it returns `status: "timed_out"`, the review is still open in the browser —
 
 This is critical for dogfooding — we use our own tool to review every change to this repo.
 
-### 6. Commit
+### 7. Commit
 
 ```bash
 git add <specific-files>
@@ -295,7 +307,7 @@ Closes #<N>"
 
 Reference the issue number with `Closes #N` so it auto-closes on merge.
 
-### 7. Open PR
+### 8. Open PR
 
 ```bash
 git push -u origin fix-issue-<N>
