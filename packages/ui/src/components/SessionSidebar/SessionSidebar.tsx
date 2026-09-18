@@ -1,4 +1,4 @@
-import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus, Radio } from "lucide-react";
+import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus, Radio, PanelLeftClose } from "lucide-react";
 import type { SessionSummary } from "../../types";
 import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
 
@@ -9,6 +9,8 @@ interface SessionSidebarProps {
   onClose: (sessionId: string) => void;
   onOpenProject?: () => void;
   onReviewPr?: () => void;
+  /** Given, the header offers to hide the sidebar. */
+  onHide?: () => void;
 }
 
 function formatRelativeTime(timestamp: number): string {
@@ -56,9 +58,9 @@ function statusBadge(session: SessionSummary) {
   );
 }
 
-export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, onOpenProject, onReviewPr }: SessionSidebarProps) {
+export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, onOpenProject, onReviewPr, onHide }: SessionSidebarProps) {
   return (
-    <div className="flex flex-col h-full bg-surface border-r border-border">
+    <div className="flex flex-col h-full bg-surface">
       {/* Header */}
       <div className="px-3 py-3 border-b border-border flex items-center justify-between">
         <div>
@@ -86,6 +88,15 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
               title="Open project"
             >
               <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {onHide && (
+            <button
+              onClick={onHide}
+              className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+              title="Hide sessions"
+            >
+              <PanelLeftClose className="w-3.5 h-3.5" />
             </button>
           )}
         </div>

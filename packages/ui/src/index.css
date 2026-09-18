@@ -464,3 +464,18 @@
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-thumb-hover);
 }
+
+/* ─── Resizable panes (Mantine Splitter) ───
+   Each divider is one 1px line, like every other border here — too thin to
+   grab. This widens the grab zone to either side without changing how it looks. */
+.mantine-Splitter-handle::after {
+  content: "";
+  position: absolute;
+  z-index: 10;
+}
+.mantine-Splitter-handle[data-orientation="horizontal"]::after {
+  inset: 0 -3px;
+}
+.mantine-Splitter-handle[data-orientation="vertical"]::after {
+  inset: -3px 0;
+}

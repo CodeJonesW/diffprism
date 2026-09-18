@@ -1,3 +1,5 @@
+import { Splitter } from "@mantine/core";
+import { PanelBottomOpen } from "lucide-react";
 import { BriefingBar } from "./BriefingBar";
 import { ReasoningPanel } from "./ReasoningPanel";
 import { FileBrowser } from "./FileBrowser";
@@ -5,7 +7,8 @@ import { DiffViewer } from "./DiffViewer";
 import { ActionBar, PrReviewBar } from "./ActionBar";
 import { HotkeyGuide } from "./HotkeyGuide";
 import { WorkflowTips } from "./WorkflowTips";
-import { AnnotationPanel } from "./AnnotationPanel";
+import { AnnotationPanel, annotationPanelTitle } from "./AnnotationPanel";
+import { useSavedPane } from "../hooks/useSavedPane";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
 import { getFileKey } from "../lib/file-key";
@@ -22,6 +25,13 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
   const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata } = useReviewStore();
   const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
   const isPrReview = !!metadata?.githubPr;
+  const sidebar = useSavedPane("review-sidebar", 0);
+  // Both panes stay mounted: Mantine sizes a splitter's panes once, so one
+  // appearing later wouldn't fit, and remounting would reset the file list.
+  // Until the review has threads, their pane is simply hidden.
+  const hasThreads = annotations.length > 0;
+  const threads = useSavedPane("review-threads", 1, hasThreads);
+  const threadsSize = parseFloat(String(threads.defaultSize));
 
   // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
   const navigateToFile = (filePath: string) => {
@@ -43,27 +53,65 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
     <div className="h-screen flex flex-col bg-background">
       <BriefingBar />
       <ReasoningPanel />
-      <div className="flex flex-1 min-h-0">
-        {/* Left sidebar — File Browser + Annotations */}
-        <div className="w-[280px] flex-shrink-0 flex flex-col overflow-hidden">
-          <div className="flex-1 min-h-0">
-            <FileBrowser onSubmit={onSubmit} />
-          </div>
-          <AnnotationPanel
-            annotations={annotations}
-            onDismiss={dismissAnnotation}
-            agentReadAt={agentReadAt}
-            onNavigate={(annotation) => {
-              navigateToFile(annotation.file);
-              // A dismissed thread isn't drawn on the diff, so there is nothing to scroll to.
-              if (!annotation.dismissed) focusAnnotation(annotation.id);
-            }}
-          />
-        </div>
+      <Splitter
+        className="flex-1 min-h-0"
+        withHandle={false}
+        lineSize={1}
+        classNames={{ handle: "bg-border" }}
+        {...sidebar.splitterProps}
+      >
+        {/* Left sidebar — File Browser + Annotations. Stays mounted when
+            collapsed, so FileBrowser's keyboard shortcuts keep working. */}
+        <Splitter.Pane
+          defaultSize={sidebar.defaultSize}
+          min="200px"
+          max="600px"
+          collapsible
+          className="flex flex-col overflow-hidden"
+        >
+          <Splitter
+            orientation="vertical"
+            className="flex-1 min-h-0"
+            withHandle={false}
+            lineSize={1}
+            classNames={{ handle: hasThreads ? "bg-border" : "hidden" }}
+            {...threads.splitterProps}
+          >
+            <Splitter.Pane defaultSize={100 - threadsSize} min={20} className="overflow-hidden">
+              <FileBrowser onSubmit={onSubmit} />
+            </Splitter.Pane>
+            <Splitter.Pane defaultSize={threadsSize} min={10} collapsible className="overflow-hidden">
+              <AnnotationPanel
+                annotations={annotations}
+                onDismiss={dismissAnnotation}
+                agentReadAt={agentReadAt}
+                onNavigate={(annotation) => {
+                  navigateToFile(annotation.file);
+                  // A dismissed thread isn't drawn on the diff, so there is nothing to scroll to.
+                  if (!annotation.dismissed) focusAnnotation(annotation.id);
+                }}
+                onHide={() => threads.setCollapsed(true)}
+              />
+            </Splitter.Pane>
+          </Splitter>
+          {/* Hidden threads leave a bar to bring them back — their own header went with them. */}
+          {hasThreads && threads.collapsed && (
+            <button
+              onClick={() => threads.setCollapsed(false)}
+              className="flex items-center gap-2 px-4 py-2 border-t border-border text-xs font-semibold text-text-secondary uppercase tracking-wide hover:text-text-primary cursor-pointer"
+              title="Show threads"
+            >
+              <PanelBottomOpen className="w-3.5 h-3.5" />
+              {annotationPanelTitle(annotations)}
+            </button>
+          )}
+        </Splitter.Pane>
 
         {/* Main area — Diff Viewer */}
-        <DiffViewer />
-      </div>
+        <Splitter.Pane defaultSize={1} className="flex overflow-hidden">
+          <DiffViewer />
+        </Splitter.Pane>
+      </Splitter>
 
       {/* Bottom — the decision. A PR's goes to GitHub; a local review's goes back to the agent. */}
       {isPrReview ? (
