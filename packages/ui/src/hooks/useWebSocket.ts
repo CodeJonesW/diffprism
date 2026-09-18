@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useReviewStore } from "../store/review";
-import type { ReviewResult, ServerMessage, ClientMessage, SessionSummary, DiffUpdatePayload, Annotation } from "../types";
+import type { ServerMessage, ClientMessage, SessionSummary, DiffUpdatePayload, Annotation } from "../types";
 
 interface UseWebSocketOptions {
   onSessionAdded?: (session: SessionSummary) => void;
@@ -173,21 +173,6 @@ export function useWebSocket(options?: UseWebSocketOptions) {
     };
   }, [setConnectionStatus, initReview, updateDiff, updateContext, setServerMode, setSessions, addSession, updateSession, removeSession, addAnnotation, applyAnnotationDismissed, updateAnnotation]);
 
-  const sendResult = useCallback((result: ReviewResult) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      console.error("WebSocket is not connected");
-      return;
-    }
-
-    const message: ClientMessage = {
-      type: "review:submit",
-      payload: result,
-    };
-
-    ws.send(JSON.stringify(message));
-  }, []);
-
   const selectSession = useCallback((sessionId: string) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -218,5 +203,5 @@ export function useWebSocket(options?: UseWebSocketOptions) {
     ws.send(JSON.stringify(message));
   }, []);
 
-  return { sendResult, selectSession, closeSession, connectionStatus };
+  return { selectSession, closeSession, connectionStatus };
 }

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { useNotifications } from "./hooks/useNotifications";
 import { useFocusReporter } from "./hooks/useFocusReporter";
+import { useSendVerdict } from "./hooks/useSendVerdict";
 import { useReviewStore } from "./store/review";
 import { ReviewView } from "./components/ReviewView";
 import { Dashboard } from "./components/Dashboard";
@@ -9,7 +10,7 @@ import type { ReviewResult } from "./types";
 
 export default function App() {
   const { permission: notificationPermission, enabled: notificationsEnabled, toggle: toggleNotifications, notifyNewSession, notifySessionUpdated, notifyDiffUpdated, notifyAnnotationAdded } = useNotifications({ onSessionSelect: handleSelectSession });
-  const { sendResult, selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket({ onSessionAdded: notifyNewSession, onSessionUpdated: notifySessionUpdated, onDiffUpdated: notifyDiffUpdated, onAnnotationAdded: notifyAnnotationAdded });
+  const { selectSession: wsSelectSession, closeSession: wsCloseSession, connectionStatus } = useWebSocket({ onSessionAdded: notifyNewSession, onSessionUpdated: notifySessionUpdated, onDiffUpdated: notifyDiffUpdated, onAnnotationAdded: notifyAnnotationAdded });
   const {
     diffSet,
     metadata,
@@ -25,6 +26,7 @@ export default function App() {
     removeSession,
     clearReview,
   } = useReviewStore();
+  const sendVerdict = useSendVerdict();
   const [submitted, setSubmitted] = useState(false);
   const [countdown, setCountdown] = useState(3);
 
@@ -41,8 +43,8 @@ export default function App() {
     }
   }, [theme]);
 
-  function handleSubmit(result: ReviewResult) {
-    sendResult(result);
+  async function handleSubmit(result: ReviewResult) {
+    if (!(await sendVerdict(result))) return;
     if (isServerMode) {
       clearReview();
     } else if (isWatchMode) {
@@ -52,8 +54,8 @@ export default function App() {
     }
   }
 
-  function handleDismiss() {
-    sendResult({ decision: "dismissed", comments: [] });
+  async function handleDismiss() {
+    if (!(await sendVerdict({ decision: "dismissed", comments: [] }))) return;
     if (isServerMode && activeSessionId) {
       removeSession(activeSessionId);
       wsCloseSession(activeSessionId);

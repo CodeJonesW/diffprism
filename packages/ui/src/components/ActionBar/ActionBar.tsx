@@ -15,7 +15,8 @@ interface ActionBarProps {
 export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ActionBarProps) {
   const [summary, setSummary] = useState("");
   const [pendingDecision, setPendingDecision] = useState<ReviewDecision | null>(null);
-  const { diffSet, fileStatuses, comments, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment } = useReviewStore();
+  const { diffSet, fileStatuses, comments, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment, verdict } = useReviewStore();
+  const sending = verdict.state === "sending";
 
   const totalAdditions =
     diffSet?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0;
@@ -60,6 +61,27 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
       doSubmit(pendingDecision);
       setPendingDecision(null);
     }
+  }
+
+  /** While one decision is on its way, none can be sent: the clicked one says so. */
+  function decisionButton(
+    decision: ReviewDecision,
+    label: string,
+    style: string,
+    Icon: typeof Check,
+    onClick: () => void,
+  ) {
+    const thisOne = verdict.state === "sending" && verdict.decision === decision;
+    return (
+      <button
+        onClick={onClick}
+        disabled={sending}
+        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${style}`}
+      >
+        <Icon className="w-4 h-4" />
+        {thisOne ? "Sending…" : label}
+      </button>
+    );
   }
 
   // Watch mode: submitted with no new changes — compact bar
@@ -155,42 +177,26 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
         </div>
       )}
 
+      {/* The decision didn't reach the server: say why, keep everything, let them send again. */}
+      {verdict.state === "failed" && (
+        <div role="alert" className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-danger/10 border border-danger/30 text-sm text-text-primary">
+          <AlertTriangle className="w-4 h-4 mt-0.5 text-danger flex-shrink-0" />
+          <span>
+            Your decision wasn't sent: {verdict.error}. Whatever is waiting on this review hasn't got it. Choose again to resend.
+          </span>
+        </div>
+      )}
+
       {/* Action buttons */}
       <div className="flex items-center gap-3">
-        <button
-          onClick={() => handleSubmit("approved")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${ACTION_BUTTON_STYLES.approve}`}
-        >
-          <Check className="w-4 h-4" />
-          Approve
-        </button>
-
-        <button
-          onClick={() => handleSubmit("changes_requested")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${ACTION_BUTTON_STYLES.reject}`}
-        >
-          <X className="w-4 h-4" />
-          Request Changes
-        </button>
-
-        <button
-          onClick={() => handleSubmit("approved_with_comments")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${ACTION_BUTTON_STYLES.comment}`}
-        >
-          <MessageSquare className="w-4 h-4" />
-          Approve with Comments
-        </button>
+        {decisionButton("approved", "Approve", ACTION_BUTTON_STYLES.approve, Check, () => handleSubmit("approved"))}
+        {decisionButton("changes_requested", "Request Changes", ACTION_BUTTON_STYLES.reject, X, () => handleSubmit("changes_requested"))}
+        {decisionButton("approved_with_comments", "Approve with Comments", ACTION_BUTTON_STYLES.comment, MessageSquare, () => handleSubmit("approved_with_comments"))}
 
         {onDismiss && (
           <>
             <div className="w-px h-6 bg-border" />
-            <button
-              onClick={onDismiss}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${ACTION_BUTTON_STYLES.dismiss}`}
-            >
-              <XCircle className="w-4 h-4" />
-              Dismiss
-            </button>
+            {decisionButton("dismissed", "Dismiss", ACTION_BUTTON_STYLES.dismiss, XCircle, onDismiss)}
           </>
         )}
 

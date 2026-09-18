@@ -337,7 +337,6 @@ export type ServerMessage =
   | { type: "annotation:updated"; payload: Annotation };
 
 export type ClientMessage =
-  | { type: "review:submit"; payload: ReviewResult }
   | { type: "diff:change_ref"; payload: { diffRef: string } }
   | { type: "session:select"; payload: { sessionId: string } }
   | { type: "session:close"; payload: { sessionId: string } };
