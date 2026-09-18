@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { DiffSide, GitRefsPayload, PrReviewSubmission } from "../types";
+import type { DiffSide, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -100,6 +100,15 @@ export function useHttpApi() {
     [httpPort],
   );
 
+  /**
+   * Send the reviewer's decision. Resolves once the server has recorded it, or
+   * with its reason for refusing — the answer a WebSocket message never gave.
+   */
+  const submitResult = useCallback(
+    (sessionId: string, result: ReviewResult) => postJson(`/api/reviews/${sessionId}/result`, result),
+    [postJson],
+  );
+
   /** Open a conversation on a line, as the reviewer. */
   const startThread = useCallback(
     (sessionId: string, thread: { file: string; line: number; side: DiffSide; body: string }) =>
@@ -146,5 +155,5 @@ export function useHttpApi() {
     [httpPort],
   );
 
-  return { isAvailable, fetchRefs, compareAgainst, resetCompare, startThread, replyToThread, submitPrReview };
+  return { isAvailable, fetchRefs, compareAgainst, resetCompare, submitResult, startThread, replyToThread, submitPrReview };
 }
