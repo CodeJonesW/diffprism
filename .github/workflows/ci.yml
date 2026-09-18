@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -26,5 +28,13 @@ jobs:
 
       - name: Docs in sync with code
         run: pnpm docs:check
+
+      - name: Journal entries well formed
+        if: github.event_name != 'pull_request'
+        run: pnpm journal check
+
+      - name: Journal records this change
+        if: github.event_name == 'pull_request'
+        run: pnpm journal check --base origin/${{ github.base_ref }}
 
       - run: pnpm run build

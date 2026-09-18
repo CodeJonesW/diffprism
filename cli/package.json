@@ -9,7 +9,8 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
-    "docs:check": "tsx scripts/check-docs.ts"
+    "docs:check": "tsx scripts/check-docs.ts",
+    "journal": "tsx scripts/journal.ts"
   },
   "dependencies": {
     "@diffprism/analysis": "workspace:*",

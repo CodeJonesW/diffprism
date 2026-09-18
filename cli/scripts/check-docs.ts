@@ -28,6 +28,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 /** Dated plans and retired docs record what was true then; they are not checked. */
 const HISTORICAL = [
   "docs/deprecated/",
+  "docs/journal/entries/",
   "docs/marketing/",
   "docs/product-plan-discussion-2026-02-27.md",
   "docs/server-first-plan.md",
