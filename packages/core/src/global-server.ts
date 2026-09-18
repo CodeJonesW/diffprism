@@ -1602,20 +1602,9 @@ export async function startGlobalServer(
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString()) as ClientMessage;
-        if (msg.type === "review:submit") {
-          const sid = clientSessions.get(ws);
-          if (sid) {
-            const session = sessions.get(sid);
-            if (session) {
-              recordVerdict(session, msg.payload);
-              if (msg.payload.decision === "dismissed") {
-                broadcastSessionRemoved(sid);
-              } else {
-                broadcastSessionUpdate(session);
-              }
-            }
-          }
-        } else if (msg.type === "session:select") {
+        // Verdicts come over HTTP (POST /api/reviews/:id/result), which answers:
+        // a WebSocket message had no reply, so one that went nowhere looked sent (#203).
+        if (msg.type === "session:select") {
           const session = sessions.get(msg.payload.sessionId);
           if (session) {
             attachViewer(ws, session);

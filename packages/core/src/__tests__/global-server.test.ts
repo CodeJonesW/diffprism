@@ -373,6 +373,41 @@ describe("global-server", () => {
       expect(afterData.status).toBe("submitted");
     });
 
+    // The dashboard sends a verdict over HTTP and shows the reply, so a
+    // verdict that can't be recorded has to say so rather than vanish (#203).
+    it("refuses a verdict for a review that no longer exists", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const response = await fetch(`http://localhost:${handle.httpPort}/api/reviews/session-gone/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision: "approved", comments: [] }),
+      });
+
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "Session not found" });
+    });
+
+    it("refuses a verdict it can't read", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: makePayload(), projectPath: "/test" }),
+      });
+      const { sessionId } = (await createResponse.json()) as { sessionId: string };
+
+      const response = await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{not json",
+      });
+
+      expect(response.status).toBe(400);
+      const { result } = (await (await fetch(`${baseUrl}/api/reviews/${sessionId}/result`)).json()) as { result: unknown };
+      expect(result).toBeNull();
+    });
+
     it("submits and retrieves a review result", async () => {
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
@@ -686,72 +721,6 @@ describe("global-server", () => {
       expect(resultData.result).not.toBeNull();
       expect(resultData.result.decision).toBe("dismissed");
       expect(resultData.status).toBe("submitted");
-    });
-
-    it("dismissed review:submit via WS broadcasts session:removed", async () => {
-      handle = await startGlobalServer({ silent: true });
-      const baseUrl = `http://localhost:${handle.httpPort}`;
-
-      // Create two sessions so auto-select doesn't trigger
-      await fetch(`${baseUrl}/api/reviews`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payload: makePayload({ metadata: { title: "First" } }),
-          projectPath: "/test-a",
-        }),
-      });
-
-      const createResponse = await fetch(`${baseUrl}/api/reviews`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payload: makePayload({ metadata: { title: "Second" } }),
-          projectPath: "/test-b",
-        }),
-      });
-      const { sessionId } = (await createResponse.json()) as { sessionId: string };
-
-      // Connect WS client
-      const { WebSocket } = await import("ws");
-      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
-
-      const messages: ServerMessage[] = [];
-      await new Promise<void>((resolve) => {
-        ws.on("open", () => resolve());
-      });
-      ws.on("message", (data) => {
-        messages.push(JSON.parse(data.toString()) as ServerMessage);
-      });
-
-      // Wait for initial session:list
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Select the session
-      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      // Clear messages to focus on dismiss
-      messages.length = 0;
-
-      // Submit dismissed result
-      ws.send(JSON.stringify({
-        type: "review:submit",
-        payload: { decision: "dismissed", comments: [] },
-      }));
-
-      // Wait for broadcast
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      ws.close();
-
-      const removedMsg = messages.find((m) => m.type === "session:removed");
-      expect(removedMsg).toBeDefined();
-      expect((removedMsg!.payload as { sessionId: string }).sessionId).toBe(sessionId);
-
-      // Ensure session:updated was NOT sent for dismissed
-      const updateMsg = messages.find((m) => m.type === "session:updated");
-      expect(updateMsg).toBeUndefined();
     });
 
     it("dismissed result via HTTP broadcasts session:removed", async () => {
@@ -1682,24 +1651,6 @@ describe("session identity", () => {
         await openLocal(baseUrl, "/repo");
 
         expect(await resultOf(baseUrl, sessionId)).toBeNull();
-      });
-
-      it("keeps a verdict given over the WebSocket too", async () => {
-        handle = await startGlobalServer({ silent: true });
-        const baseUrl = `http://localhost:${handle.httpPort}`;
-        const sessionId = await openLocal(baseUrl, "/repo");
-
-        const { WebSocket } = await import("ws");
-        const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
-        await new Promise<void>((resolve) => ws.on("open", () => resolve()));
-        ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        ws.send(JSON.stringify({ type: "review:submit", payload: { decision: "approved", comments: [] } }));
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        ws.close();
-
-        await openLocal(baseUrl, "/repo");
-        expect((await resultOf(baseUrl, sessionId))?.decision).toBe("approved");
       });
 
       it("does not report a retry of the identical diff as new changes", async () => {

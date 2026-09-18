@@ -5,6 +5,7 @@ import type {
   FileReviewStatus,
   ReviewBriefing,
   ReviewComment,
+  ReviewDecision,
   ReviewInitPayload,
   ReviewMetadata,
   DiffUpdatePayload,
@@ -69,6 +70,16 @@ export interface DraftComment extends CommentLocation {
   type: ReviewComment["type"];
 }
 
+/**
+ * Where the reviewer's decision is on its way to the server. It isn't sent
+ * until the server says so: a decision that silently fails to arrive leaves
+ * whoever is waiting on it (an agent, a commit) blocked with no reason (#203).
+ */
+export type VerdictStatus =
+  | { state: "idle" }
+  | { state: "sending"; decision: ReviewDecision }
+  | { state: "failed"; decision: ReviewDecision; error: string };
+
 export interface ReviewState {
   reviewId: string | null;
   diffSet: DiffSet | null;
@@ -85,6 +96,7 @@ export interface ReviewState {
   focusedAnnotationId: string | null;
   draftComment: DraftComment | null;
   theme: Theme;
+  verdict: VerdictStatus;
   panes: Record<PaneId, PaneLayout>;
   isWatchMode: boolean;
   watchSubmitted: boolean;
@@ -145,6 +157,7 @@ export interface ReviewState {
   updateAnnotation: (annotation: Annotation) => void;
   selectSession: (sessionId: string) => void;
   clearReview: () => void;
+  setVerdict: (verdict: VerdictStatus) => void;
 }
 
 export const useReviewStore = create<ReviewState>((set, get) => ({
@@ -163,6 +176,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   panes: loadPanes(),
+  verdict: { state: "idle" },
   isWatchMode: false,
   watchSubmitted: false,
   hasUnreviewedChanges: true,
@@ -189,6 +203,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
     set({
       reviewId: payload.reviewId,
+      verdict: { state: "idle" },
       diffSet: payload.diffSet,
       rawDiff: payload.rawDiff,
       briefing: payload.briefing,
@@ -497,6 +512,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   clearReview: () => {
     set({
       reviewId: null,
+      verdict: { state: "idle" },
       diffSet: null,
       rawDiff: null,
       briefing: null,
@@ -514,5 +530,9 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       watchSubmitted: false,
       hasUnreviewedChanges: true,
     });
+  },
+
+  setVerdict: (verdict: VerdictStatus) => {
+    set({ verdict });
   },
 }));
