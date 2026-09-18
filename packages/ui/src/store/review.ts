@@ -22,11 +22,12 @@ const FILE_STATUS_CYCLE: FileReviewStatus[] = [
 
 export type Theme = "dark" | "light";
 
-export interface DraftComment {
+/** Where a comment is: the file, the line, and which side of the diff numbers it. */
+export type CommentLocation = Pick<ReviewComment, "file" | "line" | "side">;
+
+export interface DraftComment extends CommentLocation {
   body: string;
   type: ReviewComment["type"];
-  file: string;
-  line: number;
 }
 
 export interface ReviewState {
@@ -235,6 +236,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
         comments: [...state.comments, {
           file: draftComment.file,
           line: draftComment.line,
+          side: draftComment.side,
           body: draftComment.body.trim(),
           type: draftComment.type,
         }],

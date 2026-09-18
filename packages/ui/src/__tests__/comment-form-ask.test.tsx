@@ -14,7 +14,7 @@ describe("InlineCommentForm — asking the agent now (#177)", () => {
     fireEvent.change(screen.getByPlaceholderText("Write a comment..."), { target: { value: text } });
 
   it("offers only saving when nothing can hold a thread", () => {
-    render(<InlineCommentForm file="a.ts" line={3} onSave={vi.fn()} onCancel={vi.fn()} />);
+    render(<InlineCommentForm location={{ file: "a.ts", line: 3, side: "new" }} onSave={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Ask agent now" })).toBeNull();
   });
 
@@ -22,7 +22,7 @@ describe("InlineCommentForm — asking the agent now (#177)", () => {
     const onAsk = vi.fn(async () => ({ ok: true }));
     const onSave = vi.fn();
     const onCancel = vi.fn();
-    render(<InlineCommentForm file="a.ts" line={3} onSave={onSave} onAsk={onAsk} onCancel={onCancel} />);
+    render(<InlineCommentForm location={{ file: "a.ts", line: 3, side: "new" }} onSave={onSave} onAsk={onAsk} onCancel={onCancel} />);
 
     type("  Why a Map here?  ");
     fireEvent.click(screen.getByRole("button", { name: "Ask agent now" }));
@@ -37,8 +37,7 @@ describe("InlineCommentForm — asking the agent now (#177)", () => {
     const onCancel = vi.fn();
     render(
       <InlineCommentForm
-        file="a.ts"
-        line={3}
+        location={{ file: "a.ts", line: 3, side: "new" }}
         onSave={vi.fn()}
         onAsk={async () => ({ ok: false, error: "Session not found" })}
         onCancel={onCancel}

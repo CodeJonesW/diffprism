@@ -483,7 +483,7 @@ describe("global-server", () => {
       // Submit result with decision
       const result: ReviewResult = {
         decision: "changes_requested",
-        comments: [{ file: "src/index.ts", line: 5, body: "Fix this", type: "must_fix" }],
+        comments: [{ file: "src/index.ts", line: 5, side: "new", body: "Fix this", type: "must_fix" }],
       };
 
       await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
