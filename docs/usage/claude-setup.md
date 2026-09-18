@@ -258,7 +258,7 @@ Every thread on an open review. Each carries `author` (`agent` or `reviewer`), i
 
 ### `reply`
 
-Replies to a thread. The reply appears under it in the dashboard straight away.
+Replies to a thread. The reply appears under it in the dashboard straight away — and then the agent goes back to listening, so one answer doesn't end the conversation.
 
 | Parameter       | Required | Description |
 |-----------------|----------|-------------|
@@ -266,12 +266,15 @@ Replies to a thread. The reply appears under it in the dashboard straight away.
 | `annotation_id` | Yes      | The thread, from `get_review_comments` or `wait_for_comments` |
 | `body`          | Yes      | The reply |
 | `source_agent`  | No       | Who is replying, e.g. `pr-reviewer` |
+| `then_wait`     | No       | Keep listening after replying (default `true`). `false` returns as soon as the reply is posted |
 
-Returns `{ sessionId, annotationId, replyId }`.
+Returns `{ sessionId, annotationId, replyId, next }`, where `next` is what happened after the reply: the reviewer's next question (`{ status: "reviewer_asked", review, threads }`), their decision (`{ status: "decided", result }`), or `{ status: "timed_out" }`. With `then_wait: false` there is no `next`.
 
 ### `wait_for_comments`
 
-Blocks until some thread is awaiting a reply, then returns `{ sessionId, threads }` with those threads. Returns `{ status: "timed_out" }` if nothing new was said — call it again.
+Blocks until some thread is awaiting a reply, then returns `{ sessionId, review, threads }`. Returns `{ status: "timed_out" }` if nothing new was said — call it again.
+
+It returns enough to answer straight away. `review` says where the review is — `projectPath` (the checkout on disk, or `github:owner/repo#n` when there's no clone here), `localRepoConnected`, `branch`, `pr` and `title` — and each thread carries `hunk`, the code its line is on (`null` if the line isn't in the diff).
 
 Nothing starts an agent for you. If no agent has read a reviewer's message within a few seconds, the thread says no agent is listening and names the session. Ask Claude Code to answer your DiffPrism comments on that session, and it runs this loop. A PR review opened from the dashboard is also found from any clone of the repo, via its GitHub remotes.
 

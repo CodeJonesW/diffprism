@@ -47,7 +47,7 @@ This should happen automatically after significant changes. You don't need the u
    - **`dismissed`** — the reviewer closed it without deciding. Ask before continuing.
    - If `postReviewAction` is `"commit"` — commit the changes. If `"commit_and_pr"` — commit and open a PR.
 4. If it returns `status: "timed_out"`, the reviewer is still reading. Keep waiting with `mcp__diffprism__get_review_result` (`wait: true`).
-5. If it returns `status: "reviewer_asked"`, the reviewer asked you something before deciding. Answer each thread with `mcp__diffprism__reply` (its `id` is the `annotation_id`) — and change the code if that's what they asked for. Then wait again with `mcp__diffprism__get_review_result` (`wait: true`), which can return `reviewer_asked` again.
+5. If it returns `status: "reviewer_asked"`, the reviewer asked you something before deciding. Answer each thread with `mcp__diffprism__reply` (its `id` is the `annotation_id`) — and change the code if that's what they asked for. `reply` goes back to waiting by itself and returns what happened next as `next`: another question (`reviewer_asked`) to answer the same way, the decision (`decided`), or `timed_out` — then wait with `mcp__diffprism__get_review_result` (`wait: true`).
 
 **While a review is open, wait for it.** Don't ask the user whether they've finished, and don't move on to other work — their decision is the answer, and it arrives through the tool. Asking in the terminal splits the conversation in two and the decision gets lost between them.
 
@@ -84,9 +84,11 @@ Pull requests are opened by the user — `diffprism review <PR URL>` or "Review 
 
 The reviewer can also ask you questions on lines of the PR. Hold that conversation in the dashboard, not the terminal:
 
-1. `mcp__diffprism__wait_for_comments` — blocks until the reviewer writes something you haven't answered, then returns those threads.
-2. `mcp__diffprism__reply` — answer each thread, passing its `annotation_id`.
-3. Wait again. On `timed_out`, nothing new was said — keep waiting until the user tells you to stop.
+1. `mcp__diffprism__wait_for_comments` — blocks until the reviewer writes something you haven't answered, then returns those threads. Each carries `hunk`, the code it's on, and the response carries `review`: the checkout on disk (`projectPath`), the branch, and the PR. That's enough to start answering — you don't need to look the review up first. If `localRepoConnected` is false there's no clone here; answer from the hunk and the PR.
+2. `mcp__diffprism__reply` — answer a thread, passing its `annotation_id`. It goes back to listening by itself and returns what happened next as `next`: more questions to answer the same way, or `timed_out` — then call `wait_for_comments` again.
+3. Keep going until the user tells you to stop. Answering is not the end of the conversation; the reviewer's next question only reaches you if you're still listening.
+
+When no agent has read a question, the dashboard tells the reviewer so, and to ask you to answer their DiffPrism comments on a session id. When they do, call `wait_for_comments` with that `session_id` — it returns at once with what's waiting — and run this loop.
 
 A PR review and a working-copy review can be open for the same clone at once. If a tool reports more than one session, pass the `session_id` of the one you mean.
 
@@ -110,8 +112,8 @@ A PR review and a working-copy review can be open for the same clone at once. If
 |------|---------|
 | `annotate` | Post one or more findings. `warning` flags the session for attention. |
 | `get_review_comments` | Every thread on the review; `awaiting_reply` narrows to threads waiting for an answer. |
-| `reply` | Reply to a thread — answer the reviewer's question or follow up on a finding. |
-| `wait_for_comments` | Block until the reviewer writes something you haven't answered. |
+| `reply` | Reply to a thread, then keep listening and return what happens next. |
+| `wait_for_comments` | Block until the reviewer writes something you haven't answered; returns it with the code and where the review is. |
 | `get_review_state` | Session status, attention and new-changes flags, and annotations. |
 | `get_user_focus` | What the user is currently looking at. |
 | `get_pr_context` | PR overview: metadata, briefing, file list, local clone status. |

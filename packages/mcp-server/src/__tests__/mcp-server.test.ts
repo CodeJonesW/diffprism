@@ -516,10 +516,11 @@ describe("threads", () => {
       [`${base_}/api/reviews/s1/annotations/a1/replies`]: () => json({ replyId: "r1" }),
     });
 
-    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "because", source_agent: "pr-reviewer" });
+    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "because", source_agent: "pr-reviewer", then_wait: false });
 
     expect(JSON.parse(fetchMock.mock.calls[0][1]?.body ?? "{}")).toEqual({ author: "agent", agent: "pr-reviewer", body: "because" });
     expect(parse(result)).toMatchObject({ annotationId: "a1", replyId: "r1" });
+    expect(parse(result).next).toBeUndefined();
   });
 
   it("reports a rejected reply as an error", async () => {
@@ -537,6 +538,137 @@ describe("threads", () => {
 
     const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
     expect((parse(result).threads as Array<{ id: string }>).map((t) => t.id)).toEqual(["asked"]);
+  });
+
+  // ─── #193: one paste, one conversation ───
+
+  /** A payload whose hunk covers new-file lines 10-12 of a.ts. */
+  function payload(over: Record<string, unknown> = {}) {
+    return {
+      projectPath: "/work/app",
+      payload: {
+        diffSet: {
+          baseRef: "main",
+          headRef: "feature",
+          files: [
+            {
+              path: "a.ts",
+              status: "modified",
+              language: "typescript",
+              binary: false,
+              additions: 1,
+              deletions: 0,
+              hunks: [
+                {
+                  oldStart: 10,
+                  oldLines: 2,
+                  newStart: 10,
+                  newLines: 3,
+                  changes: [{ type: "add", lineNumber: 11, content: "const retry = true;" }],
+                },
+              ],
+            },
+          ],
+        },
+        metadata: { title: "Retry loop", currentBranch: "feature", ...over },
+      },
+    };
+  }
+
+  const pr = {
+    owner: "CodeJonesW", repo: "diffprism", number: 193, title: "Streamline", author: "cj",
+    url: "https://github.com/CodeJonesW/diffprism/pull/193", baseBranch: "main", headBranch: "feature",
+  };
+
+  it("wait_for_comments says where the review is, so one paste is enough to answer", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({ annotations: [annotation("asked", { author: "reviewer", line: 11, side: "new" })] }),
+      [`${base_}/api/reviews/s1/payload`]: () => json(payload({ githubPr: pr })),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
+
+    expect(parse(result).review).toEqual({
+      sessionId: "s1",
+      projectPath: "/work/app",
+      localRepoConnected: true,
+      branch: "feature",
+      pr,
+      title: "Retry loop",
+    });
+  });
+
+  it("wait_for_comments sends the code each question is on", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({
+          annotations: [
+            annotation("onhunk", { author: "reviewer", line: 11, side: "new" }),
+            annotation("offhunk", { author: "reviewer", line: 900, side: "new" }),
+          ],
+        }),
+      [`${base_}/api/reviews/s1/payload`]: () => json(payload()),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
+    const threads = parse(result).threads as Array<{ id: string; hunk: { newStart: number } | null }>;
+
+    expect(threads.find((t) => t.id === "onhunk")?.hunk).toMatchObject({ newStart: 10 });
+    expect(threads.find((t) => t.id === "offhunk")?.hunk).toBeNull();
+  });
+
+  it("marks a PR with no clone here as having no local repo", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () => json({ annotations: [annotation("asked", { author: "reviewer" })] }),
+      [`${base_}/api/reviews/s1/payload`]: () =>
+        json({ ...payload({ githubPr: pr }), projectPath: "github:CodeJonesW/diffprism#193" }),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
+    expect(parse(result).review).toMatchObject({ localRepoConnected: false });
+  });
+
+  it("still returns the questions when the payload can't be read", async () => {
+    // Orientation is a wrapper around the answer. Losing the questions
+    // themselves because this one fetch failed would be the worse trade.
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations`]: () => json({ annotations: [annotation("asked", { author: "reviewer" })] }),
+      [`${base_}/api/reviews/s1/payload`]: () => json({ error: "gone" }, 404),
+    });
+
+    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
+    expect(result.isError).toBeUndefined();
+    expect((parse(result).threads as Array<{ id: string }>).map((t) => t.id)).toEqual(["asked"]);
+  });
+
+  it("reply goes back to listening and returns the reviewer's next question", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations/a1/replies`]: () => json({ replyId: "r1" }),
+      [`${base_}/api/reviews/s1/result`]: () => json({ result: null, status: "in_review" }),
+      [`${base_}/api/reviews/s1/annotations`]: () =>
+        json({ annotations: [annotation("next", { author: "reviewer", line: 11, side: "new" })] }),
+      [`${base_}/api/reviews/s1/payload`]: () => json(payload()),
+    });
+
+    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "because" });
+    const next = parse(result).next as { status: string; threads: Array<{ id: string }>; review: unknown };
+
+    expect(parse(result)).toMatchObject({ annotationId: "a1", replyId: "r1" });
+    expect(next.status).toBe("reviewer_asked");
+    expect(next.threads.map((t) => t.id)).toEqual(["next"]);
+    expect(next.review).toMatchObject({ projectPath: "/work/app" });
+  });
+
+  it("reply returns the decision when the reviewer decides instead of asking again", async () => {
+    stubFetch({
+      [`${base_}/api/reviews/s1/annotations/a1/replies`]: () => json({ replyId: "r1" }),
+      [`${base_}/api/reviews/s1/result`]: () => json({ result: { decision: "approved", comments: [] }, status: "submitted" }),
+    });
+
+    const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "because" });
+
+    expect(parse(result).next).toMatchObject({ status: "decided", result: { decision: "approved" } });
   });
 
   it("wait_for_comments ignores threads already answered, and says to keep listening", async () => {

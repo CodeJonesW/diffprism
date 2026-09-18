@@ -67,12 +67,14 @@ There is no module-level "last session" and no "most recent session across all r
 - **Behavior:** Every thread on the review, each with `awaitingReply` (from core's `awaitingAgent`). `awaiting_reply: true` keeps only those.
 
 #### `reply`
-- **Params:** targeting, `annotation_id`, `body`, `source_agent`
-- **Behavior:** POSTs `{ author: "agent" }` to `/api/reviews/:id/annotations/:annotationId/replies`. The server broadcasts `annotation:updated`.
+- **Params:** targeting, `annotation_id`, `body`, `source_agent`, `then_wait` (default `true`)
+- **Behavior:** POSTs `{ author: "agent" }` to `/api/reviews/:id/annotations/:annotationId/replies`. The server broadcasts `annotation:updated`. Then, unless `then_wait: false`, goes back to listening with core's `waitForDecision` and returns what happened next as `next`: `{ status: "reviewer_asked", review, threads }`, `{ status: "decided", result }`, or `{ status: "timed_out" }`.
+- **Why it waits (#193):** posting an answer used to end the call, and with it the conversation — the reviewer's next question reached nobody. Answering and listening are now one act. `waitForDecision` covers both kinds of review: it returns as soon as another thread is waiting, so a batch of questions still answers one at a time, and a local review's decision isn't missed while listening.
 
 #### `wait_for_comments`
 - **Params:** targeting, `timeout` (seconds, default and max 600)
-- **Behavior:** Polls the session's threads every 2s until one awaits a reply, then returns them; `{ status: "timed_out" }` otherwise.
+- **Behavior:** Polls the session's threads every 2s until one awaits a reply, then returns `{ sessionId, review, threads }`; `{ status: "timed_out" }` otherwise.
+- **`review` and `hunk` (#193):** the dashboard's prompt for an absent agent names only a session id. So the answer carries where the review is — `review`: `projectPath`, `localRepoConnected`, `branch`, `pr`, `title` — and each thread carries `hunk`, the diff hunk its line is in (`null` when the line is outside every hunk). Both come from one read of `/api/reviews/:id/payload`, made only once there's something to answer. If that read fails the threads still come back, without them. `reviewer_asked` from `open_review` and `get_review_result` carries the same.
 
 #### `get_user_focus`
 - **Params:** targeting
