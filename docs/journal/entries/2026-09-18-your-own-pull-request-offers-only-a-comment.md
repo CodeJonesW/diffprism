@@ -2,6 +2,7 @@
 title: Your own pull request offers only a comment
 date: 2026-09-18
 kind: fix
+pr: 208
 ---
 
 ## What changed
