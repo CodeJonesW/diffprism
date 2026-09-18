@@ -102,7 +102,8 @@ async function reviewPrFlow(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prUrl: pr }),
+      // Where to look for a local clone to read the PR from (#197).
+      body: JSON.stringify({ prUrl: pr, cwd: process.cwd() }),
     },
   );
 
