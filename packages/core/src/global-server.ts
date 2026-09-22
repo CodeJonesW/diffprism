@@ -790,7 +790,7 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/pr/open") {
     try {
       const body = await readBody(req);
-      const { prUrl } = JSON.parse(body) as { prUrl: string };
+      const { prUrl, title, reasoning } = JSON.parse(body) as { prUrl: string; title?: string; reasoning?: string };
 
       if (!prUrl) {
         jsonResponse(res, 400, { error: "Missing prUrl" });
@@ -833,7 +833,8 @@ async function handleApiRequest(
         fetchPullRequestDiff(client, owner, repo, prNumber),
       ]);
 
-      const normalized = normalizePr(rawDiff, prMetadata);
+      // What the caller said this review is about wins over the PR's own title.
+      const normalized = normalizePr(rawDiff, prMetadata, { title, reasoning });
 
       // Read from a local clone when the server happens to run in one. Agents
       // in any clone of the repo still find the session: see /resolve.
