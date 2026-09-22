@@ -2,6 +2,7 @@
 title: Every review keeps its --title and --reasoning
 date: 2026-09-18
 kind: fix
+pr: 212
 ---
 
 ## What changed
