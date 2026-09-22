@@ -33,8 +33,9 @@ export async function server(flags: ServerFlags): Promise<void> {
     }
   }
 
-  // Auto-run global setup if needed
-  if (!isGlobalSetupDone()) {
+  // Repair the global install whenever it doesn't match this build — on a
+  // first run, and on every upgrade that changes the skill or the tool list.
+  if (!(await isGlobalSetupDone())) {
     if (!isDaemon) {
       console.log("Running global setup...\n");
     }

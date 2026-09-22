@@ -1795,6 +1795,19 @@ describe("session identity", () => {
       });
     });
 
+    it("gives a PR review the title and reasoning it was opened with (#198)", async () => {
+      handle = await startGlobalServer({ silent: true });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+
+      await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", title: "Cache fix", reasoning: "Stale reads after deploy" });
+
+      expect(vi.mocked(github.normalizePr)).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { title: "Cache fix", reasoning: "Stale reads after deploy" },
+      );
+    });
+
     it("reuses a PR session when the same PR is opened again", async () => {
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
@@ -2351,7 +2364,7 @@ describe("github review", () => {
 
   const PR = {
     owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
-    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature", viewer: "reviewer",
   };
 
   async function setup(metadata: ReviewInitPayload["metadata"] = { title: "Add widget", githubPr: PR }) {

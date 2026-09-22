@@ -247,6 +247,12 @@ export interface GitHubPrMetadata {
   url: string;
   baseBranch: string;
   headBranch: string;
+  /**
+   * The GitHub login DiffPrism posts reviews as, or null when its token has no
+   * user. When it's the author, GitHub only accepts a comment: an author can't
+   * approve or request changes on their own pull request (#191).
+   */
+  viewer: string | null;
 }
 
 export interface ReviewMetadata {

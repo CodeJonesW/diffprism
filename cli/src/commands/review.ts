@@ -57,6 +57,7 @@ async function reviewLocalFlow(
   try {
     ({ result } = await submitReviewToServer(serverInfo, diffRef, {
       title: flags.title,
+      reasoning: flags.reasoning,
       cwd: process.cwd(),
       diffRef,
     }));
@@ -102,8 +103,13 @@ async function reviewPrFlow(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Where to look for a local clone to read the PR from (#197).
-      body: JSON.stringify({ prUrl: pr, cwd: process.cwd() }),
+      // cwd is where to look for a local clone to read the PR from (#197).
+      body: JSON.stringify({
+        prUrl: pr,
+        cwd: process.cwd(),
+        title: flags.title,
+        reasoning: flags.reasoning,
+      }),
     },
   );
 
@@ -129,6 +135,7 @@ async function reviewPrFlow(
     console.log("No local clone detected — file context unavailable");
   }
 
-  console.log(`\nReview open in browser. Use Claude Code to ask questions about this PR.`);
-  console.log(`MCP tools available: get_pr_context, get_file_diff, get_file_context, add_review_comment`);
+  // No list of tool names here: one printed by hand went stale when tools
+  // were renamed (#198). The /review skill is where an agent learns them.
+  console.log(`\nReview open in browser. Ask Claude Code about this PR — the /review skill shows it how.`);
 }

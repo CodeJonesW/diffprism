@@ -801,7 +801,12 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/pr/open") {
     try {
       const body = await readBody(req);
-      const { prUrl, cwd } = JSON.parse(body) as { prUrl: string; cwd?: string };
+      const { prUrl, cwd, title, reasoning } = JSON.parse(body) as {
+        prUrl: string;
+        cwd?: string;
+        title?: string;
+        reasoning?: string;
+      };
 
       if (!prUrl) {
         jsonResponse(res, 400, { error: "Missing prUrl" });
@@ -844,7 +849,8 @@ async function handleApiRequest(
         fetchPullRequestDiff(client, owner, repo, prNumber),
       ]);
 
-      const normalized = normalizePr(rawDiff, prMetadata);
+      // What the caller said this review is about wins over the PR's own title.
+      const normalized = normalizePr(rawDiff, prMetadata, { title, reasoning });
 
       // Read from the clone the request came from: `diffprism review <PR>`
       // sends the folder it ran in. The dashboard's form has no folder, so it

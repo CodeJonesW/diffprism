@@ -24,6 +24,10 @@ export function PrReviewBar({ onDismiss }: PrReviewBarProps) {
   const [postedUrl, setPostedUrl] = useState<string | null>(null);
 
   const pr = metadata?.githubPr;
+  // GitHub refuses an approval or a change request from the PR's own author,
+  // so on your own PR the only review to offer is a comment (#191). Logins are
+  // case-insensitive on GitHub.
+  const ownPr = !!pr?.viewer && pr.viewer.toLowerCase() === pr.author.toLowerCase();
   const yourThreads = annotations.filter((a) => a.author === "reviewer" && !a.dismissed);
   const needsSummary = !summary.trim();
 
@@ -86,13 +90,13 @@ export function PrReviewBar({ onDismiss }: PrReviewBarProps) {
   return (
     <div className="bg-surface border-t border-border px-4 py-3 flex-shrink-0">
       <div className="text-xs text-text-secondary mb-2">
-        Submit your review to GitHub{pr ? ` · ${pr.owner}/${pr.repo}#${pr.number}` : ""}
+        Submit your review to GitHub{pr?.viewer ? ` as @${pr.viewer}` : ""}{pr ? ` · ${pr.owner}/${pr.repo}#${pr.number}` : ""}
       </div>
 
       <textarea
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
-        placeholder="Summary — optional to approve, required to request changes or comment"
+        placeholder={ownPr ? "Summary — required to comment" : "Summary — optional to approve, required to request changes or comment"}
         rows={3}
         className="w-full bg-background border border-border rounded-lg px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent mb-3"
       />
@@ -128,9 +132,15 @@ export function PrReviewBar({ onDismiss }: PrReviewBarProps) {
         </div>
       )}
 
+      {ownPr && (
+        <p className="text-xs text-text-secondary mb-3">
+          This is your pull request. GitHub doesn't let its author approve it or request changes, so your review posts as a comment.
+        </p>
+      )}
+
       <div className="flex items-center gap-3">
-        {button("APPROVE", "Approve", ACTION_BUTTON_STYLES.approve, Check, false)}
-        {button("REQUEST_CHANGES", "Request changes", ACTION_BUTTON_STYLES.reject, X, needsSummary)}
+        {!ownPr && button("APPROVE", "Approve", ACTION_BUTTON_STYLES.approve, Check, false)}
+        {!ownPr && button("REQUEST_CHANGES", "Request changes", ACTION_BUTTON_STYLES.reject, X, needsSummary)}
         {button("COMMENT", "Comment", ACTION_BUTTON_STYLES.comment, MessageSquare, needsSummary)}
 
         {onDismiss && (
