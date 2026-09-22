@@ -18,6 +18,19 @@ interface SetupFlags {
   quiet?: boolean;
   dev?: boolean;
   demo?: boolean;
+  /**
+   * Work out what setup would write, and write none of it. The outcome names
+   * the same files a real run would — which is how `isGlobalSetupDone` asks
+   * whether an install is current without keeping its own idea of what
+   * current means.
+   */
+  dryRun?: boolean;
+}
+
+/** How a step writes: `force` rewrites what is already there, `dryRun` writes nothing. */
+interface WriteMode {
+  force?: boolean;
+  dryRun?: boolean;
 }
 
 export interface SetupOutcome {
@@ -66,7 +79,7 @@ interface SetupResult {
 
 function setupMcpJson(
   gitRoot: string,
-  force: boolean,
+  { force, dryRun }: WriteMode,
 ): { action: "created" | "updated" | "skipped"; filePath: string } {
   const filePath = path.join(gitRoot, ".mcp.json");
   const existing = readJsonFile(filePath);
@@ -83,13 +96,15 @@ function setupMcpJson(
   };
 
   const action = fs.existsSync(filePath) ? "updated" : "created";
-  writeJsonFile(filePath, { ...existing, mcpServers: servers });
+  if (!dryRun) {
+    writeJsonFile(filePath, { ...existing, mcpServers: servers });
+  }
   return { action, filePath };
 }
 
 function setupClaudeSettings(
   baseDir: string,
-  force: boolean,
+  { force, dryRun }: WriteMode,
 ): { action: "created" | "updated" | "skipped"; filePath: string } {
   const filePath = path.join(baseDir, ".claude", "settings.json");
   const existing = readJsonFile(filePath);
@@ -116,14 +131,16 @@ function setupClaudeSettings(
 
   permissions.allow = next;
   const action = fs.existsSync(filePath) ? "updated" : "created";
-  writeJsonFile(filePath, { ...existing, permissions });
+  if (!dryRun) {
+    writeJsonFile(filePath, { ...existing, permissions });
+  }
   return { action, filePath };
 }
 
 function setupSkill(
   gitRoot: string,
   global: boolean,
-  force: boolean,
+  { dryRun }: WriteMode,
 ): { action: "created" | "updated" | "skipped"; filePath: string } {
   const skillDir = global
     ? path.join(os.homedir(), ".claude", "skills", "review")
@@ -138,12 +155,13 @@ function setupSkill(
     // Always update the skill file — it's managed by DiffPrism, not user-edited
   }
 
-  if (!fs.existsSync(skillDir)) {
-    fs.mkdirSync(skillDir, { recursive: true });
-  }
-
   const action = fs.existsSync(filePath) ? "updated" : "created";
-  fs.writeFileSync(filePath, skillContent);
+  if (!dryRun) {
+    if (!fs.existsSync(skillDir)) {
+      fs.mkdirSync(skillDir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, skillContent);
+  }
   return { action, filePath };
 }
 
@@ -162,6 +180,7 @@ async function promptUser(question: string): Promise<boolean> {
 
 async function setupGitignore(
   gitRoot: string,
+  { dryRun }: WriteMode,
 ): Promise<{ action: "created" | "updated" | "skipped"; filePath: string }> {
   const filePath = path.join(gitRoot, ".gitignore");
 
@@ -176,8 +195,16 @@ async function setupGitignore(
     const newContent = content.endsWith("\n")
       ? content + suffix
       : content + "\n" + suffix;
-    fs.writeFileSync(filePath, newContent);
+    if (!dryRun) {
+      fs.writeFileSync(filePath, newContent);
+    }
     return { action: "updated", filePath };
+  }
+
+  // A dry run reports the file it would offer to create. Asking would turn a
+  // question about the install into a prompt the caller never asked for.
+  if (dryRun) {
+    return { action: "created", filePath };
   }
 
   const confirmed = await promptUser(
@@ -202,8 +229,9 @@ export async function setup(flags: SetupFlags): Promise<SetupOutcome> {
   // Interactive wizard for first-time users:
   // - Not --global or --force
   // - TTY stdin (not piped/CI)
-  // - Not quiet mode
-  const isInteractive = !global && !force && !quiet && process.stdin.isTTY;
+  // - Not quiet mode, and not a dry run — it answers a question, it doesn't install
+  const isInteractive =
+    !global && !force && !quiet && !flags.dryRun && process.stdin.isTTY;
 
   if (isInteractive) {
     return setupInteractive(flags);
@@ -252,7 +280,10 @@ async function runDemo(dev?: boolean): Promise<void> {
 async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   const force = flags.force ?? false;
   const global = flags.global ?? false;
-  const quiet = flags.quiet ?? false;
+  const dryRun = flags.dryRun ?? false;
+  // A dry run is a question, and a question shouldn't announce an install.
+  const quiet = (flags.quiet ?? false) || dryRun;
+  const mode: WriteMode = { force, dryRun };
 
   const result: SetupResult = { created: [], updated: [], skipped: [] };
   const home = os.homedir();
@@ -264,11 +295,11 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
     }
 
     // Global skill file
-    const skill = setupSkill("", true, force);
+    const skill = setupSkill("", true, mode);
     result[skill.action].push(skill.filePath);
 
     // Global permissions in ~/.claude/settings.json
-    const settings = setupClaudeSettings(home, force);
+    const settings = setupClaudeSettings(home, mode);
     result[settings.action].push(settings.filePath);
 
     if (!quiet) {
@@ -301,19 +332,19 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   }
 
   // Step 1: .gitignore
-  const gitignore = await setupGitignore(gitRoot);
+  const gitignore = await setupGitignore(gitRoot, mode);
   result[gitignore.action].push(gitignore.filePath);
 
   // Step 2: .mcp.json
-  const mcp = setupMcpJson(gitRoot, force);
+  const mcp = setupMcpJson(gitRoot, mode);
   result[mcp.action].push(mcp.filePath);
 
   // Step 3: .claude/settings.json (permissions)
-  const settings = setupClaudeSettings(gitRoot, force);
+  const settings = setupClaudeSettings(gitRoot, mode);
   result[settings.action].push(settings.filePath);
 
   // Step 4: Skill file
-  const skill = setupSkill(gitRoot, false, force);
+  const skill = setupSkill(gitRoot, false, mode);
   result[skill.action].push(skill.filePath);
 
   if (!quiet) {
@@ -348,31 +379,17 @@ function printSummary(result: SetupResult, baseDir: string): void {
 }
 
 /**
- * Check if global setup has been completed (skill + permissions).
- * Used by `diffprism server` to auto-setup.
+ * Whether the global install matches this version of DiffPrism — the skill
+ * this build ships and permissions for the tools it registers. `diffprism
+ * server` asks before starting, so an upgrade repairs what an older one wrote.
+ *
+ * It is the installer's own answer: a dry run reports what setup would write,
+ * and nothing to write means nothing is out of date. Keep it that way. The
+ * check this replaced kept its own list of expected tool names and looked only
+ * for the skill file's existence, so it went on answering "done" while the
+ * tools were renamed around it and the installed skill aged six months (#211).
  */
-export function isGlobalSetupDone(): boolean {
-  const home = os.homedir();
-  const skillPath = path.join(home, ".claude", "skills", "review", "SKILL.md");
-  const settingsPath = path.join(home, ".claude", "settings.json");
-
-  if (!fs.existsSync(skillPath)) return false;
-
-  const settings = readJsonFile(settingsPath);
-  const permissions = (settings.permissions ?? {}) as Record<string, unknown>;
-  const allow = (permissions.allow ?? []) as string[];
-
-  const toolNames = [
-    "mcp__diffprism__open_review",
-    "mcp__diffprism__update_review_context",
-    "mcp__diffprism__get_review_result",
-    "mcp__diffprism__get_diff",
-    "mcp__diffprism__analyze_diff",
-    "mcp__diffprism__add_annotation",
-    "mcp__diffprism__get_review_state",
-    "mcp__diffprism__flag_for_attention",
-    "mcp__diffprism__review_pr",
-  ];
-
-  return toolNames.every((t) => allow.includes(t));
+export async function isGlobalSetupDone(): Promise<boolean> {
+  const plan = await setup({ global: true, dryRun: true });
+  return plan.created.length === 0 && plan.updated.length === 0;
 }
