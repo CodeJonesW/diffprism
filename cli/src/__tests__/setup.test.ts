@@ -586,78 +586,138 @@ describe("setup command", () => {
   });
 
   describe("isGlobalSetupDone", () => {
-    it("returns false when skill file is missing", () => {
-      mockExistsSync.mockReturnValue(false);
-
-      expect(isGlobalSetupDone()).toBe(false);
-    });
-
-    it("returns false when permissions are missing", () => {
+    /** A home directory whose skill and permissions are whatever these say. */
+    function globalInstall({
+      skill,
+      allow,
+    }: {
+      skill?: string;
+      allow?: string[];
+    }): void {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
-        if (s.includes("SKILL.md")) return true;
+        if (s.includes("SKILL.md")) return skill !== undefined;
+        if (s.includes("settings.json")) return allow !== undefined;
         return false;
       });
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("SKILL.md") && skill !== undefined) return skill;
+        if (s.includes("settings.json") && allow !== undefined) {
+          return JSON.stringify({ permissions: { allow } });
+        }
+        throw new Error("File not found");
+      });
+    }
 
+    const currentAllow = MCP_TOOL_NAMES.map(mcpToolPermission);
+
+    it("is done when the skill matches this build and every tool is allowed", async () => {
+      globalInstall({ skill: skillContent, allow: currentAllow });
+
+      expect(await isGlobalSetupDone()).toBe(true);
+    });
+
+    it("is not done when the skill file is missing", async () => {
+      globalInstall({ allow: currentAllow });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    // The bug behind #211: an install from an older version kept a skill that
+    // still named tools we had renamed, and the check only asked whether the
+    // file existed — so every upgrade left it in place.
+    it("is not done when the installed skill is an older build's", async () => {
+      globalInstall({
+        skill: "# DiffPrism Review\n\nYou have 9 DiffPrism MCP tools.\n",
+        allow: currentAllow,
+      });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    // Exactly what a machine set up before the tools were renamed looks like:
+    // an old skill, and permissions for the tools that version registered. The
+    // check this replaced answered "done" here, so `diffprism server` never
+    // repaired it and the six-month-old skill stayed (#211).
+    it("is not done for an install from before the tools were renamed", async () => {
+      globalInstall({
+        skill: "# DiffPrism Review\n\nYou have 9 DiffPrism MCP tools.\n",
+        allow: [
+          "mcp__diffprism__open_review",
+          "mcp__diffprism__update_review_context",
+          "mcp__diffprism__get_review_result",
+          "mcp__diffprism__get_diff",
+          "mcp__diffprism__analyze_diff",
+          "mcp__diffprism__add_annotation",
+          "mcp__diffprism__get_review_state",
+          "mcp__diffprism__flag_for_attention",
+          "mcp__diffprism__review_pr",
+        ],
+      });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    it("is not done when permissions still name retired tools", async () => {
+      globalInstall({
+        skill: skillContent,
+        allow: [...currentAllow, ...RETIRED_MCP_TOOL_NAMES.map(mcpToolPermission)],
+      });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    it("is not done when a tool this build registers has no permission", async () => {
+      globalInstall({ skill: skillContent, allow: currentAllow.slice(0, -1) });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    it("writes nothing while deciding, however stale the install", async () => {
+      globalInstall({ skill: "an older skill", allow: ["mcp__diffprism__review_pr"] });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+      expect(mockMkdirSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("dry run", () => {
+    it("reports what a project setup would write without writing it", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        return false;
+      });
       mockReadFileSync.mockImplementation(() => {
         throw new Error("File not found");
       });
 
-      expect(isGlobalSetupDone()).toBe(false);
+      const plan = await setup({ dryRun: true });
+
+      expect(plan.created).toEqual(
+        expect.arrayContaining([
+          path.join("/projects/myapp", ".gitignore"),
+          path.join("/projects/myapp", ".mcp.json"),
+          path.join("/projects/myapp", ".claude", "settings.json"),
+          path.join("/projects/myapp", ".claude", "skills", "review", "SKILL.md"),
+        ]),
+      );
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+      expect(mockMkdirSync).not.toHaveBeenCalled();
     });
 
-    it("returns true when skill and all permissions exist", () => {
+    it("does not ask about a missing .gitignore", async () => {
       mockExistsSync.mockImplementation((p: fs.PathLike) => {
         const s = p.toString();
-        if (s.includes("SKILL.md")) return true;
+        if (s === path.join("/projects/myapp", ".git")) return true;
         return false;
       });
 
-      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const s = p.toString();
-        if (s.includes("settings.json")) {
-          return JSON.stringify({
-            permissions: {
-              allow: [
-                "mcp__diffprism__open_review",
-                "mcp__diffprism__update_review_context",
-                "mcp__diffprism__get_review_result",
-                "mcp__diffprism__get_diff",
-                "mcp__diffprism__analyze_diff",
-                "mcp__diffprism__add_annotation",
-                "mcp__diffprism__get_review_state",
-                "mcp__diffprism__flag_for_attention",
-                "mcp__diffprism__review_pr",
-              ],
-            },
-          });
-        }
-        throw new Error("File not found");
-      });
+      await setup({ dryRun: true });
 
-      expect(isGlobalSetupDone()).toBe(true);
-    });
-
-    it("returns false when only some permissions exist", () => {
-      mockExistsSync.mockImplementation((p: fs.PathLike) => {
-        const s = p.toString();
-        if (s.includes("SKILL.md")) return true;
-        return false;
-      });
-
-      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
-        const s = p.toString();
-        if (s.includes("settings.json")) {
-          return JSON.stringify({
-            permissions: {
-              allow: ["mcp__diffprism__open_review"],
-            },
-          });
-        }
-        throw new Error("File not found");
-      });
-
-      expect(isGlobalSetupDone()).toBe(false);
+      expect(mockQuestion).not.toHaveBeenCalled();
     });
   });
 });
