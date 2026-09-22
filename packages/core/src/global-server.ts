@@ -194,6 +194,17 @@ interface OpenSessionRequest {
 }
 
 /**
+ * The clone of `owner/repo` that `from` is inside, as its working tree root —
+ * not `from` itself, which may be a subfolder — or null when it isn't in one.
+ * A clone is recognized by its GitHub remotes.
+ */
+function localCloneOf(owner: string, repo: string, from: string): string | null {
+  const root = getRepoRoot({ cwd: from });
+  if (!root) return null;
+  return getGitHubRemotes({ cwd: root }).includes(`${owner}/${repo}`.toLowerCase()) ? root : null;
+}
+
+/**
  * The one way a session is created or reused.
  *
  * The CLI, the pre-commit hook, MCP open_review, "Open Project" and "Review PR"
@@ -790,7 +801,12 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/pr/open") {
     try {
       const body = await readBody(req);
-      const { prUrl, title, reasoning } = JSON.parse(body) as { prUrl: string; title?: string; reasoning?: string };
+      const { prUrl, cwd, title, reasoning } = JSON.parse(body) as {
+        prUrl: string;
+        cwd?: string;
+        title?: string;
+        reasoning?: string;
+      };
 
       if (!prUrl) {
         jsonResponse(res, 400, { error: "Missing prUrl" });
@@ -836,18 +852,19 @@ async function handleApiRequest(
       // What the caller said this review is about wins over the PR's own title.
       const normalized = normalizePr(rawDiff, prMetadata, { title, reasoning });
 
-      // Read from a local clone when the server happens to run in one. Agents
-      // in any clone of the repo still find the session: see /resolve.
-      const localRepoPath = getGitHubRemotes({ cwd: process.cwd() }).includes(`${owner}/${repo}`.toLowerCase())
-        ? process.cwd()
-        : null;
+      // Read from the clone the request came from: `diffprism review <PR>`
+      // sends the folder it ran in. The dashboard's form has no folder, so it
+      // gets the server's — a clone only if the daemon happened to start in
+      // one. Looking only there made every CLI review report "no local clone"
+      // (#197). Agents in any clone still find the session: see /resolve.
+      const localRepoPath = localCloneOf(owner, repo, cwd ?? process.cwd());
 
       // A PR is its own review subject, keyed by the PR — not by the local
       // clone it may be read from. Keying it by repo would make a PR review
       // and a working-copy review of the same repo overwrite each other.
       const { session, reused } = openSession({
         key: `pr:${owner}/${repo}#${prNumber}`.toLowerCase(),
-        repoRoot: localRepoPath ? (getRepoRoot({ cwd: localRepoPath }) ?? localRepoPath) : null,
+        repoRoot: localRepoPath,
         projectPath: localRepoPath ?? `github:${owner}/${repo}#${prNumber}`,
         payload: normalized.payload,
         source: "manual",

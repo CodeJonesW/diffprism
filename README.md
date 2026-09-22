@@ -39,12 +39,7 @@ npm install -g diffprism
 diffprism setup          # Register MCP server with Claude Code
 ```
 
-Run the server from within your local clone so the AI gets full file context:
-
-```bash
-cd ~/dev/my-project
-diffprism server         # Or let it auto-start on first review
-```
+The server starts on its own the first time you review something.
 
 ## PR Review
 
@@ -53,7 +48,7 @@ diffprism review https://github.com/owner/repo/pull/123   # Full GitHub URL
 diffprism review owner/repo#123                            # Shorthand format
 ```
 
-The server auto-detects your local clone by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show` — not just diff hunks.
+Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
 
 ## MCP Tools
 

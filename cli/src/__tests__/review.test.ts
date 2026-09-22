@@ -214,6 +214,8 @@ describe("review command", () => {
         `http://localhost:${defaultServerInfo.httpPort}/api/pr/open`,
         expect.objectContaining({ method: "POST" }),
       );
+      // It says where it ran, so the server reads the PR from this clone (#197).
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ prUrl: "acme/app#42", cwd: process.cwd() });
 
       vi.unstubAllGlobals();
     });
