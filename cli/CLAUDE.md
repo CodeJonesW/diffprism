@@ -8,8 +8,10 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `--staged` — Review staged changes (default if no ref)
 - `--unstaged` — Review unstaged changes
 - `-t, --title <title>` — Set review title
+- `--reasoning <text>` — What the change was for, shown as the session's subtitle
 - Ref can be any git range: `HEAD~3..HEAD`, `main..feature`, etc.
 - Opens browser, blocks until review submitted, prints JSON result to stdout
+- A GitHub PR (`owner/repo#123` or a PR URL) opens a PR review instead, without blocking. `--title` and `--reasoning` apply to it too.
 
 ### `diffprism serve`
 - Starts MCP server (dynamically imports @diffprism/mcp-server)

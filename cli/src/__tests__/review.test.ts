@@ -125,7 +125,7 @@ describe("review command", () => {
   });
 
   describe("options passthrough", () => {
-    it("passes title to submitReviewToServer and dev to ensureServer", async () => {
+    it("passes title and reasoning to submitReviewToServer and dev to ensureServer", async () => {
       mockSubmitReviewToServer.mockResolvedValue({
         result: { decision: "approved", comments: [] },
         sessionId: "session-1",
@@ -134,15 +134,18 @@ describe("review command", () => {
       await review(undefined, {
         staged: true,
         title: "My Review",
+        reasoning: "Why it changed",
         dev: true,
       });
 
       expect(mockEnsureServer).toHaveBeenCalledWith({ dev: true });
+      // --reasoning used to be accepted and then dropped (#198).
       expect(mockSubmitReviewToServer).toHaveBeenCalledWith(
         defaultServerInfo,
         "staged",
         expect.objectContaining({
           title: "My Review",
+          reasoning: "Why it changed",
         }),
       );
     });
@@ -211,6 +214,29 @@ describe("review command", () => {
         `http://localhost:${defaultServerInfo.httpPort}/api/pr/open`,
         expect.objectContaining({ method: "POST" }),
       );
+
+      vi.unstubAllGlobals();
+    });
+
+    it("sends --title and --reasoning with a PR, and names no tools that may not exist (#198)", async () => {
+      mockIsPrRef.mockReturnValue(true);
+      mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 42 });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ sessionId: "session-pr-42", fileCount: 1, localRepoPath: null, pr: { title: "Fix bug" } }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await review("acme/app#42", { title: "Cache fix", reasoning: "Stale reads after deploy" });
+
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+        prUrl: "acme/app#42",
+        title: "Cache fix",
+        reasoning: "Stale reads after deploy",
+      });
+      const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+      expect(printed).not.toContain("add_review_comment");
+      expect(printed).toContain("/review");
 
       vi.unstubAllGlobals();
     });
