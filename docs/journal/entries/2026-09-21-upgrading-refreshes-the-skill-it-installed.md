@@ -2,6 +2,7 @@
 title: Upgrading DiffPrism now refreshes the skill it installed
 date: 2026-09-21
 kind: fix
+pr: 213
 ---
 
 ## What changed
