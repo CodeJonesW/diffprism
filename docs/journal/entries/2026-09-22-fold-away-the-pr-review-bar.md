@@ -2,6 +2,7 @@
 title: Fold away the PR review bar while you read
 date: 2026-09-22
 kind: feature
+pr: 220
 ---
 
 ## What changed
