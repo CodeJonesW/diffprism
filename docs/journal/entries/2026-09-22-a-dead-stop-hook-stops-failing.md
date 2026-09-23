@@ -2,6 +2,7 @@
 title: The Stop hook that failed on every turn is gone
 date: 2026-09-22
 kind: fix
+pr: 216
 ---
 
 ## What changed
