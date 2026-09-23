@@ -37,6 +37,7 @@ export function createProgram(): Command {
     .option("--reasoning <text>", "Agent reasoning about the changes")
     .option("--dev", "Use Vite dev server with HMR instead of static files")
     .option("--post-to-github", "Automatically post review back to GitHub without prompting")
+    .option("--no-agent", "For a PR review, don't start Claude Code to answer your comments")
     .action(review);
 
   // Hidden alias for backwards compatibility

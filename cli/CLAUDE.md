@@ -11,7 +11,8 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `--reasoning <text>` — What the change was for, shown as the session's subtitle
 - Ref can be any git range: `HEAD~3..HEAD`, `main..feature`, etc.
 - Opens browser, blocks until review submitted, prints JSON result to stdout
-- A GitHub PR (`owner/repo#123` or a PR URL) opens a PR review instead, without blocking. `--title` and `--reasoning` apply to it too.
+- A GitHub PR (`owner/repo#123` or a PR URL) opens a PR review instead. `--title` and `--reasoning` apply to it too.
+- For a PR, it then stays running with a headless, read-only Claude Code agent answering the reviewer's comments until the review is submitted (`src/commands/pr-agent.ts`, #217). When the review ends it prints the `claude --resume` command for that conversation. `--no-agent` — open the PR review and return without starting one. Without `claude` on PATH, it prints the prompt to paste instead.
 
 ### `diffprism serve`
 - Starts MCP server (dynamically imports @diffprism/mcp-server)
@@ -48,6 +49,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `src/index.ts` — Entry point: `createProgram().parse()`
 - `src/program.ts` — `createProgram()`: Commander setup and routing, without parsing (the docs check introspects it)
 - `src/commands/review.ts` — Review command handler
+- `src/commands/pr-agent.ts` — The agent that answers comments on a PR review: waits for questions, runs `claude -p` one turn at a time
 - `src/commands/serve.ts` — MCP serve command (dynamic import)
 - `src/commands/setup.ts` — Setup command: git root detection, file merging, skill installation, global setup, `isGlobalSetupDone()`
 - `src/commands/teardown.ts` — Teardown command: reverses setup by removing DiffPrism config from all locations

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock @diffprism/core before importing the review command
 const mockEnsureServer = vi.fn();
@@ -26,6 +26,15 @@ vi.mock("@diffprism/github", () => ({
   parsePrRef: (...args: unknown[]) => mockParsePrRef(...args),
 }));
 
+// Mock the agent that answers PR comments — these tests are about the command, not Claude.
+const mockClaudeAvailable = vi.fn();
+const mockListenWithClaude = vi.fn();
+vi.mock("../commands/pr-agent.js", () => ({
+  claudeAvailable: () => mockClaudeAvailable(),
+  listenWithClaude: (...args: unknown[]) => mockListenWithClaude(...args),
+  thisBuildsMcpServer: () => ({ command: "node", args: ["bin.js", "serve"] }),
+}));
+
 import { review } from "../commands/review.js";
 
 const defaultServerInfo = {
@@ -41,6 +50,7 @@ describe("review command", () => {
     mockEnsureServer.mockResolvedValue(defaultServerInfo);
     // Default: not a PR ref (existing tests stay on local path)
     mockIsPrRef.mockReturnValue(false);
+    mockClaudeAvailable.mockReturnValue(false);
     // Prevent actual process.exit
     vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -229,7 +239,7 @@ describe("review command", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      await review("acme/app#42", { title: "Cache fix", reasoning: "Stale reads after deploy" });
+      await review("acme/app#42", { title: "Cache fix", reasoning: "Stale reads after deploy", agent: false });
 
       expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
         prUrl: "acme/app#42",
@@ -241,6 +251,114 @@ describe("review command", () => {
       expect(printed).toContain("/review");
 
       vi.unstubAllGlobals();
+    });
+
+    describe("the agent that answers comments (#217)", () => {
+      function openPr(localRepoPath: string | null) {
+        mockIsPrRef.mockReturnValue(true);
+        mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 42 });
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({ sessionId: "session-pr-42", fileCount: 1, localRepoPath, pr: { title: "Fix bug" } }),
+          }),
+        );
+      }
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+      });
+
+      it("starts Claude Code in the clone and stays until the review is submitted", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockResolvedValue({ result: { decision: "approved_with_comments", comments: [] }, conversationId: null });
+
+        await review("acme/app#42", {});
+
+        expect(mockListenWithClaude).toHaveBeenCalledWith(
+          expect.objectContaining({ reviewSessionId: "session-pr-42", prUrl: "acme/app#42", cwd: "/tmp/app" }),
+        );
+        const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+        expect(printed).toContain("Claude Code is listening");
+        expect(printed).toContain("Review submitted: approved with comments.");
+      });
+
+      it("says a closed review was closed, not submitted", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockResolvedValue({ result: { decision: "dismissed", comments: [] }, conversationId: null });
+
+        await review("acme/app#42", {});
+
+        const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+        expect(printed).toContain("Review closed without a decision.");
+        expect(printed).not.toContain("Review submitted");
+      });
+
+      it("runs Claude where the command ran when there's no local clone", async () => {
+        openPr(null);
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockResolvedValue({ result: { decision: "approved", comments: [] }, conversationId: null });
+
+        await review("acme/app#42", {});
+
+        expect(mockListenWithClaude).toHaveBeenCalledWith(expect.objectContaining({ cwd: process.cwd() }));
+      });
+
+      it("ends with how to resume the conversation, from the folder it ran in", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockResolvedValue({ result: { decision: "approved", comments: [] }, conversationId: "conv-9" });
+
+        await review("acme/app#42", {});
+
+        const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+        expect(printed).toContain("Continue the conversation in your terminal: cd /tmp/app && claude --resume conv-9");
+      });
+
+      it("offers no conversation to resume when Claude never answered anything", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockResolvedValue({ result: { decision: "approved", comments: [] }, conversationId: null });
+
+        await review("acme/app#42", {});
+
+        const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+        expect(printed).not.toContain("claude --resume");
+      });
+
+      it("with --no-agent, opens the review and leaves", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+
+        await review("acme/app#42", { agent: false });
+
+        expect(mockListenWithClaude).not.toHaveBeenCalled();
+      });
+
+      it("without Claude Code installed, says so and gives the prompt to paste", async () => {
+        openPr("/tmp/app");
+
+        await review("acme/app#42", {});
+
+        expect(mockListenWithClaude).not.toHaveBeenCalled();
+        const printed = vi.mocked(console.log).mock.calls.flat().join("\n");
+        expect(printed).toContain("Claude Code isn't installed here");
+        expect(printed).toContain("Answer my DiffPrism comments on session-pr-42");
+      });
+
+      it("stops with an error when the agent fails", async () => {
+        openPr("/tmp/app");
+        mockClaudeAvailable.mockReturnValue(true);
+        mockListenWithClaude.mockRejectedValue(new Error("Claude Code exited with status 1:\nNot logged in"));
+
+        await review("acme/app#42", {});
+
+        expect(console.error).toHaveBeenCalledWith("Error: Claude Code exited with status 1:\nNot logged in");
+        expect(process.exit).toHaveBeenCalledWith(1);
+      });
     });
 
     it("exits 1 when server returns error", async () => {
