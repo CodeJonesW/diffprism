@@ -2,6 +2,7 @@ import { ensureServer, submitReviewToServer, ReviewerAskedError, DEFAULT_DIFF_RE
 import type { ReviewResult } from "@diffprism/core";
 import { printQuestions } from "./hook.js";
 import { isPrRef, parsePrRef } from "@diffprism/github";
+import { claudeAvailable, listenWithClaude, thisBuildsMcpServer } from "./pr-agent.js";
 
 interface ReviewFlags {
   staged?: boolean;
@@ -10,6 +11,8 @@ interface ReviewFlags {
   reasoning?: string;
   dev?: boolean;
   postToGithub?: boolean;
+  /** False with --no-agent: open a PR review without starting Claude Code to answer comments. */
+  agent?: boolean;
 }
 
 export async function review(
@@ -135,7 +138,40 @@ async function reviewPrFlow(
     console.log("No local clone detected — file context unavailable");
   }
 
-  // No list of tool names here: one printed by hand went stale when tools
-  // were renamed (#198). The /review skill is where an agent learns them.
-  console.log(`\nReview open in browser. Ask Claude Code about this PR — the /review skill shows it how.`);
+  if (flags.agent === false) {
+    // No list of tool names here: one printed by hand went stale when tools
+    // were renamed (#198). The /review skill is where an agent learns them.
+    console.log(`\nReview open in browser. Ask Claude Code about this PR — the /review skill shows it how.`);
+    return;
+  }
+
+  if (!claudeAvailable()) {
+    console.log(`\nReview open in browser. Claude Code isn't installed here, so nothing will answer your comments on its own.`);
+    console.log(`In a Claude Code session, ask: Answer my DiffPrism comments on ${data.sessionId}`);
+    return;
+  }
+
+  console.log(`\nReview open in browser. Claude Code is listening — comment on any line and it answers there.`);
+  console.log(`Leave this running. It stops when you submit the review, or on Ctrl-C.`);
+
+  const agentCwd = data.localRepoPath ?? process.cwd();
+  const { result, conversationId } = await listenWithClaude({
+    serverInfo,
+    reviewSessionId: data.sessionId,
+    prUrl: pr,
+    cwd: agentCwd,
+    mcp: thisBuildsMcpServer(),
+    log: (line) => console.log(line),
+  });
+  console.log(
+    result.decision === "dismissed"
+      ? "\nReview closed without a decision."
+      : `\nReview submitted: ${result.decision.replace(/_/g, " ")}.`,
+  );
+  if (conversationId) {
+    // Claude Code keeps a conversation with the folder it ran in, so resuming
+    // has to happen from there.
+    const cd = agentCwd === process.cwd() ? "" : `cd ${/\s/.test(agentCwd) ? `"${agentCwd}"` : agentCwd} && `;
+    console.log(`Continue the conversation in your terminal: ${cd}claude --resume ${conversationId}`);
+  }
 }
