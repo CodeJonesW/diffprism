@@ -71,6 +71,70 @@ export function writeJsonFile(
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n");
 }
 
+/**
+ * DiffPrism commands that earlier versions installed as Claude Code hooks.
+ * #139 deleted `notify-stop` together with the code that cleaned up after it,
+ * so every project set up before then kept a Stop hook that failed on every
+ * turn (#215). Setup and teardown both remove hooks that call one of these.
+ */
+const RETIRED_HOOK_COMMANDS = ["notify-stop"];
+
+const RETIRED_HOOK = new RegExp(
+  `\\bdiffprism(@\\S+)?\\s+(${RETIRED_HOOK_COMMANDS.join("|")})\\b`,
+);
+
+interface HookGroup {
+  matcher?: string;
+  hooks?: Array<{ type?: string; command?: string }>;
+}
+
+/**
+ * `settings` with every hook that calls a retired DiffPrism command removed,
+ * or null when it has none. Groups and events left empty go too; everything
+ * else — other tools' hooks included — is kept as it was.
+ */
+export function withoutRetiredHooks(
+  settings: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const hooks = settings.hooks as Record<string, unknown> | undefined;
+  if (!hooks || typeof hooks !== "object") return null;
+
+  let removed = false;
+  const nextHooks: Record<string, unknown> = {};
+
+  for (const [event, groups] of Object.entries(hooks)) {
+    if (!Array.isArray(groups)) {
+      nextHooks[event] = groups;
+      continue;
+    }
+    const nextGroups: HookGroup[] = [];
+    for (const group of groups as HookGroup[]) {
+      if (!Array.isArray(group?.hooks)) {
+        nextGroups.push(group);
+        continue;
+      }
+      const kept = group.hooks.filter(
+        (h) => !(typeof h?.command === "string" && RETIRED_HOOK.test(h.command)),
+      );
+      if (kept.length < group.hooks.length) removed = true;
+      if (kept.length > 0) nextGroups.push({ ...group, hooks: kept });
+    }
+    if (nextGroups.length > 0 || groups.length === 0) {
+      nextHooks[event] = nextGroups;
+    }
+  }
+
+  if (!removed) return null;
+
+  const next = { ...settings };
+  if (Object.keys(nextHooks).length > 0) {
+    next.hooks = nextHooks;
+  } else {
+    delete next.hooks;
+  }
+  return next;
+}
+
 interface SetupResult {
   created: string[];
   updated: string[];
@@ -107,7 +171,11 @@ function setupClaudeSettings(
   { force, dryRun }: WriteMode,
 ): { action: "created" | "updated" | "skipped"; filePath: string } {
   const filePath = path.join(baseDir, ".claude", "settings.json");
-  const existing = readJsonFile(filePath);
+  const read = readJsonFile(filePath);
+  // Upgrading also drops hooks an older version installed for commands that
+  // no longer exist — they fail on every turn until something removes them.
+  const withoutDeadHooks = withoutRetiredHooks(read);
+  const existing = withoutDeadHooks ?? read;
 
   const permissions = (existing.permissions ?? {}) as Record<string, unknown>;
   const allow = (permissions.allow ?? []) as string[];
@@ -117,7 +185,7 @@ function setupClaudeSettings(
 
   const allPresent = toolNames.every((t) => allow.includes(t));
   const hasRetired = allow.some((t) => retired.has(t));
-  if (allPresent && !hasRetired && !force) {
+  if (allPresent && !hasRetired && !withoutDeadHooks && !force) {
     return { action: "skipped", filePath };
   }
 

@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { findGitRoot, readJsonFile, writeJsonFile, GITIGNORE_ENTRIES } from "./setup.js";
+import {
+  findGitRoot,
+  readJsonFile,
+  writeJsonFile,
+  withoutRetiredHooks,
+  GITIGNORE_ENTRIES,
+} from "./setup.js";
 import { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "@diffprism/core";
 
 interface TeardownFlags {
@@ -45,7 +51,7 @@ function teardownMcpJson(gitRoot: string): { action: "removed" | "skipped"; file
   return { action: "removed", filePath };
 }
 
-function teardownClaudePermissions(
+function teardownClaudeSettings(
   baseDir: string,
 ): { action: "removed" | "skipped"; filePath: string } {
   const filePath = path.join(baseDir, ".claude", "settings.json");
@@ -54,7 +60,10 @@ function teardownClaudePermissions(
     return { action: "skipped", filePath };
   }
 
-  const existing = readJsonFile(filePath);
+  const read = readJsonFile(filePath);
+  // Hooks an older version installed for commands that no longer exist (#215).
+  const withoutDeadHooks = withoutRetiredHooks(read);
+  const existing = withoutDeadHooks ?? read;
   const permissions = (existing.permissions ?? {}) as Record<string, unknown>;
   const allow = (permissions.allow ?? []) as string[];
 
@@ -64,7 +73,7 @@ function teardownClaudePermissions(
 
   const filtered = allow.filter((t) => !toolNames.includes(t));
 
-  if (filtered.length === allow.length) {
+  if (filtered.length === allow.length && !withoutDeadHooks) {
     return { action: "skipped", filePath };
   }
 
@@ -183,7 +192,7 @@ export async function teardown(flags: TeardownFlags): Promise<TeardownResult> {
     const skill = teardownSkill("", true);
     result[skill.action].push(skill.filePath);
 
-    const perms = teardownClaudePermissions(home);
+    const perms = teardownClaudeSettings(home);
     result[perms.action].push(perms.filePath);
 
     cleanupSettingsFile(home);
@@ -218,7 +227,7 @@ export async function teardown(flags: TeardownFlags): Promise<TeardownResult> {
   result[mcp.action].push(mcp.filePath);
 
   // Step 2: Permissions
-  const perms = teardownClaudePermissions(gitRoot);
+  const perms = teardownClaudeSettings(gitRoot);
   result[perms.action].push(perms.filePath);
 
   // Step 2.5: Clean up empty settings.json

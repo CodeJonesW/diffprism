@@ -425,6 +425,79 @@ describe("setup command", () => {
       // Permissions that aren't DiffPrism's are left alone.
       expect(allow).toContain("Bash(npm test)");
     });
+
+    // #215: setup before #139 installed a Stop hook for `notify-stop`. #139
+    // deleted the command and the code that removed the hook, so it failed at
+    // the end of every Claude Code turn for as long as the project existed.
+    it("removes a hook that calls a DiffPrism command that no longer exists", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s.includes("settings.json")) return true;
+        return false;
+      });
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: { allow: MCP_TOOL_NAMES.map(mcpToolPermission) },
+            hooks: {
+              Stop: [
+                {
+                  matcher: "",
+                  hooks: [
+                    { type: "command", command: "npx diffprism@latest notify-stop" },
+                    { type: "command", command: "say done" },
+                  ],
+                },
+              ],
+              PreToolUse: [
+                { matcher: "", hooks: [{ type: "command", command: "npx diffprism notify-stop" }] },
+              ],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const settingsWrite = mockWriteFileSync.mock.calls.find((call) =>
+        call[0].toString().includes("settings.json"),
+      );
+      expect(settingsWrite).toBeDefined();
+      const written = JSON.parse(settingsWrite![1] as string) as { hooks: Record<string, unknown> };
+      // Other hooks stay; an event left with nothing of its own goes.
+      expect(written.hooks).toEqual({
+        Stop: [{ matcher: "", hooks: [{ type: "command", command: "say done" }] }],
+      });
+    });
+
+    it("leaves hooks alone when none call a retired command", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s.includes("settings.json")) return true;
+        return false;
+      });
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: { allow: MCP_TOOL_NAMES.map(mcpToolPermission) },
+            hooks: { Stop: [{ matcher: "", hooks: [{ type: "command", command: "diffprism hook pre-commit" }] }] },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      await setup({});
+
+      const settingsWrite = mockWriteFileSync.mock.calls.find((call) =>
+        call[0].toString().includes("settings.json"),
+      );
+      expect(settingsWrite).toBeUndefined();
+    });
   });
 
   describe("skill file", () => {
@@ -654,6 +727,26 @@ describe("setup command", () => {
           "mcp__diffprism__flag_for_attention",
           "mcp__diffprism__review_pr",
         ],
+      });
+
+      expect(await isGlobalSetupDone()).toBe(false);
+    });
+
+    it("is not done while global settings keep a hook for a retired command", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        return s.includes("SKILL.md") || s.includes("settings.json");
+      });
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("SKILL.md")) return skillContent;
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: { allow: currentAllow },
+            hooks: { Stop: [{ hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }] }] },
+          });
+        }
+        throw new Error("File not found");
       });
 
       expect(await isGlobalSetupDone()).toBe(false);

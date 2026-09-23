@@ -25,6 +25,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `--global` — Configure globally (skill + permissions at `~/.claude/`, no git repo required)
 - `--force` — Overwrite existing configuration files
 - Idempotent: skips files that are already correctly configured
+- Upgrades what older versions wrote: prunes permissions for retired tools, and removes hooks that call DiffPrism commands which no longer exist (`notify-stop`, #215)
 
 ### `diffprism teardown`
 - Removes DiffPrism configuration from the current project in one command
@@ -32,6 +33,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `--global` — Remove global configuration (skill + permissions at `~/.claude/`)
 - `-q, --quiet` — Suppress output
 - Safely handles partial configs: skips items that don't exist, preserves non-DiffPrism entries
+- Also removes hooks older versions installed for commands that no longer exist
 
 ### `diffprism server`
 - Starts the global DiffPrism server for multi-session reviews
