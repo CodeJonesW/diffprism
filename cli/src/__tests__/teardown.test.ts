@@ -335,6 +335,37 @@ describe("teardown command", () => {
   });
 
   describe("settings.json cleanup", () => {
+    it("removes hooks that call a retired DiffPrism command (#215)", async () => {
+      mockExistsSync.mockImplementation((p: fs.PathLike) => {
+        const s = p.toString();
+        if (s === path.join("/projects/myapp", ".git")) return true;
+        if (s.includes("settings.json")) return true;
+        return false;
+      });
+      mockReadFileSync.mockImplementation((p: fs.PathOrFileDescriptor) => {
+        const s = p.toString();
+        if (s.includes("settings.json")) {
+          return JSON.stringify({
+            permissions: { allow: ["some_other_tool"] },
+            hooks: {
+              Stop: [{ matcher: "", hooks: [{ type: "command", command: "npx diffprism@latest notify-stop" }] }],
+            },
+          });
+        }
+        throw new Error("File not found");
+      });
+
+      await teardown({ quiet: true });
+
+      const settingsWrite = mockWriteFileSync.mock.calls.find((call) =>
+        call[0].toString().includes("settings.json"),
+      );
+      expect(settingsWrite).toBeDefined();
+      expect(JSON.parse(settingsWrite![1] as string)).toEqual({
+        permissions: { allow: ["some_other_tool"] },
+      });
+    });
+
     it("deletes settings.json when empty after removals", async () => {
       // Track state changes as functions are called
       let settingsContent = JSON.stringify({
