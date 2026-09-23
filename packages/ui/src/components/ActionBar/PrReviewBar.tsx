@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, X, MessageSquare, XCircle, ExternalLink, AlertTriangle } from "lucide-react";
+import { Check, X, MessageSquare, XCircle, ExternalLink, AlertTriangle, ChevronDown, ChevronUp } from "lucide-react";
 import type { PrReviewEvent } from "../../types";
 import { useReviewStore } from "../../store/review";
 import { useHttpApi } from "../../hooks/useHttpApi";
@@ -15,7 +15,7 @@ interface PrReviewBarProps {
  * unless the reviewer picks it.
  */
 export function PrReviewBar({ onDismiss }: PrReviewBarProps) {
-  const { annotations, reviewId, metadata } = useReviewStore();
+  const { annotations, reviewId, metadata, reviewBarCollapsed: collapsed, setReviewBarCollapsed } = useReviewStore();
   const { submitPrReview } = useHttpApi();
   const [summary, setSummary] = useState("");
   const [picked, setPicked] = useState<Set<string>>(new Set());
@@ -88,74 +88,87 @@ export function PrReviewBar({ onDismiss }: PrReviewBarProps) {
   );
 
   return (
-    <div className="bg-surface border-t border-border px-4 py-3 flex-shrink-0">
-      <div className="text-xs text-text-secondary mb-2">
+    <div className={`bg-surface border-t border-border px-4 flex-shrink-0 ${collapsed ? "py-2" : "py-3"}`}>
+      {/* Folding the bar hides its controls, not what's in them: the summary
+          and the picked threads are this component's state, so they're still
+          here when it opens again. */}
+      <button
+        type="button"
+        onClick={() => setReviewBarCollapsed(!collapsed)}
+        aria-expanded={!collapsed}
+        aria-controls="pr-review-bar-body"
+        title={collapsed ? "Show the review form" : "Hide the review form"}
+        className={`flex items-center gap-1.5 w-full text-left text-xs text-text-secondary hover:text-text-primary transition-colors cursor-pointer ${collapsed ? "" : "mb-2"}`}
+      >
+        {collapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         Submit your review to GitHub{pr?.viewer ? ` as @${pr.viewer}` : ""}{pr ? ` · ${pr.owner}/${pr.repo}#${pr.number}` : ""}
-      </div>
+      </button>
 
-      <textarea
-        value={summary}
-        onChange={(e) => setSummary(e.target.value)}
-        placeholder={ownPr ? "Summary — required to comment" : "Summary — optional to approve, required to request changes or comment"}
-        rows={3}
-        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent mb-3"
-      />
+      <div id="pr-review-bar-body" hidden={collapsed}>
+        <textarea
+          value={summary}
+          onChange={(e) => setSummary(e.target.value)}
+          placeholder={ownPr ? "Summary — required to comment" : "Summary — optional to approve, required to request changes or comment"}
+          rows={3}
+          className="w-full bg-background border border-border rounded-lg px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent mb-3"
+        />
 
-      {yourThreads.length > 0 && (
-        <fieldset className="mb-3">
-          <legend className="text-xs text-text-secondary mb-1">
-            Post your comments as inline review comments (your opening message only — agent replies stay here)
-          </legend>
-          <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
-            {yourThreads.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 text-xs text-text-primary cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={picked.has(t.id)}
-                  onChange={() => toggle(t.id)}
-                  className="rounded border-border accent-accent"
-                />
-                <span className="font-mono text-text-secondary">
-                  {t.file}:{t.line}
-                </span>
-                <span className="truncate">{t.body}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      )}
-
-      {error && (
-        <div role="alert" className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-danger/10 border border-danger/30 text-sm text-text-primary whitespace-pre-line">
-          <AlertTriangle className="w-4 h-4 mt-0.5 text-danger flex-shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {ownPr && (
-        <p className="text-xs text-text-secondary mb-3">
-          This is your pull request. GitHub doesn't let its author approve it or request changes, so your review posts as a comment.
-        </p>
-      )}
-
-      <div className="flex items-center gap-3">
-        {!ownPr && button("APPROVE", "Approve", ACTION_BUTTON_STYLES.approve, Check, false)}
-        {!ownPr && button("REQUEST_CHANGES", "Request changes", ACTION_BUTTON_STYLES.reject, X, needsSummary)}
-        {button("COMMENT", "Comment", ACTION_BUTTON_STYLES.comment, MessageSquare, needsSummary)}
-
-        {onDismiss && (
-          <>
-            <div className="w-px h-6 bg-border" />
-            <button
-              onClick={onDismiss}
-              disabled={busy}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${ACTION_BUTTON_STYLES.dismiss}`}
-            >
-              <XCircle className="w-4 h-4" />
-              Close without posting
-            </button>
-          </>
+        {yourThreads.length > 0 && (
+          <fieldset className="mb-3">
+            <legend className="text-xs text-text-secondary mb-1">
+              Post your comments as inline review comments (your opening message only — agent replies stay here)
+            </legend>
+            <div className="flex flex-col gap-1 max-h-28 overflow-y-auto">
+              {yourThreads.map((t) => (
+                <label key={t.id} className="flex items-center gap-2 text-xs text-text-primary cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(t.id)}
+                    onChange={() => toggle(t.id)}
+                    className="rounded border-border accent-accent"
+                  />
+                  <span className="font-mono text-text-secondary">
+                    {t.file}:{t.line}
+                  </span>
+                  <span className="truncate">{t.body}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
         )}
+
+        {error && (
+          <div role="alert" className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg bg-danger/10 border border-danger/30 text-sm text-text-primary whitespace-pre-line">
+            <AlertTriangle className="w-4 h-4 mt-0.5 text-danger flex-shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {ownPr && (
+          <p className="text-xs text-text-secondary mb-3">
+            This is your pull request. GitHub doesn't let its author approve it or request changes, so your review posts as a comment.
+          </p>
+        )}
+
+        <div className="flex items-center gap-3">
+          {!ownPr && button("APPROVE", "Approve", ACTION_BUTTON_STYLES.approve, Check, false)}
+          {!ownPr && button("REQUEST_CHANGES", "Request changes", ACTION_BUTTON_STYLES.reject, X, needsSummary)}
+          {button("COMMENT", "Comment", ACTION_BUTTON_STYLES.comment, MessageSquare, needsSummary)}
+
+          {onDismiss && (
+            <>
+              <div className="w-px h-6 bg-border" />
+              <button
+                onClick={onDismiss}
+                disabled={busy}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer disabled:opacity-40 ${ACTION_BUTTON_STYLES.dismiss}`}
+              >
+                <XCircle className="w-4 h-4" />
+                Close without posting
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

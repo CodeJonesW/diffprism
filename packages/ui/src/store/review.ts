@@ -42,6 +42,9 @@ const DEFAULT_PANES: Record<PaneId, PaneLayout> = {
 
 const PANES_STORAGE_KEY = "diffprism-panes";
 
+/** Whether the PR review bar is folded down to its one-line header (#219). */
+const REVIEW_BAR_STORAGE_KEY = "diffprism-review-bar-collapsed";
+
 /**
  * The layout the viewer left, per pane, over the defaults. Stored values are
  * a preference, not a prerequisite: one that is missing or unreadable (hand-
@@ -98,6 +101,8 @@ export interface ReviewState {
   theme: Theme;
   verdict: VerdictStatus;
   panes: Record<PaneId, PaneLayout>;
+  /** The PR review bar shows only its header — the diff gets the room until it's time to decide. */
+  reviewBarCollapsed: boolean;
   isWatchMode: boolean;
   watchSubmitted: boolean;
   hasUnreviewedChanges: boolean;
@@ -122,6 +127,7 @@ export interface ReviewState {
   // Actions
   toggleHotkeyGuide: () => void;
   setPane: (id: PaneId, change: Partial<PaneLayout>) => void;
+  setReviewBarCollapsed: (collapsed: boolean) => void;
   toggleWorkflowTips: () => void;
   initReview: (payload: ReviewInitPayload) => void;
   selectFile: (path: string) => void;
@@ -176,6 +182,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   panes: loadPanes(),
+  reviewBarCollapsed: localStorage.getItem(REVIEW_BAR_STORAGE_KEY) === "true",
   verdict: { state: "idle" },
   isWatchMode: false,
   watchSubmitted: false,
@@ -325,6 +332,11 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     const panes = { ...get().panes, [id]: { ...current, ...change } };
     localStorage.setItem(PANES_STORAGE_KEY, JSON.stringify(panes));
     set({ panes });
+  },
+
+  setReviewBarCollapsed: (collapsed: boolean) => {
+    localStorage.setItem(REVIEW_BAR_STORAGE_KEY, String(collapsed));
+    set({ reviewBarCollapsed: collapsed });
   },
 
   updateDiff: (payload: DiffUpdatePayload) => {
