@@ -2477,15 +2477,37 @@ describe("reusing an open dashboard tab (#188)", () => {
     });
   }
 
-  it("serves the dashboard on its preferred port, so an open tab's address survives a restart", async () => {
-    // Found with node:net, not get-port: get-port locks a port it hands out,
-    // and the server would then skip it.
-    const uiPort = await new Promise<number>((resolve) => {
-      const probe = net.createServer().listen(0, () => {
-        const { port } = probe.address() as net.AddressInfo;
-        probe.close(() => resolve(port));
+  /**
+   * A port that is free and that the server will be given when it asks for it.
+   *
+   * Not from `listen(0)`, which caused #206. That hands out a port from the
+   * OS's ephemeral range, and two things can take it back before the server
+   * binds it. get-port refuses any port it has handed out in this process in
+   * the last 15–30 seconds, even once it's free again, and every server the
+   * earlier tests started got its random ports from get-port, from that same
+   * range. And the range is also where outgoing connections get their local
+   * ports, while other test files run requests in parallel.
+   *
+   * Below the ephemeral range (from 32768 on Linux, 49152 on macOS) and clear
+   * of DiffPrism's own defaults, get-port has never handed a port out and no
+   * outgoing connection is given one. Found with node:net, not get-port, for
+   * the same reason: get-port would lock the port it returned.
+   */
+  async function portTheServerWillGet(): Promise<number> {
+    for (let port = 20000; port < 30000; port++) {
+      if (port >= 24680 && port <= 24682) continue;
+      const free = await new Promise<boolean>((resolve) => {
+        const probe = net.createServer();
+        probe.once("error", () => resolve(false));
+        probe.listen(port, () => probe.close(() => resolve(true)));
       });
-    });
+      if (free) return port;
+    }
+    throw new Error("No free port between 20000 and 30000");
+  }
+
+  it("serves the dashboard on its preferred port, so an open tab's address survives a restart", async () => {
+    const uiPort = await portTheServerWillGet();
     handle = await startGlobalServer({ silent: true, openBrowser: false, uiPort });
     const status = (await (await fetch(`http://localhost:${handle.httpPort}/api/status`)).json()) as { uiUrl: string };
     expect(status.uiUrl).toContain(`http://localhost:${uiPort}?`);
