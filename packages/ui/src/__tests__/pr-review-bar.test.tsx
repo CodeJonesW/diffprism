@@ -24,7 +24,9 @@ describe("PrReviewBar", () => {
     vi.stubGlobal("fetch", fetchMock);
     fetchMock.mockReset();
     window.history.replaceState(null, "", "/?httpPort=2");
+    localStorage.clear();
     useReviewStore.setState({
+      reviewBarCollapsed: false,
       reviewId: "s1",
       metadata: { title: "t", githubPr: PR },
       annotations: [
@@ -67,6 +69,43 @@ describe("PrReviewBar", () => {
     render(<PrReviewBar />);
     expect(screen.getByRole("button", { name: "Approve" })).toBeDefined();
     expect(screen.queryByText(/This is your pull request/)).toBeNull();
+  });
+
+  // #219: the bar takes a fifth of the screen but is only needed at the end.
+  describe("folding it away", () => {
+    const header = () => screen.getByRole("button", { name: /Submit your review to GitHub/ });
+
+    it("folds down to its header and opens again with what was typed", () => {
+      render(<PrReviewBar />);
+      fireEvent.change(screen.getByPlaceholderText(/Summary/), { target: { value: "Looks right to me" } });
+
+      fireEvent.click(header());
+      expect(header().getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+      expect(screen.queryByRole("textbox")).toBeNull();
+      // Where the review goes stays in view.
+      expect(header().textContent).toContain("as @reviewer · acme/widget#7");
+
+      fireEvent.click(header());
+      expect(header().getAttribute("aria-expanded")).toBe("true");
+      expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Looks right to me");
+    });
+
+    it("remembers being folded for the next review", () => {
+      render(<PrReviewBar />);
+      fireEvent.click(header());
+
+      expect(localStorage.getItem("diffprism-review-bar-collapsed")).toBe("true");
+      expect(useReviewStore.getState().reviewBarCollapsed).toBe(true);
+    });
+
+    it("opens folded when it was left folded", () => {
+      useReviewStore.setState({ reviewBarCollapsed: true });
+      render(<PrReviewBar />);
+
+      expect(header().getAttribute("aria-expanded")).toBe("false");
+      expect(screen.queryByRole("button", { name: "Comment" })).toBeNull();
+    });
   });
 
   it("says who the review posts as", () => {
