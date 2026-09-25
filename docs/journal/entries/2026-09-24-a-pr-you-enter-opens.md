@@ -2,6 +2,7 @@
 title: A pull request you enter opens straight away
 date: 2026-09-24
 kind: fix
+pr: 229
 ---
 
 ## What changed
