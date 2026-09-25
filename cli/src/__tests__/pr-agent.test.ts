@@ -14,8 +14,9 @@ import {
   AgentStalledError,
   AGENT_ALLOWED_TOOLS,
   AGENT_DISALLOWED_TOOLS,
+  prAgentStarter,
 } from "../commands/pr-agent.js";
-import type { AgentTurn, ClaudeRunner } from "../commands/pr-agent.js";
+import type { AgentTurn, ClaudeRunner, ListenOptions, ListenOutcome } from "../commands/pr-agent.js";
 
 const mockWait = vi.mocked(waitForDecision);
 
@@ -62,7 +63,7 @@ function argAfter(args: string[], flag: string): string | undefined {
 }
 
 const listen = (run: ClaudeRunner) =>
-  listenWithClaude({ serverInfo, reviewSessionId: "session-1", prUrl: "acme/widget#7", cwd: "/clones/widget", mcp, run });
+  listenWithClaude({ serverInfo, reviewSessionId: "session-1", prUrl: "acme/widget#7", cwd: "/clones/widget", mcp, conversationId: "conv-7", run });
 
 describe("claudeArgs", () => {
   it("starts the conversation on the first turn and resumes it after", () => {
@@ -159,26 +160,16 @@ describe("listenWithClaude", () => {
     await listen(run);
 
     expect(calls).toHaveLength(2);
-    const started = argAfter(calls[0].args, "--session-id");
-    expect(started).toBeDefined();
-    expect(argAfter(calls[1].args, "--resume")).toBe(started);
+    // The conversation it was given, chosen before anything was answered.
+    expect(argAfter(calls[0].args, "--session-id")).toBe("conv-7");
+    expect(argAfter(calls[1].args, "--resume")).toBe("conv-7");
   });
 
-  it("has no conversation to resume when nobody asked anything", async () => {
+  it("reports no turns when nobody asked anything", async () => {
     mockWait.mockResolvedValueOnce(approved);
     const { run } = recordingRunner();
 
-    expect((await listen(run)).conversationId).toBeNull();
-  });
-
-  it("names the conversation the answers were given in", async () => {
-    mockWait
-      .mockRejectedValueOnce(new ReviewerAskedError("session-1", [thread("t1")]))
-      .mockResolvedValueOnce(approved);
-    const { run, calls } = recordingRunner();
-
-    const { conversationId } = await listen(run);
-    expect(conversationId).toBe(argAfter(calls[0].args, "--session-id"));
+    expect((await listen(run)).turns).toBe(0);
   });
 
   it("keeps waiting through a timeout", async () => {
@@ -222,5 +213,69 @@ describe("listenWithClaude", () => {
     const run: ClaudeRunner = async () => ({ code: 1, output: "Not logged in · Please run /login" });
 
     await expect(listen(run)).rejects.toThrow(/exited with status 1:\nNot logged in/);
+  });
+});
+
+// #224: the server starts one of these for every PR review.
+describe("prAgentStarter", () => {
+  const request = { sessionId: "session-1", prUrl: "https://github.com/acme/widget/pull/7", localRepoPath: "/clones/widget", server: serverInfo };
+
+  function starter(listen: (o: ListenOptions) => Promise<ListenOutcome>, available = true) {
+    const lines: string[] = [];
+    const start = prAgentStarter({
+      available: () => available,
+      listen,
+      mcp,
+      folder: () => "/tmp/diffprism-agent",
+      log: (line) => lines.push(line),
+    });
+    return { start, lines };
+  }
+
+  it("starts nothing when Claude Code isn't installed, and says so", () => {
+    const listen = vi.fn();
+    const { start, lines } = starter(listen, false);
+
+    expect(start(request)).toBeNull();
+    expect(listen).not.toHaveBeenCalled();
+    expect(lines.join("\n")).toContain("Claude Code isn't installed");
+  });
+
+  it("listens in the clone, in the conversation it reports", async () => {
+    const listen = vi.fn(async () => ({ result: approved, turns: 1 }));
+    const { start } = starter(listen);
+
+    const handle = start(request)!;
+    await handle.done;
+
+    expect(handle.cwd).toBe("/clones/widget");
+    expect(listen).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewSessionId: "session-1", cwd: "/clones/widget", conversationId: handle.conversationId, mcp }),
+    );
+  });
+
+  it("runs in its own folder when there is no clone", () => {
+    const listen = vi.fn(async () => ({ result: approved, turns: 0 }));
+    const { start } = starter(listen);
+
+    expect(start({ ...request, localRepoPath: null })!.cwd).toBe("/tmp/diffprism-agent");
+  });
+
+  it("gives every review its own conversation", () => {
+    const listen = vi.fn(async () => ({ result: approved, turns: 0 }));
+    const { start } = starter(listen);
+
+    expect(start(request)!.conversationId).not.toBe(start({ ...request, sessionId: "session-2" })!.conversationId);
+  });
+
+  // The server only learns that the agent stopped; a failure goes to the log.
+  it("settles, and logs why, when the agent fails", async () => {
+    const listen = vi.fn(async () => {
+      throw new Error("Claude Code exited with status 1:\nNot logged in");
+    });
+    const { start, lines } = starter(listen);
+
+    await expect(start(request)!.done).resolves.toBeUndefined();
+    expect(lines.join("\n")).toContain("agent stopped — Claude Code exited with status 1");
   });
 });

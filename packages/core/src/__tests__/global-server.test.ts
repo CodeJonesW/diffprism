@@ -1820,6 +1820,104 @@ describe("session identity", () => {
       expect(b).toBe(a);
       expect(second.status).toBe(200);
     });
+
+    // #224: whichever way a PR review is opened, the server starts its agent.
+    describe("the agent that answers a PR review", () => {
+      type Agent = { conversationId: string; cwd: string } | null;
+      const agentOf = async (res: Response) => ((await res.json()) as { agent: Agent }).agent;
+
+      /** A starter that starts agents which run until `stop` is called. */
+      function starter(result: "starts" | "declines" = "starts") {
+        let stop = (): void => {};
+        const start = vi.fn((request: { sessionId: string }) => {
+          if (result === "declines") return null;
+          const done = new Promise<void>((resolve) => {
+            stop = resolve;
+          });
+          return { conversationId: `conv-${start.mock.calls.length}`, cwd: `/agents/${request.sessionId}`, done };
+        });
+        return { start, stop: () => stop() };
+      }
+
+      it("starts one for the review and reports its conversation", async () => {
+        const { start } = starter();
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const res = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+        const { sessionId } = (await res.clone().json()) as { sessionId: string };
+
+        expect(start).toHaveBeenCalledWith({
+          sessionId,
+          prUrl: "https://github.com/acme/widget/pull/7",
+          localRepoPath: null,
+          server: expect.objectContaining({ httpPort: handle.httpPort }),
+        });
+        expect(await agentOf(res)).toEqual({ conversationId: "conv-1", cwd: `/agents/${sessionId}` });
+      });
+
+      it("finds the one already answering when the PR is opened again", async () => {
+        const { start } = starter();
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        const first = await agentOf(await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" }));
+        const again = await agentOf(await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" }));
+
+        expect(start).toHaveBeenCalledTimes(1);
+        expect(again).toEqual(first);
+      });
+
+      it("starts a new one once the last has stopped", async () => {
+        const { start, stop } = starter();
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+        stop();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const again = await agentOf(await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" }));
+
+        expect(start).toHaveBeenCalledTimes(2);
+        expect(again?.conversationId).toBe("conv-2");
+      });
+
+      it("starts none when asked not to (--no-agent)", async () => {
+        const { start } = starter();
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+        const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7", agent: false });
+
+        expect(start).not.toHaveBeenCalled();
+        expect(await agentOf(res)).toBeNull();
+      });
+
+      it("still reports an agent already answering when asked not to start one", async () => {
+        const { start } = starter();
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+        const res = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", agent: false });
+
+        expect((await agentOf(res))?.conversationId).toBe("conv-1");
+      });
+
+      it("reports none when the starter can't run one here", async () => {
+        const { start } = starter("declines");
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+        const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7" });
+        expect(await agentOf(res)).toBeNull();
+      });
+
+      it("reports none from a server given no starter", async () => {
+        handle = await startGlobalServer({ silent: true, openBrowser: false });
+
+        const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7" });
+        expect(await agentOf(res)).toBeNull();
+      });
+    });
   });
 
   describe("GET /api/reviews/resolve", () => {

@@ -16,10 +16,8 @@ $ diffprism review https://github.com/owner/repo/pull/123
   4 files changed
   Local repo: /Users/you/dev/my-project
 
-  Review open in browser. Claude Code is listening — comment on any line and it answers there.
-  Leave this running. It stops when you submit the review, or on Ctrl-C.
-  Answering 1 comment...
-  Answered — see the dashboard.
+  Review open in browser. Claude Code is answering — comment on any line and it replies there.
+  Once it has answered, continue the conversation in your terminal: claude --resume 3f2a…
 ```
 
 Then in Claude Code:
@@ -51,14 +49,15 @@ diffprism review https://github.com/owner/repo/pull/123   # Full GitHub URL
 diffprism review owner/repo#123                            # Shorthand format
 ```
 
-The command then stays running, with Claude Code answering your comments: comment on any line and the answer appears in the thread. You don't need to open a Claude Code session or paste anything. It stops when you submit the review, or on Ctrl-C.
+Claude Code then answers your comments: comment on any line and the answer appears in the thread. You don't need to open a Claude Code session or paste anything, and the command gives your terminal back straight away. A PR you open from the dashboard's **Review PR** form gets the same agent. The DiffPrism server runs it, for as long as the review is open.
 
 - The agent is **read-only**. It can read the PR, your clone and the review, and reply, but it can't edit files or run commands.
 - One conversation lasts the whole review, so a follow-up question can build on an earlier answer.
-- When the review ends, it prints the `claude --resume` command that continues that conversation in your terminal.
+- The command prints the `claude --resume` command that continues that conversation in your terminal once Claude has answered something.
 - It waits without using Claude: DiffPrism watches for comments and runs Claude only when there's something to answer.
 - It needs the `claude` command installed and logged in. Without it, the command says so, and tells you what to ask in a Claude Code session instead.
 - Pass `--no-agent` to open the review without starting one.
+- What the agent does, and why it stopped if it did, goes to the server's log, `~/.diffprism/server.log`.
 
 Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
 
@@ -96,7 +95,7 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 
 In a local review, **Ask agent now** in a line's comment form asks the agent while you're still reviewing: the agent's wait for your decision ends with your question, it answers in the thread, and goes back to waiting.
 
-PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread, and stays listening for your next question until you tell it to stop. `diffprism review <PR URL>` starts one for you (see [PR Review](#pr-review)). A PR opened from the dashboard doesn't, and if no agent has picked a question up, the thread says so and names the session to ask Claude Code about. That one prompt is enough — the agent is handed the checkout, branch, PR and the code you asked about along with the question.
+PR reviews are opened with `diffprism review <PR URL>` or the dashboard — not by `open_review` — and your AI then works inside them with the tools above. Click a line to ask the agent about it; an agent listening with `wait_for_comments` answers in the thread, and stays listening for your next question until you tell it to stop. DiffPrism starts one for every PR review, however it was opened (see [PR Review](#pr-review)). If no agent has picked a question up — Claude Code isn't installed, or the review was opened with `--no-agent` — the thread says so and names the session to ask Claude Code about. That one prompt is enough — the agent is handed the checkout, branch, PR and the code you asked about along with the question.
 
 When you're done, **Approve**, **Request changes** or **Comment** from the bar at the bottom: DiffPrism posts it to GitHub as a pull request review. Your threads are a conversation with the agent, so none of them goes to GitHub unless you tick it; a ticked thread posts your opening message as an inline review comment. The token comes from `GITHUB_TOKEN`, `gh auth token`, or `~/.diffprism/config.json`.
 
