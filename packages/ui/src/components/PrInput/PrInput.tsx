@@ -105,7 +105,7 @@ export function PrInput({ onSuccess }: PrInputProps) {
 
       {error && <p className="text-danger text-xs">{error}</p>}
 
-      <p className="text-text-secondary text-[10px]">
+      <p className="text-text-secondary text-[11px]">
         Also accepts <code className="text-accent/70">owner/repo#123</code> format
       </p>
     </div>

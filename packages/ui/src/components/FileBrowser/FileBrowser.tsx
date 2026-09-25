@@ -328,7 +328,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
           )}
           <span
             className={`
-              text-[10px] font-bold px-1.5 py-0.5 rounded border
+              text-[11px] font-bold px-1.5 py-0.5 rounded border
               ${badge.className}
             `}
           >
@@ -455,7 +455,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
                   </div>
                   <button
                     onClick={handleBatchApproveMechanical}
-                    className="mr-3 text-[10px] font-medium text-success hover:text-success/80 cursor-pointer px-1.5 py-0.5 rounded border border-success/30 hover:bg-success/10"
+                    className="mr-3 text-[11px] font-medium text-success hover:text-success/80 cursor-pointer px-1.5 py-0.5 rounded border border-success/30 hover:bg-success/10"
                   >
                     Approve all
                   </button>

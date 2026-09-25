@@ -183,14 +183,14 @@ export function BriefingBar() {
                 {securityFlags.map((p, i) => (
                   <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
                     <span
-                      className={`inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 ${
+                      className={`inline-block px-1 py-0.5 rounded text-[11px] font-medium uppercase mr-1.5 ${
                         SEVERITY_BADGE_STYLES[p.severity ?? "warning"]
                       }`}
                     >
                       {p.pattern.replace("_", " ")}
                     </span>
                     <span
-                      className={`text-[10px] font-medium uppercase mr-1.5 ${
+                      className={`text-[11px] font-medium uppercase mr-1.5 ${
                         SEVERITY_COLORS[p.severity ?? "warning"]
                       }`}
                     >
@@ -338,7 +338,7 @@ export function BriefingBar() {
               <ul className="space-y-0.5">
                 {nonSecurityPatterns.map((p, i) => (
                   <li key={`${p.file}:${p.line}:${i}`} className="text-xs">
-                    <span className={`inline-block px-1 py-0.5 rounded text-[10px] font-medium uppercase mr-1.5 ${BRIEFING_BADGE_STYLES.patterns}`}>
+                    <span className={`inline-block px-1 py-0.5 rounded text-[11px] font-medium uppercase mr-1.5 ${BRIEFING_BADGE_STYLES.patterns}`}>
                       {p.pattern}
                     </span>
                     <span className="font-mono text-text-secondary">

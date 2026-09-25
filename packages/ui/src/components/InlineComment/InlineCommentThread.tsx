@@ -64,11 +64,11 @@ export function InlineCommentThread({
           >
             <div className="flex items-center gap-2 mb-1">
               <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${COMMENT_TYPE_STYLES[comment.type]}`}
+                className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${COMMENT_TYPE_STYLES[comment.type]}`}
               >
                 {TYPE_LABELS[comment.type]}
               </span>
-              <span className="text-text-secondary text-[10px] font-mono">
+              <span className="text-text-secondary text-[11px] font-mono">
                 {location.file}:{location.line}
               </span>
               <div className="flex-1" />

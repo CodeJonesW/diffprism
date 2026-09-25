@@ -680,7 +680,7 @@ function FileHeader({
         {path}
       </span>
       {stage && (
-        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${STAGE_BADGE_STYLES[stage]}`}>
+        <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${STAGE_BADGE_STYLES[stage]}`}>
           {stage === "staged" ? "Staged" : "Unstaged"}
         </span>
       )}

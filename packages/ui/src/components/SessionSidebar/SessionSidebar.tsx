@@ -52,7 +52,7 @@ function statusBadge(session: SessionSummary) {
   const label = STATUS_LABELS[key] ?? STATUS_LABELS.submitted;
 
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-medium rounded ${style}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[11px] font-medium rounded ${style}`}>
       {label}
     </span>
   );
@@ -67,7 +67,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
           <h2 className="text-text-primary text-xs font-semibold uppercase tracking-wider">
             Sessions
           </h2>
-          <span className="text-text-secondary text-[10px]">
+          <span className="text-text-secondary text-[11px]">
             {sessions.length} session{sessions.length !== 1 ? "s" : ""}
           </span>
         </div>
@@ -177,13 +177,13 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
 
                   {/* Row 2: Reasoning subtitle */}
                   {session.reasoning && (
-                    <p className="text-text-secondary text-[11px] leading-tight mb-1 line-clamp-2">
+                    <p className="text-text-secondary text-xs leading-tight mb-1 line-clamp-2">
                       {session.reasoning}
                     </p>
                   )}
 
                   {/* Row 3: Branch + timestamp metadata */}
-                  <div className="flex items-center gap-2 text-[10px] text-text-secondary">
+                  <div className="flex items-center gap-2 text-[11px] text-text-secondary">
                     {session.branch && (
                       <span className="flex items-center gap-0.5 truncate">
                         <GitBranch className="w-2.5 h-2.5" />
@@ -197,7 +197,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
                   </div>
 
                   {/* Row 4: File stats */}
-                  <div className="flex items-center gap-2 mt-0.5 text-[10px]">
+                  <div className="flex items-center gap-2 mt-0.5 text-[11px]">
                     <span className="text-text-secondary">
                       {session.fileCount} file{session.fileCount !== 1 ? "s" : ""}
                     </span>
