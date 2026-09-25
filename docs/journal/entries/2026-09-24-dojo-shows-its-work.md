@@ -2,6 +2,7 @@
 title: The dojo shows its work while it runs
 date: 2026-09-24
 kind: feature
+pr: 237
 ---
 
 ## What changed
