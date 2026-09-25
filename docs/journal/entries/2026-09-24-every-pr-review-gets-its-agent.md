@@ -2,6 +2,7 @@
 title: Every pull request review gets its agent, however you open it
 date: 2026-09-24
 kind: feature
+pr: 227
 ---
 
 ## What changed
