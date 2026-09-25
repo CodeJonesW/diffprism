@@ -2541,4 +2541,33 @@ describe("reusing an open dashboard tab (#188)", () => {
     await review(`http://localhost:${handle.httpPort}`, "/idle");
     expect(open).toHaveBeenCalledTimes(1);
   });
+
+  // #223: `diffprism review <PR>` started a review nobody could see.
+  describe("for a pull request", () => {
+    const openPr = (baseUrl: string) =>
+      fetch(`${baseUrl}/api/pr/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prUrl: "acme/widget#7" }),
+      });
+
+    it("opens a tab when nobody is watching", async () => {
+      handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 0 });
+      await openPr(`http://localhost:${handle.httpPort}`);
+      expect(open).toHaveBeenCalledTimes(1);
+    });
+
+    // The dashboard's own Review PR form is one of those clients.
+    it("opens no tab when a dashboard is already open", async () => {
+      handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 0 });
+      const { WebSocket } = await import("ws");
+      const ws = new WebSocket(`ws://localhost:${handle.wsPort}`);
+      await new Promise((resolve) => ws.once("open", resolve));
+
+      await openPr(`http://localhost:${handle.httpPort}`);
+
+      expect(open).not.toHaveBeenCalled();
+      ws.close();
+    });
+  });
 });
