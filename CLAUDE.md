@@ -58,6 +58,7 @@ pnpm cli setup                                  # Configure Claude Code integrat
 pnpm cli server                                 # Start global multi-session server
 pnpm cli hook install                           # Gate commits in this repo on a review
 pnpm cli feedback --bug --print                 # Print a prefilled bug-report issue URL
+pnpm cli doctor                                 # Does what DiffPrism installed match this build?
 pnpm cli setup -- --global                      # Global setup (no git repo needed)
 pnpm journal check                              # Validate build journal entries
 pnpm journal export --since 2026-09-01          # Journal entries as one markdown bundle for a post

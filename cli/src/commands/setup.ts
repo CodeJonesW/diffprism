@@ -33,10 +33,24 @@ interface WriteMode {
   dryRun?: boolean;
 }
 
+/** Something setup installs. */
+export type SetupArtifact = "gitignore" | "mcp-json" | "permissions" | "skill";
+
+export type SetupAction = "created" | "updated" | "skipped";
+
+/** One thing setup wrote, or would write, and where. */
+export interface SetupStep {
+  artifact: SetupArtifact;
+  action: SetupAction;
+  filePath: string;
+}
+
 export interface SetupOutcome {
   created: string[];
   updated: string[];
   skipped: string[];
+  /** Every step in the order it ran — `doctor` reads each artifact's state here. */
+  steps: SetupStep[];
 }
 
 export function findGitRoot(from: string): string | null {
@@ -135,16 +149,10 @@ export function withoutRetiredHooks(
   return next;
 }
 
-interface SetupResult {
-  created: string[];
-  updated: string[];
-  skipped: string[];
-}
-
 function setupMcpJson(
   gitRoot: string,
   { force, dryRun }: WriteMode,
-): { action: "created" | "updated" | "skipped"; filePath: string } {
+): Omit<SetupStep, "artifact"> {
   const filePath = path.join(gitRoot, ".mcp.json");
   const existing = readJsonFile(filePath);
 
@@ -169,7 +177,7 @@ function setupMcpJson(
 function setupClaudeSettings(
   baseDir: string,
   { force, dryRun }: WriteMode,
-): { action: "created" | "updated" | "skipped"; filePath: string } {
+): Omit<SetupStep, "artifact"> {
   const filePath = path.join(baseDir, ".claude", "settings.json");
   const read = readJsonFile(filePath);
   // Upgrading also drops hooks an older version installed for commands that
@@ -209,7 +217,7 @@ function setupSkill(
   gitRoot: string,
   global: boolean,
   { dryRun }: WriteMode,
-): { action: "created" | "updated" | "skipped"; filePath: string } {
+): Omit<SetupStep, "artifact"> {
   const skillDir = global
     ? path.join(os.homedir(), ".claude", "skills", "review")
     : path.join(gitRoot, ".claude", "skills", "review");
@@ -249,7 +257,7 @@ async function promptUser(question: string): Promise<boolean> {
 async function setupGitignore(
   gitRoot: string,
   { dryRun }: WriteMode,
-): Promise<{ action: "created" | "updated" | "skipped"; filePath: string }> {
+): Promise<Omit<SetupStep, "artifact">> {
   const filePath = path.join(gitRoot, ".gitignore");
 
   if (fs.existsSync(filePath)) {
@@ -353,7 +361,11 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   const quiet = (flags.quiet ?? false) || dryRun;
   const mode: WriteMode = { force, dryRun };
 
-  const result: SetupResult = { created: [], updated: [], skipped: [] };
+  const result: SetupOutcome = { created: [], updated: [], skipped: [], steps: [] };
+  const record = (artifact: SetupArtifact, step: Omit<SetupStep, "artifact">) => {
+    result[step.action].push(step.filePath);
+    result.steps.push({ artifact, ...step });
+  };
   const home = os.homedir();
 
   // Global-only mode: no git root required
@@ -363,12 +375,10 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
     }
 
     // Global skill file
-    const skill = setupSkill("", true, mode);
-    result[skill.action].push(skill.filePath);
+    record("skill", setupSkill("", true, mode));
 
     // Global permissions in ~/.claude/settings.json
-    const settings = setupClaudeSettings(home, mode);
-    result[settings.action].push(settings.filePath);
+    record("permissions", setupClaudeSettings(home, mode));
 
     if (!quiet) {
       printSummary(result, home);
@@ -392,7 +402,7 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
       "Tip: Use `diffprism setup --global` to configure DiffPrism globally without a git repo.",
     );
     process.exit(1);
-    return { created: [], updated: [], skipped: [] };
+    return { created: [], updated: [], skipped: [], steps: [] };
   }
 
   if (!quiet) {
@@ -400,20 +410,16 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   }
 
   // Step 1: .gitignore
-  const gitignore = await setupGitignore(gitRoot, mode);
-  result[gitignore.action].push(gitignore.filePath);
+  record("gitignore", await setupGitignore(gitRoot, mode));
 
   // Step 2: .mcp.json
-  const mcp = setupMcpJson(gitRoot, mode);
-  result[mcp.action].push(mcp.filePath);
+  record("mcp-json", setupMcpJson(gitRoot, mode));
 
   // Step 3: .claude/settings.json (permissions)
-  const settings = setupClaudeSettings(gitRoot, mode);
-  result[settings.action].push(settings.filePath);
+  record("permissions", setupClaudeSettings(gitRoot, mode));
 
   // Step 4: Skill file
-  const skill = setupSkill(gitRoot, false, mode);
-  result[skill.action].push(skill.filePath);
+  record("skill", setupSkill(gitRoot, false, mode));
 
   if (!quiet) {
     console.log("\n✓ DiffPrism configured for Claude Code.\n");
@@ -423,7 +429,7 @@ async function setupBatch(flags: SetupFlags): Promise<SetupOutcome> {
   return result;
 }
 
-function printSummary(result: SetupResult, baseDir: string): void {
+function printSummary(result: SetupOutcome, baseDir: string): void {
   if (result.created.length > 0) {
     console.log("Created:");
     for (const f of result.created) {

@@ -224,6 +224,8 @@ diffprism config set <key> <value>  # Change one (agent, claude.model, cursor.mo
 diffprism config unset <key>        # Put one back to its default
 diffprism feedback                  # Share feedback as a prefilled GitHub issue
 diffprism feedback --bug            # Report a bug, including the last error
+diffprism doctor                    # Check what's installed matches this version, and which build the server runs
+diffprism doctor --fix              # Update whatever is out of date, as setup would
 diffprism teardown                  # Remove configuration
 diffprism serve                     # Run the MCP server over stdio (your MCP client launches this)
 ```

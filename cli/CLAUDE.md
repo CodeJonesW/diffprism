@@ -35,6 +35,12 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - Idempotent: skips files that are already correctly configured
 - Upgrades what older versions wrote: prunes permissions for retired tools, and removes hooks that call DiffPrism commands which no longer exist (`notify-stop`, #215)
 
+### `diffprism doctor`
+- Reports every artifact DiffPrism installs and whether it matches this build: global and project `/review` skill and permissions, `.gitignore`, `.mcp.json` (and what it launches), the pre-commit hook's diffprism block, and the running server (port, PID, uptime, version)
+- Read-only. It asks the installers — `setup({ dryRun })`, `hookStatus()`, `decideOnRunningServer()` — rather than keeping its own idea of "current" (#214)
+- `--fix` — apply what setup would, refresh a stale hook block, and replace an older server nobody is reviewing in. A server kept up by open reviews is reported, not stopped
+- Exits 1 while anything is out of date
+
 ### `diffprism teardown`
 - Removes DiffPrism configuration from the current project in one command
 - Reverses all changes made by `diffprism setup`: `.mcp.json`, permissions, skill, `.gitignore`, `.diffprism/`
@@ -60,6 +66,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `src/commands/config.ts` — `diffprism config`: the saved agent and models
 - `src/commands/serve.ts` — MCP serve command (dynamic import)
 - `src/commands/setup.ts` — Setup command: git root detection, file merging, skill installation, global setup, `isGlobalSetupDone()`
+- `src/commands/doctor.ts` — Doctor command: reports the install against this build, `--fix` applies setup
 - `src/commands/teardown.ts` — Teardown command: reverses setup by removing DiffPrism config from all locations
 - `src/commands/server.ts` — Global server start/status/stop
 - `src/templates/skill.ts` — Embedded SKILL.md content for the `/review` Claude Code skill
