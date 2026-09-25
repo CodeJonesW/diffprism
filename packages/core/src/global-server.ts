@@ -34,6 +34,8 @@ import type {
   DiffSide,
   PrReviewSubmission,
 } from "./types.js";
+import { dojoThreadBody } from "./dojo.js";
+import type { DojoRunner, DojoState } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
 import { builtAt } from "./build-info.js";
@@ -104,6 +106,8 @@ interface Session {
   lastDiffSet?: DiffSet;
   hasNewChanges: boolean;
   annotations: Annotation[];
+  /** The review dojo on this PR review, once one has been started (#231). */
+  dojo?: DojoState;
   userFocus?: UserFocus;
   /**
    * Set when the user closes the session in the UI. A closed session is kept
@@ -358,6 +362,9 @@ function attachViewer(ws: WebSocket, session: Session): void {
   for (const annotation of session.annotations) {
     ws.send(JSON.stringify({ type: "annotation:added", payload: annotation } satisfies ServerMessage));
   }
+  if (session.dojo) {
+    ws.send(JSON.stringify({ type: "dojo:update", payload: session.dojo } satisfies ServerMessage));
+  }
 
   // An unviewed watcher may have backed off to minutes between polls, so the
   // diff just sent could be stale. Poll now; a change reaches this viewer as
@@ -387,6 +394,65 @@ const DASHBOARD_RECONNECT_GRACE_MS = 3000;
 
 // Module-level UI URL for /api/status
 let serverUiUrl: string | null = null;
+
+/** Runs review dojos; set from GlobalServerOptions.dojo. */
+let dojoRunner: DojoRunner | null = null;
+
+/** Why a dojo can't start on this session, or null when it can. */
+function dojoRefusal(session: Session, agents: ReviewAgentChoice[]): string | null {
+  if (!session.payload.metadata.githubPr) return "A review dojo runs on a pull request review.";
+  if (session.dojo?.status === "running") return "A dojo is already running on this review.";
+  if (agents.length === 0) return "Choose at least one agent.";
+  if (new Set(agents.map((a) => a.name)).size !== agents.length) return "Each agent can take part once.";
+  return null;
+}
+
+function setDojo(session: Session, dojo: DojoState): void {
+  session.dojo = dojo;
+  touch(session);
+  sendToSessionClients(session.id, { type: "dojo:update", payload: dojo });
+}
+
+/**
+ * Run a dojo on a PR review (#231) and, when it's done, post each combined
+ * finding as a thread on its line, so the reviewer can answer it there.
+ */
+function startDojo(session: Session, runner: DojoRunner, server: GlobalServerInfo, agents: ReviewAgentChoice[]): DojoState {
+  const pr = session.payload.metadata.githubPr!;
+  const started: DojoState = { status: "running", agents: [], findings: [], startedAt: Date.now() };
+  setDojo(session, started);
+
+  runner
+    .run({ sessionId: session.id, prUrl: pr.url, localRepoPath: session.repoRoot, server, agents })
+    .then(
+      (result) => {
+        // Closed or replaced while the agents worked: nobody is left to show it to.
+        if (sessions.get(session.id) !== session || session.dojo !== started) return;
+        const labels = Object.fromEntries(result.agents.map((a) => [a.agent.name, a.label]));
+        const findings = result.findings.map((finding) => {
+          const annotation = addAnnotation(session, {
+            file: finding.file,
+            line: finding.line,
+            side: finding.side,
+            body: dojoThreadBody(finding, labels),
+            type: "finding",
+            category: "other",
+            source: { agent: "Review dojo", tool: "dojo" },
+            author: "agent",
+          });
+          return { ...finding, annotationId: annotation.id };
+        });
+        setDojo(session, { ...started, status: "done", agents: result.agents, findings, finishedAt: Date.now() });
+      },
+      (err: unknown) => {
+        recordError("dojo", err);
+        if (sessions.get(session.id) !== session || session.dojo !== started) return;
+        const error = err instanceof Error ? err.message : String(err);
+        setDojo(session, { ...started, status: "failed", error, finishedAt: Date.now() });
+      },
+    );
+  return started;
+}
 
 /** Starts an agent for a PR review; set from GlobalServerOptions.prAgent. */
 let prAgentStarter: PrAgentStarter | null = null;
@@ -424,6 +490,44 @@ function ensurePrAgent(
   };
   starting.then((handle) => handle.done.then(forget, forget), forget);
   return starting;
+}
+
+/** Open a thread on a session and tell whoever needs to know. */
+function addAnnotation(
+  session: Session,
+  fields: Pick<Annotation, "file" | "line" | "side" | "body" | "type" | "source" | "author"> &
+    Partial<Pick<Annotation, "confidence" | "category">>,
+): Annotation {
+  const annotation: Annotation = {
+    id: randomUUID(),
+    sessionId: session.id,
+    ...fields,
+    confidence: fields.confidence ?? 1,
+    category: fields.category ?? "other",
+    createdAt: Date.now(),
+    replies: [],
+  };
+
+  session.annotations.push(annotation);
+  touch(session);
+
+  // Broadcast to UI clients viewing this session
+  sendToSessionClients(session.id, {
+    type: "annotation:added",
+    payload: annotation,
+  });
+
+  if (annotation.type === "warning") {
+    // Someone already looking at the session has seen it.
+    if (hasViewersForSession(session.id)) {
+      session.attentionClearedAt = annotation.createdAt;
+    }
+    // Everyone else learns through the sidebar. annotation:added only
+    // reaches viewers of this session, so relying on it meant a warning on
+    // a session you were NOT looking at could never raise attention.
+    broadcastSessionUpdate(session);
+  }
+  return annotation;
 }
 
 function toSummary(session: Session): SessionSummary {
@@ -1067,6 +1171,53 @@ async function handleApiRequest(
     return true;
   }
 
+  // GET /api/dojo/agents — the agents a review dojo can seat here (#231)
+  if (method === "GET" && url === "/api/dojo/agents") {
+    if (!dojoRunner) {
+      jsonResponse(res, 404, { error: "This server can't run a review dojo." });
+      return true;
+    }
+    try {
+      jsonResponse(res, 200, { agents: await dojoRunner.available() });
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  // POST /api/reviews/:id/dojo — start a review dojo with these agents (#231).
+  // Each agent's model comes from the saved settings.
+  const dojoParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo");
+  if (dojoParams) {
+    const session = sessions.get(dojoParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    if (!dojoRunner || !runningServer) {
+      jsonResponse(res, 404, { error: "This server can't run a review dojo." });
+      return true;
+    }
+    try {
+      const { agents: names } = JSON.parse(await readBody(req)) as { agents?: unknown };
+      if (!Array.isArray(names) || !names.every(isReviewAgent)) {
+        jsonResponse(res, 400, { error: `agents must be a list of ${REVIEW_AGENTS.join(", ")}.` });
+        return true;
+      }
+      const settings = readAgentSettings();
+      const agents = (names as ReviewAgentName[]).map((name) => chooseReviewAgent(settings, { name }));
+      const refusal = dojoRefusal(session, agents);
+      if (refusal) {
+        jsonResponse(res, 409, { error: refusal });
+        return true;
+      }
+      jsonResponse(res, 202, { dojo: startDojo(session, dojoRunner, runningServer, agents) });
+    } catch (err) {
+      jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   // GET /api/reviews — list all sessions
   if (method === "GET" && url === "/api/reviews") {
     const summaries = listedSummaries();
@@ -1247,9 +1398,7 @@ async function handleApiRequest(
         return true;
       }
 
-      const annotation: Annotation = {
-        id: randomUUID(),
-        sessionId: session.id,
+      const annotation = addAnnotation(session, {
         file,
         line,
         // Agents annotate lines of the changed file; only the dashboard can
@@ -1257,33 +1406,11 @@ async function handleApiRequest(
         side: side ?? "new",
         body: annotationBody,
         type,
-        confidence: confidence ?? 1,
-        category: category ?? "other",
+        confidence,
+        category,
         source,
-        createdAt: Date.now(),
         author: author ?? "agent",
-        replies: [],
-      };
-
-      session.annotations.push(annotation);
-      touch(session);
-
-      // Broadcast to UI clients viewing this session
-      sendToSessionClients(session.id, {
-        type: "annotation:added",
-        payload: annotation,
       });
-
-      if (annotation.type === "warning") {
-        // Someone already looking at the session has seen it.
-        if (hasViewersForSession(session.id)) {
-          session.attentionClearedAt = annotation.createdAt;
-        }
-        // Everyone else learns through the sidebar. annotation:added only
-        // reaches viewers of this session, so relying on it meant a warning on
-        // a session you were NOT looking at could never raise attention.
-        broadcastSessionUpdate(session);
-      }
 
       jsonResponse(res, 200, { annotationId: annotation.id });
     } catch {
@@ -1674,8 +1801,10 @@ export async function startGlobalServer(
     cleanupInterval = CLEANUP_INTERVAL_MS,
     openBrowser = true,
     prAgent,
+    dojo,
   } = options;
   prAgentStarter = prAgent ?? null;
+  dojoRunner = dojo ?? null;
 
   watchSchedule = {
     viewedMs: pollInterval,
@@ -1947,6 +2076,7 @@ export async function startGlobalServer(
     pendingOpens.clear();
     reopenBrowserIfNeeded = null;
     prAgentStarter = null;
+    dojoRunner = null;
     runningServer = null;
     prAgents.clear();
     serverUiUrl = null;

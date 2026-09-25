@@ -75,7 +75,7 @@ All reviews flow through the global server (auto-started as a background daemon 
 6. UI shows session list, user selects a session, server sends `review:init`
 
 **WebSocket protocol:**
-- Server → Client: `review:init`, `diff:update`, `diff:error`, `context:update`, `session:list`, `session:added`, `session:updated`, `session:removed`, `annotation:added`, `annotation:dismissed`, `annotation:updated`
+- Server → Client: `review:init`, `diff:update`, `diff:error`, `context:update`, `session:list`, `session:added`, `session:updated`, `session:removed`, `annotation:added`, `annotation:dismissed`, `annotation:updated`, `dojo:update`
 - Client → Server: `diff:change_ref`, `session:select`, `session:close` (a verdict is sent over HTTP, `POST /api/reviews/:id/result`, which answers)
 
 ## Conventions

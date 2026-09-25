@@ -80,6 +80,16 @@ Each agent keeps its own model, so switching agents and back doesn't lose either
 
 Reviews opened by the [commit gate](#commit-gate) don't start an agent: the agent that made the commit is the one that answers.
 
+### Review dojo
+
+Have several agents review a PR and argue it out. Open the **Review dojo** panel on the right of a PR review, tick the agents you want (the ones installed on your machine — Claude Code and Cursor today), and start it:
+
+1. Each agent reviews the PR on its own, read-only, and lists what it would raise.
+2. Each one then votes on the others' findings: agree or disagree, how much it matters, and why.
+3. You get one list, grouped into **agreed**, **disputed**, **not every agent voted** and **one reviewer**, with every agent's vote under each finding. Each finding is also a thread on its line, so you can reply there.
+
+Who agrees with what is counted from the votes, not summarised by a model. An agent that can't start, review or vote drops out with the reason shown, and the rest carry on. Each agent uses the model chosen for it under [Choosing the agent](#choosing-the-agent).
+
 Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
 
 ## MCP Tools

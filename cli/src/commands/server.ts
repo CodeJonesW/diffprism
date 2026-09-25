@@ -5,6 +5,7 @@ import os from "node:os";
 import { startGlobalServer, readServerFile, isServerAlive, getBuildInfo } from "@diffprism/core";
 import { setup, isGlobalSetupDone } from "./setup.js";
 import { prAgentStarter } from "./pr-agent.js";
+import { dojoRunner } from "./dojo.js";
 
 interface ServerFlags {
   port?: string;
@@ -59,6 +60,8 @@ export async function server(flags: ServerFlags): Promise<void> {
       // Every PR review gets an agent answering its comments, whichever way
       // it was opened (#224).
       prAgent: prAgentStarter(),
+      // Several agents review a PR together and vote on each other's findings (#231).
+      dojo: dojoRunner(),
     });
 
     // Graceful shutdown on SIGINT/SIGTERM

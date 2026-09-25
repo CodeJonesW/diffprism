@@ -1,4 +1,5 @@
 import type { ReviewAgentChoice } from "./agent-settings.js";
+import type { DojoRunner, DojoState } from "./dojo.js";
 // ─── Diff Types ───
 
 export interface Change {
@@ -280,7 +281,8 @@ export type ServerMessage =
   | { type: "session:removed"; payload: { sessionId: string } }
   | { type: "annotation:added"; payload: Annotation }
   | { type: "annotation:dismissed"; payload: { annotationId: string } }
-  | { type: "annotation:updated"; payload: Annotation };
+  | { type: "annotation:updated"; payload: Annotation }
+  | { type: "dojo:update"; payload: DojoState };
 
 export type ClientMessage =
   | { type: "diff:change_ref"; payload: { diffRef: string } }
@@ -437,6 +439,11 @@ export interface GlobalServerOptions {
    * Claude Code. Without one, PR reviews get no agent.
    */
   prAgent?: PrAgentStarter;
+  /**
+   * Runs review dojos: several agents review a PR and vote on each other's
+   * findings (#231). The CLI supplies it. Without one, a PR review has no dojo.
+   */
+  dojo?: DojoRunner;
 }
 
 /** What an agent needs to start answering a PR review. */

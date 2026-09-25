@@ -1,5 +1,5 @@
 import { Splitter } from "@mantine/core";
-import { PanelBottomOpen } from "lucide-react";
+import { PanelBottomOpen, Swords } from "lucide-react";
 import { BriefingBar } from "./BriefingBar";
 import { ReasoningPanel } from "./ReasoningPanel";
 import { FileBrowser } from "./FileBrowser";
@@ -8,6 +8,7 @@ import { ActionBar, PrReviewBar } from "./ActionBar";
 import { HotkeyGuide } from "./HotkeyGuide";
 import { WorkflowTips } from "./WorkflowTips";
 import { AnnotationPanel, annotationPanelTitle } from "./AnnotationPanel";
+import { DojoPanel } from "./DojoPanel";
 import { useSavedPane } from "../hooks/useSavedPane";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
@@ -22,7 +23,7 @@ interface ReviewViewProps {
 }
 
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
-  const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata } = useReviewStore();
+  const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata, reviewId, dojo } = useReviewStore();
   const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
   const isPrReview = !!metadata?.githubPr;
   const sidebar = useSavedPane("review-sidebar", 0);
@@ -32,6 +33,8 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
   const hasThreads = annotations.length > 0;
   const threads = useSavedPane("review-threads", 1, hasThreads);
   const threadsSize = parseFloat(String(threads.defaultSize));
+  // The dojo reviews pull requests, so only a PR review has its pane (#231).
+  const dojoPane = useSavedPane("review-dojo", 1, isPrReview);
 
   // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
   const navigateToFile = (filePath: string) => {
@@ -107,9 +110,45 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
           )}
         </Splitter.Pane>
 
-        {/* Main area — Diff Viewer */}
+        {/* Main area — the diff, and on a PR review the dojo beside it */}
         <Splitter.Pane defaultSize={1} className="flex overflow-hidden">
-          <DiffViewer />
+          <Splitter
+            className="flex-1 min-w-0"
+            withHandle={false}
+            lineSize={1}
+            classNames={{ handle: isPrReview ? "bg-border" : "hidden" }}
+            {...dojoPane.splitterProps}
+          >
+            <Splitter.Pane defaultSize={1} className="flex overflow-hidden">
+              <DiffViewer />
+            </Splitter.Pane>
+            <Splitter.Pane defaultSize={dojoPane.defaultSize} min="280px" max="640px" collapsible className="overflow-hidden">
+              {isPrReview && reviewId && (
+                <DojoPanel
+                  sessionId={reviewId}
+                  dojo={dojo}
+                  onNavigate={(finding) => {
+                    navigateToFile(finding.file);
+                    if (finding.annotationId) focusAnnotation(finding.annotationId);
+                  }}
+                  onHide={() => dojoPane.setCollapsed(true)}
+                />
+              )}
+            </Splitter.Pane>
+          </Splitter>
+          {/* Hidden, the dojo leaves a rail to bring it back. */}
+          {isPrReview && dojoPane.collapsed && (
+            <div className="w-9 flex-shrink-0 flex flex-col items-center py-3 bg-surface border-l border-border">
+              <button
+                onClick={() => dojoPane.setCollapsed(false)}
+                className="p-1 rounded hover:bg-border/50 text-text-secondary hover:text-text-primary transition-colors"
+                title="Review dojo"
+                aria-label="Review dojo"
+              >
+                <Swords className={`w-3.5 h-3.5 ${dojo?.status === "running" ? "text-accent animate-pulse" : ""}`} />
+              </button>
+            </div>
+          )}
         </Splitter.Pane>
       </Splitter>
 

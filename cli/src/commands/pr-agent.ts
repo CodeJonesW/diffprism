@@ -97,6 +97,12 @@ export interface AgentInvocation {
   stdin?: string;
 }
 
+export interface AgentTurn {
+  first: boolean;
+  prompt: string;
+  instructions: string;
+}
+
 /**
  * One kind of agent that can answer a review (#226). Each says how to start a
  * conversation and how to run one turn of it; the listener does the rest the
@@ -112,7 +118,11 @@ export interface AgentKind {
   installHint: string;
   /** Start a conversation. Asynchronous, so a slow start never holds up the server. */
   begin(review: AgentReview): Promise<AgentConversation>;
-  turn(review: AgentReview, conversation: AgentConversation, turn: { first: boolean; prompt: string }): AgentInvocation;
+  /**
+   * One turn. `instructions` say what the agent is for — answering threads,
+   * reviewing in a dojo — and lead its first turn wherever the agent keeps them.
+   */
+  turn(review: AgentReview, conversation: AgentConversation, turn: AgentTurn): AgentInvocation;
 }
 
 export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "prUrl">, label: string): string {
@@ -163,14 +173,14 @@ export const CLAUDE: AgentKind = {
     return { id, cwd, resumeCommand: `cd ${shellPath(cwd)} && claude --resume ${id}` };
   },
 
-  turn(review, conversation, { first, prompt }) {
+  turn(review, conversation, { first, prompt, instructions }) {
     return {
       args: [
         "-p",
         ...(first ? ["--session-id", conversation.id] : ["--resume", conversation.id]),
         ...(review.model ? ["--model", review.model] : []),
         "--append-system-prompt",
-        agentSystemPrompt(review, CLAUDE.label),
+        instructions,
         "--mcp-config",
         JSON.stringify({ mcpServers: { diffprism: review.mcp } }),
         "--strict-mcp-config",
@@ -235,7 +245,7 @@ export const CURSOR: AgentKind = {
   // mode: ask mode counts posting a reply as a write and refuses it, so an
   // agent in it could answer only into a log nobody reads. There is no
   // separate system prompt, so the instructions lead the first turn.
-  turn(review, conversation, { first, prompt }) {
+  turn(review, conversation, { first, prompt, instructions }) {
     return {
       args: [
         "-p",
@@ -249,7 +259,7 @@ export const CURSOR: AgentKind = {
         ...(review.model ? ["--model", review.model] : []),
         "--output-format",
         "text",
-        first ? `${agentSystemPrompt(review, CURSOR.label)}\n\n${prompt}` : prompt,
+        first ? `${instructions}\n\n${prompt}` : prompt,
       ],
     };
   },
@@ -387,7 +397,11 @@ export async function listenWithAgent(options: ListenOptions): Promise<ListenOut
     }
 
     log(`Answering ${threads.length === 1 ? "1 comment" : `${threads.length} comments`}...`);
-    const invocation = kind.turn(review, conversation, { first: turns === 0, prompt: agentPrompt(threads) });
+    const invocation = kind.turn(review, conversation, {
+      first: turns === 0,
+      prompt: agentPrompt(threads),
+      instructions: agentSystemPrompt(review, kind.label),
+    });
     const { code, output } = await run(kind.command, invocation, conversation.cwd);
     if (code !== 0) {
       throw new Error(`${kind.label} exited with status ${code}:\n${output.trim()}`);

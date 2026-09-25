@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { SplitterPaneSize } from "@mantine/hooks";
 import type {
   DiffSet,
+  DojoState,
   FileReviewStatus,
   ReviewBriefing,
   ReviewComment,
@@ -25,7 +26,7 @@ const FILE_STATUS_CYCLE: FileReviewStatus[] = [
 export type Theme = "dark" | "light";
 
 /** The resizable panes. Each new one adds its id here and its default below. */
-export type PaneId = "review-sidebar" | "review-threads" | "dashboard-sessions";
+export type PaneId = "review-sidebar" | "review-threads" | "review-dojo" | "dashboard-sessions";
 
 /** A pane's size (in the unit it was declared in) and whether it's collapsed. */
 export interface PaneLayout {
@@ -37,6 +38,8 @@ const DEFAULT_PANES: Record<PaneId, PaneLayout> = {
   "review-sidebar": { size: "280px", collapsed: false },
   // Threads share the review sidebar with the file list, which takes the rest.
   "review-threads": { size: 40, collapsed: false },
+  // Out of the way until the reviewer asks for a dojo.
+  "review-dojo": { size: "360px", collapsed: true },
   "dashboard-sessions": { size: "260px", collapsed: false },
 };
 
@@ -97,6 +100,8 @@ export interface ReviewState {
   activeCommentKey: string | null;
   /** A thread to bring into view once its file has rendered — set by the annotation panel. */
   focusedAnnotationId: string | null;
+  /** The review dojo on this review, as the server last reported it (#231). */
+  dojo: DojoState | null;
   draftComment: DraftComment | null;
   theme: Theme;
   verdict: VerdictStatus;
@@ -140,6 +145,7 @@ export interface ReviewState {
   deleteComment: (index: number) => void;
   setActiveCommentKey: (key: string | null) => void;
   focusAnnotation: (annotationId: string | null) => void;
+  setDojo: (dojo: DojoState) => void;
   setDraftComment: (draft: DraftComment | null) => void;
   saveDraftComment: () => void;
   toggleTheme: () => void;
@@ -179,6 +185,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   comments: [],
   activeCommentKey: null,
   focusedAnnotationId: null,
+  dojo: null,
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   panes: loadPanes(),
@@ -219,6 +226,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses,
       comments: [],
       annotations: [],
+      dojo: null,
       activeCommentKey: null,
       draftComment: null,
       focusedHunkIndex: null,
@@ -277,6 +285,9 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
     }));
   },
 
+  setDojo: (dojo: DojoState) => {
+    set({ dojo });
+  },
   focusAnnotation: (annotationId: string | null) => {
     set({ focusedAnnotationId: annotationId });
   },
@@ -533,6 +544,7 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       fileStatuses: {},
       comments: [],
       annotations: [],
+      dojo: null,
       activeCommentKey: null,
       draftComment: null,
       focusedHunkIndex: null,
