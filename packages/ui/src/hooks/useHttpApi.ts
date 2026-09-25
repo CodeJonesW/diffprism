@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { DiffSide, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
+import type { AgentSettings, DiffSide, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -155,5 +155,52 @@ export function useHttpApi() {
     [httpPort],
   );
 
-  return { isAvailable, fetchRefs, compareAgainst, resetCompare, submitResult, startThread, replyToThread, submitPrReview };
+  /** The saved agent settings, or why they can't be read (#226). */
+  const getAgentSettings = useCallback(
+    async (): Promise<{ ok: true; settings: AgentSettings } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/settings/agent`);
+        const data = (await response.json().catch(() => ({}))) as { settings?: AgentSettings; error?: string };
+        if (response.ok && data.settings) return { ok: true, settings: data.settings };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  /** Save the agent settings. Resolves with what was saved, or the server's reason for refusing. */
+  const saveAgentSettings = useCallback(
+    async (settings: AgentSettings): Promise<{ ok: true; settings: AgentSettings } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/settings/agent`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settings),
+        });
+        const data = (await response.json().catch(() => ({}))) as { settings?: AgentSettings; error?: string };
+        if (response.ok && data.settings) return { ok: true, settings: data.settings };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  return {
+    isAvailable,
+    fetchRefs,
+    compareAgainst,
+    resetCompare,
+    submitResult,
+    startThread,
+    replyToThread,
+    submitPrReview,
+    getAgentSettings,
+    saveAgentSettings,
+  };
 }

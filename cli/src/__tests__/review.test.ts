@@ -215,7 +215,7 @@ describe("review command", () => {
         expect.objectContaining({ method: "POST" }),
       );
       // It says where it ran, so the server reads the PR from this clone (#197).
-      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ prUrl: "acme/app#42", cwd: process.cwd(), agent: true });
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toEqual({ prUrl: "acme/app#42", cwd: process.cwd(), agent: {} });
 
       vi.unstubAllGlobals();
     });
@@ -245,43 +245,55 @@ describe("review command", () => {
 
     // The server runs the agent (#224); the command asks for one and says what it got.
     describe("the agent that answers comments", () => {
-      function openPr(agent: { conversationId: string; cwd: string } | null) {
+      type Agent = { name: string; model: string | null; label: string; conversationId: string; resumeCommand: string };
+      function openPr(agent: Agent | null, agentError?: string) {
         mockIsPrRef.mockReturnValue(true);
         mockParsePrRef.mockReturnValue({ owner: "acme", repo: "app", number: 42 });
         const mockFetch = vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ sessionId: "session-pr-42", fileCount: 1, localRepoPath: "/tmp/app", pr: { title: "Fix bug" }, agent }),
+          json: () =>
+            Promise.resolve({ sessionId: "session-pr-42", fileCount: 1, localRepoPath: "/tmp/app", pr: { title: "Fix bug" }, agent, agentError }),
         });
         vi.stubGlobal("fetch", mockFetch);
         return mockFetch;
       }
+      const sent = (mockFetch: ReturnType<typeof openPr>) => JSON.parse(mockFetch.mock.calls[0][1].body);
       const printed = () => vi.mocked(console.log).mock.calls.flat().join("\n");
+      const claude: Agent = {
+        name: "claude",
+        model: null,
+        label: "Claude Code",
+        conversationId: "conv-9",
+        resumeCommand: "cd /tmp/app && claude --resume conv-9",
+      };
 
       afterEach(() => {
         vi.unstubAllGlobals();
       });
 
-      it("asks the server for one, and says how to resume the conversation from its folder", async () => {
-        const mockFetch = openPr({ conversationId: "conv-9", cwd: "/tmp/app" });
+      it("asks for the saved default, and says who is answering and how to resume", async () => {
+        const mockFetch = openPr(claude);
 
         await review("acme/app#42", {});
 
-        expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({ agent: true });
+        expect(sent(mockFetch).agent).toEqual({});
         expect(printed()).toContain("Claude Code is answering");
         expect(printed()).toContain("cd /tmp/app && claude --resume conv-9");
       });
 
-      it("leaves out the cd when the agent runs where the command ran", async () => {
-        openPr({ conversationId: "conv-9", cwd: process.cwd() });
+      // #226: a different agent or model for one review.
+      it("asks for the agent and model given", async () => {
+        const mockFetch = openPr({ ...claude, name: "cursor", model: "gpt-5", label: "Cursor" });
 
-        await review("acme/app#42", {});
+        await review("acme/app#42", { agent: "cursor", model: "gpt-5" });
 
-        expect(printed()).toContain("continue the conversation in your terminal: claude --resume conv-9");
+        expect(sent(mockFetch).agent).toEqual({ name: "cursor", model: "gpt-5" });
+        expect(printed()).toContain("Cursor (gpt-5) is answering");
       });
 
       // It opens the review and hands the terminal back.
       it("returns once the review is open", async () => {
-        openPr({ conversationId: "conv-9", cwd: "/tmp/app" });
+        openPr(claude);
 
         await review("acme/app#42", {});
 
@@ -294,17 +306,26 @@ describe("review command", () => {
 
         await review("acme/app#42", { agent: false });
 
-        expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({ agent: false });
+        expect(sent(mockFetch).agent).toBe(false);
         expect(printed()).toContain("/review");
         expect(printed()).not.toContain("No agent started");
       });
 
-      it("when the server started none, says so and gives the prompt to paste", async () => {
+      it("when the server says why it started none, says so", async () => {
+        openPr(null, '~/.diffprism/config.json: agent.default is "copilot"');
+
+        await review("acme/app#42", {});
+
+        expect(printed()).toContain('No agent started to answer your comments: ~/.diffprism/config.json: agent.default is "copilot"');
+        expect(printed()).toContain("Answer my DiffPrism comments on session-pr-42");
+      });
+
+      it("when the server started none without saying why, points at its log", async () => {
         openPr(null);
 
         await review("acme/app#42", {});
 
-        expect(printed()).toContain("No agent started to answer your comments");
+        expect(printed()).toContain("~/.diffprism/server.log says why");
         expect(printed()).toContain("Answer my DiffPrism comments on session-pr-42");
       });
     });

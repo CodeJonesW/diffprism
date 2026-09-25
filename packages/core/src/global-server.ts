@@ -37,6 +37,15 @@ import type {
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
 import { builtAt } from "./build-info.js";
+import { recordError } from "./feedback.js";
+import {
+  REVIEW_AGENTS,
+  isReviewAgent,
+  readAgentSettings,
+  writeAgentSettings,
+  chooseReviewAgent,
+} from "./agent-settings.js";
+import type { AgentSettings, ReviewAgentChoice, ReviewAgentName } from "./agent-settings.js";
 import {
   resolveUiDist,
   resolveUiRoot,
@@ -383,8 +392,12 @@ let serverUiUrl: string | null = null;
 let prAgentStarter: PrAgentStarter | null = null;
 /** This server, as agents need it to reach the reviews they answer. */
 let runningServer: GlobalServerInfo | null = null;
-/** The agent answering each PR review, by session id. One per review. */
-const prAgents = new Map<string, PrAgentHandle>();
+/**
+ * The agent answering each PR review, by session id — one per review. Held
+ * while it is still starting, too, so a PR opened twice in quick succession
+ * doesn't start two.
+ */
+const prAgents = new Map<string, Promise<PrAgentHandle>>();
 
 /**
  * The agent answering this PR review, starting one if none is (#224). Every
@@ -392,21 +405,25 @@ const prAgents = new Map<string, PrAgentHandle>();
  * form gets an agent just as `diffprism review <PR>` does. Reopening the same
  * PR finds the agent already answering it rather than starting a second.
  */
-function ensurePrAgent(sessionId: string, prUrl: string, localRepoPath: string | null): PrAgentHandle | null {
-  const running = prAgents.get(sessionId);
-  if (running) return running;
-  if (!prAgentStarter || !runningServer) return null;
+function ensurePrAgent(
+  sessionId: string,
+  prUrl: string,
+  localRepoPath: string | null,
+  agent: ReviewAgentChoice,
+): Promise<PrAgentHandle | null> {
+  const existing = prAgents.get(sessionId);
+  if (existing) return existing;
+  // A server given no way to start agents (tests, or an embedding) has none.
+  if (!prAgentStarter || !runningServer) return Promise.resolve(null);
 
-  const started = prAgentStarter({ sessionId, prUrl, localRepoPath, server: runningServer });
-  if (!started) return null;
-
-  prAgents.set(sessionId, started);
-  // Once it stops, reopening the PR starts a fresh one.
+  const starting = prAgentStarter({ sessionId, prUrl, localRepoPath, server: runningServer, agent });
+  prAgents.set(sessionId, starting);
+  // Once it stops, or if it never started, reopening the PR starts a fresh one.
   const forget = (): void => {
-    if (prAgents.get(sessionId) === started) prAgents.delete(sessionId);
+    if (prAgents.get(sessionId) === starting) prAgents.delete(sessionId);
   };
-  started.done.then(forget, forget);
-  return started;
+  starting.then((handle) => handle.done.then(forget, forget), forget);
+  return starting;
 }
 
 function toSummary(session: Session): SessionSummary {
@@ -838,9 +855,18 @@ async function handleApiRequest(
         cwd?: string;
         title?: string;
         reasoning?: string;
-        /** False to open the review without starting an agent (`--no-agent`). */
-        agent?: boolean;
+        /**
+         * False to open the review without starting an agent (`--no-agent`);
+         * an agent and model for this review (`--agent`, `--model`, #226);
+         * true or absent for the saved default.
+         */
+        agent?: boolean | { name?: string; model?: string };
       };
+
+      if (typeof agent === "object" && agent !== null && agent.name !== undefined && !isReviewAgent(agent.name)) {
+        jsonResponse(res, 400, { error: `Unknown agent "${agent.name}"; it must be one of ${REVIEW_AGENTS.join(", ")}.` });
+        return true;
+      }
 
       if (!prUrl) {
         jsonResponse(res, 400, { error: "Missing prUrl" });
@@ -911,17 +937,41 @@ async function handleApiRequest(
       reopenBrowserIfNeeded?.();
 
       // Asked not to start one, this still reports an agent that is already
-      // answering the review — it's there either way.
-      const prAgent =
-        agent === false
-          ? prAgents.get(session.id) ?? null
-          : ensurePrAgent(session.id, prMetadata.url, localRepoPath);
+      // answering the review — it's there either way. Settings that can't be
+      // read don't stop the review opening; they stop the agent, and say why.
+      // One still starting, or already answering. If it failed to start, that
+      // was reported to whoever asked then; this asks again below.
+      let prAgent: PrAgentHandle | null = (await prAgents.get(session.id)?.catch(() => null)) ?? null;
+      let agentError: string | undefined;
+      if (agent !== false && !prAgent) {
+        try {
+          const asked = typeof agent === "object" && agent !== null ? agent : {};
+          const choice = chooseReviewAgent(readAgentSettings(), {
+            name: asked.name as ReviewAgentName | undefined,
+            model: asked.model,
+          });
+          prAgent = await ensurePrAgent(session.id, prMetadata.url, localRepoPath, choice);
+        } catch (err) {
+          agentError = err instanceof Error ? err.message : String(err);
+          recordError("pr agent", err);
+        }
+      }
 
       jsonResponse(res, reused ? 200 : 201, {
         sessionId: session.id,
         fileCount: normalized.diffSet.files.length,
         localRepoPath,
-        agent: prAgent ? { conversationId: prAgent.conversationId, cwd: prAgent.cwd } : null,
+        agent: prAgent
+          ? {
+              name: prAgent.agent.name,
+              model: prAgent.agent.model ?? null,
+              label: prAgent.label,
+              conversationId: prAgent.conversationId,
+              cwd: prAgent.cwd,
+              resumeCommand: prAgent.resumeCommand,
+            }
+          : null,
+        ...(agentError ? { agentError } : {}),
         pr: {
           title: prMetadata.title,
           author: prMetadata.author,
@@ -983,6 +1033,38 @@ async function handleApiRequest(
       }
       return true;
     }
+  }
+
+  // GET /api/settings/agent — which agent answers PR reviews, and with which model (#226)
+  if (method === "GET" && url === "/api/settings/agent") {
+    try {
+      jsonResponse(res, 200, { settings: readAgentSettings(), agents: REVIEW_AGENTS });
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  // PUT /api/settings/agent — save the default agent and models. Applies to
+  // the next agent started; ones already answering keep going as they are.
+  if (method === "PUT" && url === "/api/settings/agent") {
+    try {
+      const body = JSON.parse(await readBody(req)) as { agent?: unknown; models?: unknown };
+      if (!isReviewAgent(body.agent)) {
+        jsonResponse(res, 400, { error: `agent must be one of ${REVIEW_AGENTS.join(", ")}.` });
+        return true;
+      }
+      const models = (body.models ?? {}) as Record<string, unknown>;
+      if (typeof models !== "object" || Object.entries(models).some(([k, v]) => !isReviewAgent(k) || typeof v !== "string")) {
+        jsonResponse(res, 400, { error: `models maps each of ${REVIEW_AGENTS.join(", ")} to a model name.` });
+        return true;
+      }
+      const saved = writeAgentSettings({ agent: body.agent, models: models as AgentSettings["models"] });
+      jsonResponse(res, 200, { settings: saved });
+    } catch (err) {
+      jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
   }
 
   // GET /api/reviews — list all sessions

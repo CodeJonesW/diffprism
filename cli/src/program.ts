@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { review } from "./commands/review.js";
 import { serve } from "./commands/serve.js";
 import { setup } from "./commands/setup.js";
@@ -9,7 +9,8 @@ import { defaultAction } from "./commands/default.js";
 import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
 import { feedback } from "./commands/feedback.js";
 import { reply } from "./commands/reply.js";
-import { describeVersion, currentVersion } from "@diffprism/core";
+import { describeVersion, currentVersion, REVIEW_AGENTS } from "@diffprism/core";
+import { configGet, configSet, configUnset, CONFIG_KEYS } from "./commands/config.js";
 
 /** The full command tree, built without parsing argv. */
 export function createProgram(): Command {
@@ -37,13 +38,38 @@ export function createProgram(): Command {
     .option("--reasoning <text>", "Agent reasoning about the changes")
     .option("--dev", "Use Vite dev server with HMR instead of static files")
     .option("--post-to-github", "Automatically post review back to GitHub without prompting")
-    .option("--no-agent", "For a PR review, don't start Claude Code to answer your comments")
+    .addOption(
+      new Option("--agent <name>", "For a PR review, the agent that answers your comments (default: your saved choice)").choices([
+        ...REVIEW_AGENTS,
+      ]),
+    )
+    .option("--model <model>", "For a PR review, the model the agent uses")
+    .option("--no-agent", "For a PR review, don't start an agent to answer your comments")
     .action(review);
 
   // Hidden alias for backwards compatibility
   program
     .command("review-pr <pr>", { hidden: true })
     .action((pr: string, flags: Record<string, unknown>) => review(pr, flags));
+
+  const configCmd = program
+    .command("config")
+    .description("Show or change DiffPrism's settings: which agent answers PR reviews, and its model");
+
+  configCmd
+    .command("get [key]")
+    .description(`Show a setting, or all of them (${CONFIG_KEYS.join(", ")})`)
+    .action(configGet);
+
+  configCmd
+    .command("set <key> <value>")
+    .description(`Change a setting (${CONFIG_KEYS.join(", ")})`)
+    .action(configSet);
+
+  configCmd
+    .command("unset <key>")
+    .description("Put a setting back to its default")
+    .action(configUnset);
 
   const hookCmd = program
     .command("hook")

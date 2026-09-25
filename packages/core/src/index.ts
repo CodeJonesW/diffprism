@@ -66,6 +66,16 @@ export {
 } from "./feedback.js";
 export type { Environment, ErrorReport, FeedbackOptions } from "./feedback.js";
 export { awaitingAgent, lastAuthor, lastMessageAt, pickedUpByAgent } from "./threads.js";
+export {
+  REVIEW_AGENTS,
+  DEFAULT_AGENT_SETTINGS,
+  configFilePath,
+  isReviewAgent,
+  readAgentSettings,
+  writeAgentSettings,
+  chooseReviewAgent,
+} from "./agent-settings.js";
+export type { ReviewAgentName, ReviewAgentChoice, AgentSettings } from "./agent-settings.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,
