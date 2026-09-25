@@ -1,4 +1,4 @@
-# DiffPrism
+# DiffPrism™
 
 Review GitHub PRs with AI superpowers. Paste a PR URL, see the diff in your browser, and use Claude Code or Cursor to interrogate every line, file, and change. Your AI gets full codebase context from your local clone — not just the diff hunks.
 
@@ -293,3 +293,15 @@ cli/                — Commander CLI
 
 - [Claude Code Setup Guide](docs/usage/claude-setup.md) — detailed configuration and troubleshooting
 - [Dev Testing Guide](docs/usage/dev-testing.md) — running from source
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors sign the [CLA](CLA.md) before a pull request is merged.
+
+## License
+
+[Apache License 2.0](LICENSE). Copyright 2026 Will Jones.
+
+---
+
+DiffPrism™ and the DiffPrism logo are trademarks of Will Jones. See [TRADEMARKS.md](TRADEMARKS.md).

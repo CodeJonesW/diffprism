@@ -3,12 +3,22 @@
   "version": "1.10.2",
   "type": "module",
   "description": "Local-first code review tool for agent-generated code changes",
+  "author": {
+    "name": "Will Jones",
+    "url": "https://github.com/CodeJonesW"
+  },
+  "license": "Apache-2.0",
+  "homepage": "https://diffprism.com",
+  "bugs": {
+    "url": "https://github.com/CodeJonesW/diffprism/issues"
+  },
   "bin": {
     "diffprism": "dist/bin.js"
   },
   "files": [
     "dist/",
-    "ui-dist/"
+    "ui-dist/",
+    "NOTICE"
   ],
   "scripts": {
     "build": "pnpm -r run build && pnpm run bundle",
