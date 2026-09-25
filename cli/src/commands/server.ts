@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { startGlobalServer, readServerFile, isServerAlive, getBuildInfo } from "@diffprism/core";
 import { setup, isGlobalSetupDone } from "./setup.js";
+import { prAgentStarter } from "./pr-agent.js";
 
 interface ServerFlags {
   port?: string;
@@ -55,6 +56,9 @@ export async function server(flags: ServerFlags): Promise<void> {
       dev: flags.dev,
       silent: isDaemon,
       openBrowser: !isDaemon,
+      // Every PR review gets an agent answering its comments, whichever way
+      // it was opened (#224).
+      prAgent: prAgentStarter(),
     });
 
     // Graceful shutdown on SIGINT/SIGTERM

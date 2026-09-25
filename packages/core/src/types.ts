@@ -430,7 +430,36 @@ export interface GlobalServerOptions {
   /** ms between expiry sweeps; default 60000. */
   cleanupInterval?: number;
   openBrowser?: boolean; // default true — set false for daemon auto-start
+  /**
+   * Starts the agent that answers a PR review's comments, whichever way the
+   * review was opened (#224). The CLI supplies it; core knows nothing about
+   * Claude Code. Without one, PR reviews get no agent.
+   */
+  prAgent?: PrAgentStarter;
 }
+
+/** What an agent needs to start answering a PR review. */
+export interface PrAgentRequest {
+  sessionId: string;
+  prUrl: string;
+  /** The local clone the review reads from, or null when there isn't one. */
+  localRepoPath: string | null;
+  /** The server the review is on — the agent reads and replies through it. */
+  server: GlobalServerInfo;
+}
+
+/** An agent that has started answering a PR review. */
+export interface PrAgentHandle {
+  /** Its Claude Code conversation, which `claude --resume` continues. */
+  conversationId: string;
+  /** The folder it runs in — the one `claude --resume` has to be run from. */
+  cwd: string;
+  /** Settles when the agent stops, for whatever reason. Never rejects. */
+  done: Promise<void>;
+}
+
+/** Starts an agent for a PR review, or returns null when none can run here. */
+export type PrAgentStarter = (request: PrAgentRequest) => PrAgentHandle | null;
 
 export interface GlobalServerHandle {
   httpPort: number;

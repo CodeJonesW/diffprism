@@ -14,6 +14,8 @@ import type {
   GlobalServerOptions,
   GlobalServerHandle,
   GlobalServerInfo,
+  PrAgentHandle,
+  PrAgentStarter,
   SessionSummary,
   GlobalSessionStatus,
   SessionSource,
@@ -376,6 +378,36 @@ const DASHBOARD_RECONNECT_GRACE_MS = 3000;
 
 // Module-level UI URL for /api/status
 let serverUiUrl: string | null = null;
+
+/** Starts an agent for a PR review; set from GlobalServerOptions.prAgent. */
+let prAgentStarter: PrAgentStarter | null = null;
+/** This server, as agents need it to reach the reviews they answer. */
+let runningServer: GlobalServerInfo | null = null;
+/** The agent answering each PR review, by session id. One per review. */
+const prAgents = new Map<string, PrAgentHandle>();
+
+/**
+ * The agent answering this PR review, starting one if none is (#224). Every
+ * way of opening a PR review comes through here, so the dashboard's Review PR
+ * form gets an agent just as `diffprism review <PR>` does. Reopening the same
+ * PR finds the agent already answering it rather than starting a second.
+ */
+function ensurePrAgent(sessionId: string, prUrl: string, localRepoPath: string | null): PrAgentHandle | null {
+  const running = prAgents.get(sessionId);
+  if (running) return running;
+  if (!prAgentStarter || !runningServer) return null;
+
+  const started = prAgentStarter({ sessionId, prUrl, localRepoPath, server: runningServer });
+  if (!started) return null;
+
+  prAgents.set(sessionId, started);
+  // Once it stops, reopening the PR starts a fresh one.
+  const forget = (): void => {
+    if (prAgents.get(sessionId) === started) prAgents.delete(sessionId);
+  };
+  started.done.then(forget, forget);
+  return started;
+}
 
 function toSummary(session: Session): SessionSummary {
   const { payload } = session;
@@ -801,11 +833,13 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/pr/open") {
     try {
       const body = await readBody(req);
-      const { prUrl, cwd, title, reasoning } = JSON.parse(body) as {
+      const { prUrl, cwd, title, reasoning, agent } = JSON.parse(body) as {
         prUrl: string;
         cwd?: string;
         title?: string;
         reasoning?: string;
+        /** False to open the review without starting an agent (`--no-agent`). */
+        agent?: boolean;
       };
 
       if (!prUrl) {
@@ -870,10 +904,18 @@ async function handleApiRequest(
         source: "manual",
       });
 
+      // Asked not to start one, this still reports an agent that is already
+      // answering the review — it's there either way.
+      const prAgent =
+        agent === false
+          ? prAgents.get(session.id) ?? null
+          : ensurePrAgent(session.id, prMetadata.url, localRepoPath);
+
       jsonResponse(res, reused ? 200 : 201, {
         sessionId: session.id,
         fileCount: normalized.diffSet.files.length,
         localRepoPath,
+        agent: prAgent ? { conversationId: prAgent.conversationId, cwd: prAgent.cwd } : null,
         pr: {
           title: prMetadata.title,
           author: prMetadata.author,
@@ -1543,7 +1585,9 @@ export async function startGlobalServer(
     idleSessionTtl = IDLE_SESSION_TTL_MS,
     cleanupInterval = CLEANUP_INTERVAL_MS,
     openBrowser = true,
+    prAgent,
   } = options;
+  prAgentStarter = prAgent ?? null;
 
   watchSchedule = {
     viewedMs: pollInterval,
@@ -1751,6 +1795,7 @@ export async function startGlobalServer(
     serverInfo.builtAt = serverBuiltAt;
   }
   writeServerFile(serverInfo);
+  runningServer = serverInfo;
 
   if (!silent) {
     console.log(`\nDiffPrism Global Server`);
@@ -1813,6 +1858,9 @@ export async function startGlobalServer(
     for (const timer of pendingOpens) clearTimeout(timer);
     pendingOpens.clear();
     reopenBrowserIfNeeded = null;
+    prAgentStarter = null;
+    runningServer = null;
+    prAgents.clear();
     serverUiUrl = null;
 
     // Close HTTP server

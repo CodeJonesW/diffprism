@@ -1,13 +1,17 @@
 import { spawn, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   waitForDecision,
   ReviewerAskedError,
   ReviewTimeoutError,
   lastMessageAt,
   mcpToolPermission,
+  recordError,
 } from "@diffprism/core";
-import type { Annotation, GlobalServerInfo, ReviewResult } from "@diffprism/core";
+import type { Annotation, GlobalServerInfo, PrAgentStarter, ReviewResult } from "@diffprism/core";
 
 /**
  * What the agent may do: read the review and the code, and reply. Answering a
@@ -163,6 +167,8 @@ export interface ListenOptions {
   /** Where Claude runs — the local clone when there is one, so it can read whole files. */
   cwd: string;
   mcp: McpCommand;
+  /** Claude Code's conversation for this review. Chosen up front, so it can be reported before anything is answered. */
+  conversationId: string;
   run?: ClaudeRunner;
   /** How long one wait for a decision lasts before waiting again. */
   waitMs?: number;
@@ -171,12 +177,8 @@ export interface ListenOptions {
 
 export interface ListenOutcome {
   result: ReviewResult;
-  /**
-   * The Claude Code conversation the answers were given in, which the
-   * reviewer can resume in their terminal. Null when nobody asked anything,
-   * so Claude never ran and there is no conversation to resume.
-   */
-  conversationId: string | null;
+  /** How many times Claude ran — 0 when nobody asked anything, so there is no conversation to resume. */
+  turns: number;
 }
 
 /**
@@ -190,13 +192,12 @@ export interface ListenOutcome {
  * listening.
  */
 export async function listenWithClaude(options: ListenOptions): Promise<ListenOutcome> {
-  const { serverInfo, reviewSessionId, prUrl, cwd, mcp } = options;
+  const { serverInfo, reviewSessionId, prUrl, cwd, mcp, conversationId } = options;
   const run = options.run ?? runClaude;
   const waitMs = options.waitMs ?? 600_000;
   const log = options.log ?? (() => {});
 
-  const conversationId = randomUUID();
-  let first = true;
+  let turns = 0;
   let lastOutput = "";
   // Each thread handed to Claude, and when its latest message was written then.
   const handedOver = new Map<string, number>();
@@ -205,7 +206,7 @@ export async function listenWithClaude(options: ListenOptions): Promise<ListenOu
     let threads: Annotation[];
     try {
       const result = await waitForDecision(serverInfo, reviewSessionId, waitMs);
-      return { result, conversationId: first ? null : conversationId };
+      return { result, turns };
     } catch (err) {
       if (err instanceof ReviewTimeoutError) continue;
       if (!(err instanceof ReviewerAskedError)) throw err;
@@ -218,14 +219,78 @@ export async function listenWithClaude(options: ListenOptions): Promise<ListenOu
     }
 
     log(`Answering ${threads.length === 1 ? "1 comment" : `${threads.length} comments`}...`);
-    const turn: AgentTurn = { reviewSessionId, prUrl, conversationId, first, mcp };
+    const turn: AgentTurn = { reviewSessionId, prUrl, conversationId, first: turns === 0, mcp };
     const { code, output } = await run(claudeArgs(turn), agentPrompt(threads), cwd);
     if (code !== 0) {
       throw new Error(`Claude Code exited with status ${code}:\n${output.trim()}`);
     }
-    first = false;
+    turns += 1;
     lastOutput = output;
     for (const t of threads) handedOver.set(t.id, lastMessageAt(t));
     log("Answered — see the dashboard.");
   }
+}
+
+/**
+ * Where an agent runs when the review has no local clone. Its own empty
+ * folder, not the server's: the agent's Read and Grep would otherwise browse
+ * whatever folder the server happened to start in.
+ */
+function agentFolder(): string {
+  const dir = path.join(os.tmpdir(), "diffprism-agent");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+export interface PrAgentDeps {
+  available: () => boolean;
+  listen: (options: ListenOptions) => Promise<ListenOutcome>;
+  mcp: McpCommand;
+  /** Where the agent runs without a local clone. */
+  folder: () => string;
+  log: (line: string) => void;
+}
+
+/**
+ * The server's agent starter (#224): one listener per PR review, however the
+ * review was opened. It runs inside the server process, so what it says goes
+ * to the server's log — `~/.diffprism/server.log` for the background server.
+ */
+export function prAgentStarter(deps: Partial<PrAgentDeps> = {}): PrAgentStarter {
+  const {
+    available = claudeAvailable,
+    listen = listenWithClaude,
+    mcp = thisBuildsMcpServer(),
+    folder = agentFolder,
+    log = (line: string) => console.log(line),
+  } = deps;
+
+  return ({ sessionId, prUrl, localRepoPath, server }) => {
+    if (!available()) {
+      log(`${sessionId}: Claude Code isn't installed, so no agent will answer comments on ${prUrl}.`);
+      return null;
+    }
+
+    const conversationId = randomUUID();
+    const cwd = localRepoPath ?? folder();
+    log(`${sessionId}: Claude Code is answering comments on ${prUrl} (conversation ${conversationId}, in ${cwd}).`);
+
+    const done = listen({
+      serverInfo: server,
+      reviewSessionId: sessionId,
+      prUrl,
+      cwd,
+      mcp,
+      conversationId,
+      log: (line) => log(`${sessionId}: ${line}`),
+    }).then(
+      ({ result }) => log(`${sessionId}: review ${result.decision.replace(/_/g, " ")}; agent stopped.`),
+      (err: unknown) => {
+        recordError("pr agent", err);
+        log(`${sessionId}: agent stopped — ${err instanceof Error ? err.message : String(err)}`);
+      },
+    );
+
+    return { conversationId, cwd, done };
+  };
 }
