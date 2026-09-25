@@ -328,7 +328,13 @@ export function Dashboard({
                   <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
                 </div>
                 <div className="bg-surface border border-border rounded-lg p-5">
-                  <PrInput onSuccess={() => setDetailView("none")} />
+                  <PrInput
+                    onSuccess={(sessionId) => {
+                      setDetailView("none");
+                      // Open the review whether or not the sidebar is showing (#228).
+                      onSelectSession(sessionId);
+                    }}
+                  />
                 </div>
                 <button
                   onClick={() => setDetailView("none")}
