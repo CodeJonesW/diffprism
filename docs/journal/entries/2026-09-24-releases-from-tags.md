@@ -2,6 +2,7 @@
 title: Releasing without pushing to main
 date: 2026-09-24
 kind: infra
+pr: 236
 ---
 
 ## What changed
