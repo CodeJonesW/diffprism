@@ -2,6 +2,7 @@
 title: A pull request review opens its own tab
 date: 2026-09-24
 kind: fix
+pr: 225
 ---
 
 ## What changed
