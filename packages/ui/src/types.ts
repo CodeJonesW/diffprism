@@ -384,15 +384,21 @@ export interface DojoCombinedFinding {
   annotationId?: string;
 }
 
-export interface DojoAgentOutcome {
+export type DojoStage = "starting" | "reviewing" | "voting" | "done" | "dropped";
+
+export interface DojoSeat {
   agent: { name: ReviewAgentName; model?: string };
   label: string;
+  stage: DojoStage;
+  stageStartedAt: number;
+  activity?: string;
+  raised?: number;
   error?: string;
 }
 
 export interface DojoState {
   status: "running" | "done" | "failed";
-  agents: DojoAgentOutcome[];
+  agents: DojoSeat[];
   findings: DojoCombinedFinding[];
   startedAt: number;
   finishedAt?: number;

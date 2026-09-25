@@ -2,16 +2,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { DojoRequest, GlobalServerInfo, ReviewAgentName } from "@diffprism/core";
+import { AsyncQueue } from "@diffprism/core";
+import type { DojoRequest, DojoRun, DojoSeat, GlobalServerInfo, ReviewAgentName } from "@diffprism/core";
 import { runDojo, dojoRunner, parseFindings, parseVotes, lastJsonBlock } from "../commands/dojo.js";
 import type { DojoDeps } from "../commands/dojo.js";
-import type { AgentKind, AgentInvocation } from "../commands/pr-agent.js";
+import type { AgentKind, AgentInvocation, AgentProcess } from "../commands/pr-agent.js";
 
 const json = (value: unknown) => `Thinking about it...\n\`\`\`json\n${JSON.stringify(value)}\n\`\`\`\n`;
 
 const finding = (title: string, line = 3) => ({ file: "src/a.ts", line, side: "new", severity: "major", title, body: `${title}.` });
 
-/** A fake agent: `begin` names its conversation, `turn` passes the prompt through as the only arg. */
+/**
+ * A fake agent: `begin` names its conversation, `turn` passes the round and
+ * prompt through as args, and an event `{ doing }` is it doing something.
+ */
 function kind(name: ReviewAgentName, label: string): AgentKind {
   return {
     name,
@@ -20,7 +24,23 @@ function kind(name: ReviewAgentName, label: string): AgentKind {
     installHint: `install ${name}`,
     begin: vi.fn(async () => ({ id: `${name}-conv`, cwd: `/agents/${name}`, resumeCommand: "" })),
     turn: vi.fn((_review, _conversation, t): AgentInvocation => ({ args: [t.first ? "review" : "vote", t.prompt] })),
+    describe: (event) => (event as { doing?: string }).doing ?? null,
   };
+}
+
+/** A turn that streams `events`, then ends with `output`. */
+function turnOf(output: string, events: unknown[] = []): AgentProcess {
+  const queue = new AsyncQueue<unknown>();
+  events.forEach((e) => queue.push(e));
+  queue.end();
+  return { events: queue, done: Promise.resolve({ code: 0, output }) };
+}
+
+/** The dojo's result, once its progress has been read to the end. */
+async function finish(run: DojoRun): Promise<{ seats: DojoSeat[]; result: Awaited<DojoRun["result"]> }> {
+  const seats: DojoSeat[] = [];
+  for await (const seat of run.progress) seats.push(seat);
+  return { seats, result: await run.result };
 }
 
 const request: DojoRequest = {
@@ -36,14 +56,17 @@ function deps(answers: Partial<Record<ReviewAgentName, { review: unknown; vote?:
   return {
     kinds: { claude: kind("claude", "Claude Code"), cursor: kind("cursor", "Cursor") },
     installed: async () => true,
-    run: vi.fn(async (command: string, { args }: AgentInvocation) => {
+    run: vi.fn((command: string, { args }: AgentInvocation) => {
       const answer = answers[command as ReviewAgentName];
       const reply = args[0] === "review" ? answer?.review : answer?.vote;
-      return typeof reply === "string" ? { code: 0, output: reply } : { code: 0, output: json(reply) };
+      const doing = args[0] === "review" ? "reviewing" : "voting";
+      // The same activity twice in a row is reported once.
+      return turnOf(typeof reply === "string" ? reply : json(reply), [{ doing }, { doing }]);
     }),
     mcp: { command: "node", args: ["serve"] },
     folder: () => "/tmp/x",
     log: () => {},
+    now: () => 100,
     ...extra,
   };
 }
@@ -55,11 +78,11 @@ describe("runDojo (#231)", () => {
       cursor: { review: { findings: [finding("Unchecked input", 9)] }, vote: { votes: [{ findingId: "claude-1", stance: "agree", severity: "critical", note: "yes" }] } },
     });
 
-    const result = await runDojo(request, d);
+    const result = (await finish(runDojo(request, d))).result;
 
     expect(result.agents).toEqual([
-      { agent: { name: "claude" }, label: "Claude Code" },
-      { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor" },
+      { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 100, raised: 1 },
+      { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor", stage: "done", stageStartedAt: 100, raised: 1 },
     ]);
     expect(result.findings.map((f) => [f.id, f.consensus])).toEqual([
       ["claude-1", "agreed"],
@@ -73,7 +96,7 @@ describe("runDojo (#231)", () => {
 
   it("runs both rounds in one conversation per agent, with the dojo's instructions", async () => {
     const d = deps({ claude: { review: { findings: [] } }, cursor: { review: { findings: [finding("x")] }, vote: { votes: [] } } });
-    await runDojo(request, d);
+    (await finish(runDojo(request, d))).result;
 
     const claudeTurns = vi.mocked(d.kinds.claude.turn).mock.calls;
     expect(claudeTurns.map(([, conversation, t]) => [conversation.id, t.first])).toEqual([
@@ -93,7 +116,7 @@ describe("runDojo (#231)", () => {
       cursor: { review: { findings: [finding("x")] } },
     });
 
-    const result = await runDojo(request, d);
+    const result = (await finish(runDojo(request, d))).result;
 
     expect(result.agents[0].error).toMatch(/^couldn't review: didn't answer with a JSON block/);
     expect(result.agents[1].error).toBeUndefined();
@@ -102,7 +125,7 @@ describe("runDojo (#231)", () => {
 
   it("drops an agent that isn't installed", async () => {
     const d = deps({ cursor: { review: { findings: [] } } }, { installed: async (k) => k.name === "cursor" });
-    const result = await runDojo(request, d);
+    const result = (await finish(runDojo(request, d))).result;
     expect(result.agents[0].error).toBe("couldn't start: isn't installed (install claude).");
     expect(d.kinds.claude.begin).not.toHaveBeenCalled();
   });
@@ -113,7 +136,7 @@ describe("runDojo (#231)", () => {
       cursor: { review: { findings: [finding("b")] }, vote: { votes: [{ findingId: "claude-1", stance: "agree", severity: "major", note: "" }] } },
     });
 
-    const result = await runDojo(request, d);
+    const result = (await finish(runDojo(request, d))).result;
 
     expect(result.agents[0].error).toMatch(/^couldn't vote/);
     expect(result.findings.map((f) => [f.id, f.consensus])).toEqual([
@@ -122,9 +145,36 @@ describe("runDojo (#231)", () => {
     ]);
   });
 
+  it("reports every step of each agent as it happens", async () => {
+    const d = deps({
+      claude: { review: { findings: [finding("a")] }, vote: { votes: [] } },
+      cursor: { review: { findings: [finding("b"), finding("c")] }, vote: { votes: [] } },
+    });
+
+    const { seats } = await finish(runDojo(request, d));
+
+    const claude = seats.filter((s) => s.agent.name === "claude").map((s) => [s.stage, s.activity, s.raised]);
+    expect(claude).toEqual([
+      ["starting", undefined, undefined],
+      ["reviewing", undefined, undefined],
+      ["reviewing", "reviewing", undefined],
+      ["reviewing", undefined, 1],
+      ["voting", undefined, 1],
+      ["voting", "voting", 1],
+      ["done", undefined, 1],
+    ]);
+    expect(seats.filter((s) => s.agent.name === "cursor").at(-1)).toMatchObject({ stage: "done", raised: 2 });
+  });
+
+  it("reports an agent dropping out, with why", async () => {
+    const d = deps({ cursor: { review: { findings: [] } } }, { installed: async (k) => k.name === "cursor" });
+    const { seats } = await finish(runDojo(request, d));
+    expect(seats.filter((s) => s.agent.name === "claude").map((s) => s.stage)).toEqual(["starting", "dropped"]);
+  });
+
   it("fails when no agent could review at all", async () => {
     const d = deps({}, { installed: async () => false });
-    await expect(runDojo(request, d)).rejects.toThrow(/No agent could review\. Claude Code couldn't start: isn't installed/);
+    await expect(runDojo(request, d).result).rejects.toThrow(/No agent could review\. Claude Code couldn't start: isn't installed/);
   });
 });
 

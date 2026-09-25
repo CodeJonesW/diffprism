@@ -35,7 +35,7 @@ import type {
   PrReviewSubmission,
 } from "./types.js";
 import { dojoThreadBody } from "./dojo.js";
-import type { DojoRunner, DojoState } from "./dojo.js";
+import type { DojoRunner, DojoSeat, DojoState } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
 import { builtAt, getBuildInfo } from "./build-info.js";
@@ -421,36 +421,49 @@ function startDojo(session: Session, runner: DojoRunner, server: GlobalServerInf
   const pr = session.payload.metadata.githubPr!;
   const started: DojoState = { status: "running", agents: [], findings: [], startedAt: Date.now() };
   setDojo(session, started);
+  // Still the dojo on screen: not closed, replaced, or already finished.
+  const running = () =>
+    sessions.get(session.id) === session && session.dojo?.startedAt === started.startedAt && session.dojo.status === "running";
 
-  runner
-    .run({ sessionId: session.id, prUrl: pr.url, localRepoPath: session.repoRoot, server, agents })
-    .then(
-      (result) => {
-        // Closed or replaced while the agents worked: nobody is left to show it to.
-        if (sessions.get(session.id) !== session || session.dojo !== started) return;
-        const labels = Object.fromEntries(result.agents.map((a) => [a.agent.name, a.label]));
-        const findings = result.findings.map((finding) => {
-          const annotation = addAnnotation(session, {
-            file: finding.file,
-            line: finding.line,
-            side: finding.side,
-            body: dojoThreadBody(finding, labels),
-            type: "finding",
-            category: "other",
-            source: { agent: "Review dojo", tool: "dojo" },
-            author: "agent",
-          });
-          return { ...finding, annotationId: annotation.id };
+  const run = runner.run({ sessionId: session.id, prUrl: pr.url, localRepoPath: session.repoRoot, server, agents });
+
+  // Each agent's progress, as it happens, so the reviewer can see the dojo working.
+  void (async () => {
+    for await (const seat of run.progress) {
+      if (!running()) continue;
+      const current = session.dojo!;
+      const others = current.agents.filter((a) => a.agent.name !== seat.agent.name);
+      const order = (a: DojoSeat) => agents.findIndex((c) => c.name === a.agent.name);
+      setDojo(session, { ...current, agents: [...others, seat].sort((a, b) => order(a) - order(b)) });
+    }
+  })();
+
+  run.result.then(
+    (result) => {
+      if (!running()) return;
+      const labels = Object.fromEntries(result.agents.map((a) => [a.agent.name, a.label]));
+      const findings = result.findings.map((finding) => {
+        const annotation = addAnnotation(session, {
+          file: finding.file,
+          line: finding.line,
+          side: finding.side,
+          body: dojoThreadBody(finding, labels),
+          type: "finding",
+          category: "other",
+          source: { agent: "Review dojo", tool: "dojo" },
+          author: "agent",
         });
-        setDojo(session, { ...started, status: "done", agents: result.agents, findings, finishedAt: Date.now() });
-      },
-      (err: unknown) => {
-        recordError("dojo", err);
-        if (sessions.get(session.id) !== session || session.dojo !== started) return;
-        const error = err instanceof Error ? err.message : String(err);
-        setDojo(session, { ...started, status: "failed", error, finishedAt: Date.now() });
-      },
-    );
+        return { ...finding, annotationId: annotation.id };
+      });
+      setDojo(session, { ...started, status: "done", agents: result.agents, findings, finishedAt: Date.now() });
+    },
+    (err: unknown) => {
+      recordError("dojo", err);
+      if (!running()) return;
+      const error = err instanceof Error ? err.message : String(err);
+      setDojo(session, { ...session.dojo!, status: "failed", error, finishedAt: Date.now() });
+    },
+  );
   return started;
 }
 

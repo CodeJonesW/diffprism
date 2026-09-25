@@ -10,6 +10,7 @@ import {
   ReviewTimeoutError,
   lastMessageAt,
   mcpToolPermission,
+  AsyncQueue,
   recordError,
 } from "@diffprism/core";
 import type {
@@ -123,6 +124,46 @@ export interface AgentKind {
    * reviewing in a dojo — and lead its first turn wherever the agent keeps them.
    */
   turn(review: AgentReview, conversation: AgentConversation, turn: AgentTurn): AgentInvocation;
+  /**
+   * What one event of a turn's stream says the agent is doing, in words —
+   * "Reading src/cache.ts" — or null for events that aren't an action.
+   */
+  describe(event: unknown, review: AgentReview): string | null;
+}
+
+/** A path as the reviewer knows it: relative to the clone when it's in there, else just its name. */
+function shortPath(file: string, review: AgentReview): string {
+  if (review.localRepoPath && path.isAbsolute(file)) {
+    const relative = path.relative(review.localRepoPath, file);
+    if (!relative.startsWith("..")) return relative;
+  }
+  return path.isAbsolute(file) ? path.basename(file) : file;
+}
+
+/**
+ * A tool call, in words. The DiffPrism tools are named for what they read;
+ * anything else is named as it is.
+ */
+export function describeToolCall(name: string, input: Record<string, unknown>, review: AgentReview): string {
+  const text = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : "");
+  const file = text("file") || text("file_path") || text("path");
+  switch (name) {
+    case "get_pr_context":
+      return "Reading the pull request";
+    case "get_file_diff":
+      return file ? `Reading the diff of ${shortPath(file, review)}` : "Reading the diff";
+    case "get_file_context":
+    case "Read":
+      return file ? `Reading ${shortPath(file, review)}` : "Reading a file";
+    case "get_review_comments":
+      return "Reading the review's threads";
+    case "Grep":
+      return `Searching for “${text("pattern")}”`;
+    case "Glob":
+      return `Looking for ${text("pattern") || "files"}`;
+    default:
+      return `Using ${name}`;
+  }
 }
 
 export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "prUrl">, label: string): string {
@@ -184,6 +225,9 @@ export const CLAUDE: AgentKind = {
         "--mcp-config",
         JSON.stringify({ mcpServers: { diffprism: review.mcp } }),
         "--strict-mcp-config",
+        "--output-format",
+        "stream-json",
+        "--verbose",
         "--permission-mode",
         "default",
         "--allowedTools",
@@ -193,6 +237,16 @@ export const CLAUDE: AgentKind = {
       ],
       stdin: prompt,
     };
+  },
+
+  // A tool call is a tool_use block in an assistant message; thinking is a thinking block.
+  describe(event, review) {
+    const e = event as { type?: string; message?: { content?: Array<{ type?: string; name?: string; input?: Record<string, unknown> }> } };
+    if (e.type !== "assistant") return null;
+    const content = e.message?.content ?? [];
+    const use = content.filter((c) => c.type === "tool_use").at(-1);
+    if (use?.name) return describeToolCall(use.name.replace(/^mcp__diffprism__/, ""), use.input ?? {}, review);
+    return content.some((c) => c.type === "thinking") ? "Thinking" : null;
   },
 };
 
@@ -258,10 +312,32 @@ export const CURSOR: AgentKind = {
         "--approve-mcps",
         ...(review.model ? ["--model", review.model] : []),
         "--output-format",
-        "text",
+        "stream-json",
         first ? `${instructions}\n\n${prompt}` : prompt,
       ],
     };
+  },
+
+  // A tool call starts as a tool_call event holding one <kind>ToolCall.
+  describe(event, review) {
+    const e = event as { type?: string; subtype?: string; tool_call?: Record<string, { args?: Record<string, unknown> }> };
+    if (e.type === "thinking") return "Thinking";
+    if (e.type !== "tool_call" || e.subtype !== "started" || !e.tool_call) return null;
+    const key = Object.keys(e.tool_call).find((k) => k.endsWith("ToolCall"));
+    if (!key) return null;
+    const args = e.tool_call[key]?.args ?? {};
+    switch (key) {
+      case "mcpToolCall":
+        return describeToolCall(String(args.toolName ?? args.name ?? "a tool"), (args.args ?? {}) as Record<string, unknown>, review);
+      case "readToolCall":
+        return describeToolCall("Read", args, review);
+      case "grepToolCall":
+        return describeToolCall("Grep", args, review);
+      case "globToolCall":
+        return describeToolCall("Glob", { pattern: args.globPattern }, review);
+      default:
+        return null;
+    }
   },
 };
 
@@ -313,22 +389,63 @@ export async function agentInstalled(kind: AgentKind): Promise<boolean> {
 
 export interface AgentRun {
   code: number;
+  /** The agent's final answer, from its stream's result event — or everything it printed, when there's none. */
   output: string;
 }
 
-/** Runs one turn. Swapped out in tests. */
-export type AgentRunner = (command: string, invocation: AgentInvocation, cwd: string) => Promise<AgentRun>;
+/** One turn under way: its stream's events as they arrive, and how it ended. */
+export interface AgentProcess {
+  events: AsyncIterable<unknown>;
+  done: Promise<AgentRun>;
+}
 
-export const runAgent: AgentRunner = (command, { args, stdin }, cwd) =>
-  new Promise((resolve, reject) => {
+/** Runs one turn. Swapped out in tests. */
+export type AgentRunner = (command: string, invocation: AgentInvocation, cwd: string) => AgentProcess;
+
+/**
+ * Both agents stream one JSON event per line and end with a `result` event
+ * holding their answer (--output-format stream-json).
+ */
+export const runAgent: AgentRunner = (command, { args, stdin }, cwd) => {
+  const events = new AsyncQueue<unknown>();
+  const done = new Promise<AgentRun>((resolve, reject) => {
     const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
-    let output = "";
-    child.stdout.on("data", (chunk) => (output += chunk));
-    child.stderr.on("data", (chunk) => (output += chunk));
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, output }));
+    let raw = "";
+    let pending = "";
+    let result: string | undefined;
+    const readLine = (line: string) => {
+      if (!line.trim()) return;
+      let event: unknown;
+      try {
+        event = JSON.parse(line);
+      } catch {
+        return; // Not an event: kept in `raw` for the error message.
+      }
+      const e = event as { type?: string; result?: unknown };
+      if (e.type === "result" && typeof e.result === "string") result = e.result;
+      events.push(event);
+    };
+    child.stdout.on("data", (chunk: Buffer) => {
+      raw += chunk;
+      pending += chunk;
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      lines.forEach(readLine);
+    });
+    child.stderr.on("data", (chunk) => (raw += chunk));
+    child.on("error", (err) => {
+      events.end();
+      reject(err);
+    });
+    child.on("close", (code) => {
+      readLine(pending);
+      events.end();
+      resolve({ code: code ?? 1, output: code === 0 && result !== undefined ? result : raw });
+    });
     child.stdin.end(stdin ?? "");
   });
+  return { events, done };
+};
 
 /**
  * Thrown when the agent finishes a turn and a thread it was given is still
@@ -402,7 +519,7 @@ export async function listenWithAgent(options: ListenOptions): Promise<ListenOut
       prompt: agentPrompt(threads),
       instructions: agentSystemPrompt(review, kind.label),
     });
-    const { code, output } = await run(kind.command, invocation, conversation.cwd);
+    const { code, output } = await run(kind.command, invocation, conversation.cwd).done;
     if (code !== 0) {
       throw new Error(`${kind.label} exited with status ${code}:\n${output.trim()}`);
     }

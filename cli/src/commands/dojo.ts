@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
+  AsyncQueue,
   DOJO_SEVERITIES,
   combineFindings,
   dojoFindingId,
@@ -10,14 +11,15 @@ import {
 } from "@diffprism/core";
 import type {
   DiffSide,
-  DojoAgentOutcome,
   DojoAvailableAgent,
   DojoFinding,
   DojoRequest,
   DojoResult,
   DojoRoundOne,
   DojoRoundTwo,
+  DojoRun,
   DojoRunner,
+  DojoSeat,
   DojoSeverity,
   ReviewAgentChoice,
   ReviewAgentName,
@@ -130,45 +132,66 @@ export interface DojoDeps {
   mcp: McpCommand;
   folder: (sessionId: string, agent: ReviewAgentName) => string;
   log: (line: string) => void;
+  now: () => number;
 }
 
 interface Seat {
   choice: ReviewAgentChoice;
   kind: AgentKind;
   review: AgentReview;
-  outcome: DojoAgentOutcome;
+  /** What the dashboard shows for this agent; replaced whole on every change. */
+  view: DojoSeat;
   conversation?: AgentConversation;
 }
 
-async function turn(seat: Seat, deps: DojoDeps, request: DojoRequest, first: boolean, prompt: string): Promise<string> {
-  const invocation = seat.kind.turn(seat.review, seat.conversation!, {
-    first,
-    prompt,
-    instructions: dojoInstructions(request, seat.kind.label),
-  });
-  const { code, output } = await deps.run(seat.kind.command, invocation, seat.conversation!.cwd);
-  if (code !== 0) throw new Error(`exited with status ${code}:\n${output.trim()}`);
-  return output;
-}
-
-function drop(seat: Seat, stage: string, err: unknown, deps: DojoDeps, request: DojoRequest): void {
-  recordError("dojo", err);
-  seat.outcome.error = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
-  deps.log(`${request.sessionId}: dojo — ${seat.kind.label} ${seat.outcome.error}`);
-}
-
 /**
- * Seat the chosen agents, run both rounds, and put the result together. An
- * agent that can't start, review or vote drops out with the reason recorded;
- * the dojo fails only when no agent reviewed at all.
+ * Seat the chosen agents, run both rounds, and put the result together. Every
+ * change to a seat — its stage, what it's reading, how many findings it raised
+ * — goes out on `progress` as it happens. An agent that can't start, review or
+ * vote drops out with the reason; the dojo fails only when nobody reviewed.
  */
-export async function runDojo(request: DojoRequest, deps: DojoDeps): Promise<DojoResult> {
+export function runDojo(request: DojoRequest, deps: DojoDeps): DojoRun {
+  const progress = new AsyncQueue<DojoSeat>();
+  const result = play(request, deps, progress).finally(() => progress.end());
+  return { progress, result };
+}
+
+async function play(request: DojoRequest, deps: DojoDeps, progress: AsyncQueue<DojoSeat>): Promise<DojoResult> {
+  const update = (seat: Seat, change: Partial<DojoSeat>) => {
+    const stage = change.stage && change.stage !== seat.view.stage ? { stageStartedAt: deps.now(), activity: undefined } : {};
+    seat.view = { ...seat.view, ...stage, ...change };
+    progress.push(seat.view);
+  };
+  const drop = (seat: Seat, stage: string, err: unknown) => {
+    recordError("dojo", err);
+    const error = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
+    update(seat, { stage: "dropped", error });
+    deps.log(`${request.sessionId}: dojo — ${seat.kind.label} ${error}`);
+  };
+  /** One turn, reporting each thing the agent does while it runs. */
+  const turn = async (seat: Seat, first: boolean, prompt: string): Promise<string> => {
+    const invocation = seat.kind.turn(seat.review, seat.conversation!, {
+      first,
+      prompt,
+      instructions: dojoInstructions(request, seat.kind.label),
+    });
+    const running = deps.run(seat.kind.command, invocation, seat.conversation!.cwd);
+    for await (const event of running.events) {
+      const activity = seat.kind.describe(event, seat.review);
+      // Thinking streams in many pieces; one report of it is enough.
+      if (activity && activity !== seat.view.activity) update(seat, { activity });
+    }
+    const { code, output } = await running.done;
+    if (code !== 0) throw new Error(`exited with status ${code}:\n${output.trim()}`);
+    return output;
+  };
+
   const seats: Seat[] = request.agents.map((choice) => {
     const kind = deps.kinds[choice.name];
     return {
       choice,
       kind,
-      outcome: { agent: choice, label: kind.label },
+      view: { agent: choice, label: kind.label, stage: "starting", stageStartedAt: deps.now() },
       review: {
         reviewSessionId: request.sessionId,
         prUrl: request.prUrl,
@@ -179,6 +202,7 @@ export async function runDojo(request: DojoRequest, deps: DojoDeps): Promise<Doj
       },
     };
   });
+  for (const seat of seats) progress.push(seat.view);
 
   // Round one: seat everyone who can start, and have them review.
   const roundOne: DojoRoundOne[] = [];
@@ -188,19 +212,20 @@ export async function runDojo(request: DojoRequest, deps: DojoDeps): Promise<Doj
         if (!(await deps.installed(seat.kind))) throw new Error(`isn't installed (${seat.kind.installHint}).`);
         seat.conversation = await seat.kind.begin(seat.review);
       } catch (err) {
-        return drop(seat, "couldn't start", err, deps, request);
+        return drop(seat, "couldn't start", err);
       }
       try {
-        deps.log(`${request.sessionId}: dojo — ${seat.kind.label} is reviewing.`);
-        const findings = parseFindings(await turn(seat, deps, request, true, reviewPrompt()));
+        update(seat, { stage: "reviewing" });
+        const findings = parseFindings(await turn(seat, true, reviewPrompt()));
         roundOne.push({ agent: seat.choice.name, findings });
+        update(seat, { raised: findings.length, activity: undefined });
       } catch (err) {
-        drop(seat, "couldn't review", err, deps, request);
+        drop(seat, "couldn't review", err);
       }
     }),
   );
   if (roundOne.length === 0) {
-    throw new Error(`No agent could review. ${seats.map((s) => `${s.kind.label} ${s.outcome.error}`).join(" ")}`);
+    throw new Error(`No agent could review. ${seats.map((s) => `${s.kind.label} ${s.view.error}`).join(" ")}`);
   }
   // Keep the order agents were chosen in, whichever finished first.
   roundOne.sort((a, b) => request.agents.findIndex((c) => c.name === a.agent) - request.agents.findIndex((c) => c.name === b.agent));
@@ -215,17 +240,18 @@ export async function runDojo(request: DojoRequest, deps: DojoDeps): Promise<Doj
         const others = roundOne
           .filter((r) => r.agent !== seat.choice.name)
           .flatMap((r) => r.findings.map((finding, i) => ({ id: dojoFindingId(r.agent, i), label: labels[r.agent], finding })));
-        if (others.length === 0) return;
+        if (others.length === 0) return update(seat, { stage: "done" });
         try {
-          deps.log(`${request.sessionId}: dojo — ${seat.kind.label} is voting.`);
-          roundTwo.push({ agent: seat.choice.name, votes: parseVotes(await turn(seat, deps, request, false, votePrompt(others))) });
+          update(seat, { stage: "voting" });
+          roundTwo.push({ agent: seat.choice.name, votes: parseVotes(await turn(seat, false, votePrompt(others))) });
+          update(seat, { stage: "done" });
         } catch (err) {
-          drop(seat, "couldn't vote", err, deps, request);
+          drop(seat, "couldn't vote", err);
         }
       }),
   );
 
-  return { agents: seats.map((s) => s.outcome), findings: combineFindings(roundOne, roundTwo) };
+  return { agents: seats.map((s) => s.view), findings: combineFindings(roundOne, roundTwo) };
 }
 
 /** The server's dojo runner (#231): the installed agents, run as `runDojo` says. */
@@ -237,6 +263,7 @@ export function dojoRunner(deps: Partial<DojoDeps> = {}): DojoRunner {
     mcp: thisBuildsMcpServer(),
     folder: dojoFolder,
     log: (line) => console.log(line),
+    now: () => Date.now(),
     ...deps,
   };
 

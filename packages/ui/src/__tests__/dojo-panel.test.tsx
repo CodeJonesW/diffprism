@@ -26,8 +26,15 @@ const done: DojoState = {
   startedAt: 1,
   finishedAt: 2,
   agents: [
-    { agent: { name: "claude" }, label: "Claude Code" },
-    { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor", error: "couldn't vote: didn't answer with a JSON block." },
+    { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 1, raised: 1 },
+    {
+      agent: { name: "cursor", model: "gpt-5" },
+      label: "Cursor",
+      stage: "dropped",
+      stageStartedAt: 2,
+      raised: 1,
+      error: "couldn't vote: didn't answer with a JSON block.",
+    },
   ],
   findings: [
     finding({ votes: [{ agent: "cursor", stance: "agree", severity: "critical", note: "and it grows forever" }] }),
@@ -113,9 +120,40 @@ describe("DojoPanel (#231)", () => {
     expect(await screen.findByRole("button", { name: /Start the dojo/ })).toBeTruthy();
   });
 
-  it("shows a dojo in progress", () => {
-    render(<DojoPanel sessionId="s1" dojo={{ status: "running", startedAt: 1, agents: [], findings: [] }} onNavigate={() => {}} onHide={() => {}} />);
-    expect(screen.getByText(/reviewing, then voting/)).toBeTruthy();
+  it("says the agents are starting before any has reported", () => {
+    render(<DojoPanel sessionId="s1" dojo={{ status: "running", startedAt: Date.now(), agents: [], findings: [] }} onNavigate={() => {}} onHide={() => {}} />);
+    expect(screen.getByText("Starting the agents…")).toBeTruthy();
+  });
+
+  it("shows what each agent is doing, and for how long, while the dojo runs", () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    try {
+      vi.setSystemTime(100_000);
+      const running: DojoState = {
+        status: "running",
+        startedAt: 100_000 - 75_000,
+        findings: [],
+        agents: [
+          { agent: { name: "claude" }, label: "Claude Code", stage: "voting", stageStartedAt: 100_000 - 12_000, raised: 3, activity: "Reading src/retry.ts" },
+          { agent: { name: "cursor" }, label: "Cursor", stage: "dropped", stageStartedAt: 90_000, error: "couldn't start: Cursor isn't logged in." },
+        ],
+      };
+      render(<DojoPanel sessionId="s1" dojo={running} onNavigate={() => {}} onHide={() => {}} />);
+
+      expect(screen.getByText("1:15")).toBeTruthy();
+      const claude = screen.getByLabelText("Claude Code");
+      expect(claude.textContent).toContain("Voting on the others' findings · raised 3");
+      expect(claude.textContent).toContain("Reading src/retry.ts");
+      expect(claude.textContent).toContain("0:12");
+      expect(screen.getByLabelText("Cursor").textContent).toContain("couldn't start: Cursor isn't logged in.");
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(claude.textContent).toContain("0:15");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
