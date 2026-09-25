@@ -2,7 +2,8 @@ import { useState, useCallback } from "react";
 import { GitPullRequest, Loader2, ExternalLink } from "lucide-react";
 
 interface PrInputProps {
-  onSuccess?: () => void;
+  /** The review is open; the caller shows it — whoever entered a PR came to review it. */
+  onSuccess?: (sessionId: string) => void;
 }
 
 function getHttpPort(): string | null {
@@ -46,7 +47,7 @@ export function PrInput({ onSuccess }: PrInputProps) {
         setError(data.error ?? "Failed to open PR");
       } else {
         setPrUrl("");
-        onSuccess?.();
+        onSuccess?.(data.sessionId);
       }
     } catch {
       setError("Could not connect to server");
@@ -104,7 +105,7 @@ export function PrInput({ onSuccess }: PrInputProps) {
 
       {error && <p className="text-danger text-xs">{error}</p>}
 
-      <p className="text-text-secondary text-[10px]">
+      <p className="text-text-secondary text-[11px]">
         Also accepts <code className="text-accent/70">owner/repo#123</code> format
       </p>
     </div>

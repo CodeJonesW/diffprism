@@ -140,7 +140,7 @@ export function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
     <div className="space-y-3">
       {/* Current path breadcrumb */}
       {listing && (
-        <div className="flex items-center gap-1 text-text-secondary text-[11px] font-mono truncate min-h-[20px]">
+        <div className="flex items-center gap-1 text-text-secondary text-xs font-mono truncate min-h-[20px]">
           {listing.parentPath && (
             <button
               onClick={() => fetchDir(listing.parentPath!)}
@@ -330,7 +330,13 @@ export function Dashboard({
                   <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
                 </div>
                 <div className="bg-surface border border-border rounded-lg p-5">
-                  <PrInput onSuccess={() => setDetailView("none")} />
+                  <PrInput
+                    onSuccess={(sessionId) => {
+                      setDetailView("none");
+                      // Open the review whether or not the sidebar is showing (#228).
+                      onSelectSession(sessionId);
+                    }}
+                  />
                 </div>
                 <button
                   onClick={() => setDetailView("none")}
