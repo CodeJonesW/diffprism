@@ -5,6 +5,7 @@ import os from "node:os";
 import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
+import type { PrAgentRequest } from "../types.js";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -1823,18 +1824,26 @@ describe("session identity", () => {
 
     // #224: whichever way a PR review is opened, the server starts its agent.
     describe("the agent that answers a PR review", () => {
-      type Agent = { conversationId: string; cwd: string } | null;
+      type Agent = { name: string; model: string | null; label: string; conversationId: string; cwd: string; resumeCommand: string } | null;
       const agentOf = async (res: Response) => ((await res.json()) as { agent: Agent }).agent;
 
       /** A starter that starts agents which run until `stop` is called. */
       function starter(result: "starts" | "declines" = "starts") {
         let stop = (): void => {};
-        const start = vi.fn((request: { sessionId: string }) => {
-          if (result === "declines") return null;
+        const start = vi.fn(async (request: PrAgentRequest) => {
+          if (result === "declines") throw new Error("Cursor isn't logged in. Run `cursor-agent login` once.");
           const done = new Promise<void>((resolve) => {
             stop = resolve;
           });
-          return { conversationId: `conv-${start.mock.calls.length}`, cwd: `/agents/${request.sessionId}`, done };
+          const conversationId = `conv-${start.mock.calls.length}`;
+          return {
+            agent: request.agent,
+            label: request.agent.name === "cursor" ? "Cursor" : "Claude Code",
+            conversationId,
+            cwd: `/agents/${request.sessionId}`,
+            resumeCommand: `resume ${conversationId}`,
+            done,
+          };
         });
         return { start, stop: () => stop() };
       }
@@ -1852,8 +1861,17 @@ describe("session identity", () => {
           prUrl: "https://github.com/acme/widget/pull/7",
           localRepoPath: null,
           server: expect.objectContaining({ httpPort: handle.httpPort }),
+          // Nothing saved: Claude Code, with its own default model.
+          agent: { name: "claude" },
         });
-        expect(await agentOf(res)).toEqual({ conversationId: "conv-1", cwd: `/agents/${sessionId}` });
+        expect(await agentOf(res)).toEqual({
+          name: "claude",
+          model: null,
+          label: "Claude Code",
+          conversationId: "conv-1",
+          cwd: `/agents/${sessionId}`,
+          resumeCommand: "resume conv-1",
+        });
       });
 
       it("finds the one already answering when the PR is opened again", async () => {
@@ -1903,12 +1921,90 @@ describe("session identity", () => {
         expect((await agentOf(res))?.conversationId).toBe("conv-1");
       });
 
-      it("reports none when the starter can't run one here", async () => {
+      // Whoever opened the review is told why nobody will answer.
+      it("reports none, and why, when no agent can start here", async () => {
         const { start } = starter("declines");
         handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
 
         const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7" });
-        expect(await agentOf(res)).toBeNull();
+        const body = (await res.json()) as { sessionId?: string; agent: Agent; agentError?: string };
+
+        expect(body.sessionId).toBeDefined();
+        expect(body.agent).toBeNull();
+        expect(body.agentError).toBe("Cursor isn't logged in. Run `cursor-agent login` once.");
+      });
+
+      it("tries again when the PR is reopened after an agent failed to start", async () => {
+        const { start } = starter("declines");
+        handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+
+        await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+
+        expect(start).toHaveBeenCalledTimes(2);
+      });
+
+      // #226: which agent, and with which model.
+      describe("choosing the agent", () => {
+        const saveSettings = (agent: unknown) => {
+          fs.mkdirSync(path.join(os.homedir(), ".diffprism"), { recursive: true });
+          fs.writeFileSync(path.join(os.homedir(), ".diffprism", "config.json"), JSON.stringify({ agent }));
+        };
+        const chosen = (start: ReturnType<typeof starter>["start"]) => start.mock.calls[0][0].agent;
+
+        it("starts the saved default, with its model", async () => {
+          saveSettings({ default: "cursor", models: { cursor: "gpt-5" } });
+          const { start } = starter();
+          handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+          const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7" });
+
+          expect(chosen(start)).toEqual({ name: "cursor", model: "gpt-5" });
+          expect(await agentOf(res)).toMatchObject({ name: "cursor", model: "gpt-5", label: "Cursor" });
+        });
+
+        it("starts the agent and model asked for this review", async () => {
+          saveSettings({ default: "cursor", models: { claude: "opus" } });
+          const { start } = starter();
+          handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+          await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", {
+            prUrl: "acme/widget#7",
+            agent: { name: "claude", model: "sonnet" },
+          });
+
+          expect(chosen(start)).toEqual({ name: "claude", model: "sonnet" });
+        });
+
+        it("refuses an agent it doesn't know", async () => {
+          const { start } = starter();
+          handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+          const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", {
+            prUrl: "acme/widget#7",
+            agent: { name: "copilot" },
+          });
+
+          expect(res.status).toBe(400);
+          expect(start).not.toHaveBeenCalled();
+        });
+
+        // A settings mistake stops the agent, not the review — and says why.
+        it("opens the review without an agent when the settings can't be read, and says why", async () => {
+          saveSettings({ default: "copilot" });
+          const { start } = starter();
+          handle = await startGlobalServer({ silent: true, openBrowser: false, prAgent: start });
+
+          const res = await post(`http://localhost:${handle.httpPort}`, "/api/pr/open", { prUrl: "acme/widget#7" });
+          const body = (await res.json()) as { sessionId?: string; agent: Agent; agentError?: string };
+
+          expect(body.sessionId).toBeDefined();
+          expect(body.agent).toBeNull();
+          expect(body.agentError).toMatch(/agent\.default is "copilot"/);
+          expect(start).not.toHaveBeenCalled();
+        });
       });
 
       it("reports none from a server given no starter", async () => {
@@ -2667,5 +2763,42 @@ describe("reusing an open dashboard tab (#188)", () => {
       expect(open).not.toHaveBeenCalled();
       ws.close();
     });
+  });
+});
+
+// #226: the dashboard's Review agent settings.
+describe("agent settings API", () => {
+  const settingsUrl = () => `http://localhost:${handle!.httpPort}/api/settings/agent`;
+  const put = (body: unknown) =>
+    fetch(settingsUrl(), { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  it("reads the defaults when nothing is saved", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const body = (await (await fetch(settingsUrl())).json()) as { settings: unknown; agents: string[] };
+    expect(body).toEqual({ settings: { agent: "claude", models: {} }, agents: ["claude", "cursor"] });
+  });
+
+  it("saves them, next to anything else in the config file", async () => {
+    fs.mkdirSync(path.join(os.homedir(), ".diffprism"), { recursive: true });
+    fs.writeFileSync(path.join(os.homedir(), ".diffprism", "config.json"), JSON.stringify({ github: { token: "t" } }));
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+
+    const res = await put({ agent: "cursor", models: { cursor: "gpt-5" } });
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(fs.readFileSync(path.join(os.homedir(), ".diffprism", "config.json"), "utf-8"))).toEqual({
+      github: { token: "t" },
+      agent: { default: "cursor", models: { cursor: "gpt-5" } },
+    });
+  });
+
+  it("refuses an agent it doesn't know", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    expect((await put({ agent: "copilot", models: {} })).status).toBe(400);
+  });
+
+  it("refuses a model for an agent it doesn't know", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    expect((await put({ agent: "claude", models: { copilot: "x" } })).status).toBe(400);
   });
 });

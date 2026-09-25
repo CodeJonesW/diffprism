@@ -112,6 +112,15 @@ export type DiffSide = "old" | "new";
  */
 export type PrReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 
+/** The agents that can answer a PR review's comments (#226). Mirrors core's REVIEW_AGENTS. */
+export type ReviewAgentName = "claude" | "cursor";
+
+/** Which agent answers PR reviews by default, and a model for each. Mirrors core's AgentSettings. */
+export interface AgentSettings {
+  agent: ReviewAgentName;
+  models: Partial<Record<ReviewAgentName, string>>;
+}
+
 export interface PrReviewSubmission {
   event: PrReviewEvent;
   summary?: string;

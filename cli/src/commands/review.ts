@@ -10,8 +10,13 @@ interface ReviewFlags {
   reasoning?: string;
   dev?: boolean;
   postToGithub?: boolean;
-  /** False with --no-agent: open a PR review without starting Claude Code to answer comments. */
-  agent?: boolean;
+  /**
+   * For a PR review: the agent to answer comments (`--agent cursor`), or false
+   * with --no-agent. Absent, the server uses the saved default (#226).
+   */
+  agent?: string | false;
+  /** The model the agent uses for this review, over the saved one. */
+  model?: string;
 }
 
 export async function review(
@@ -111,7 +116,7 @@ async function reviewPrFlow(
         cwd: process.cwd(),
         title: flags.title,
         reasoning: flags.reasoning,
-        agent: flags.agent !== false,
+        agent: flags.agent === false ? false : { name: flags.agent, model: flags.model },
       }),
     },
   );
@@ -121,8 +126,16 @@ async function reviewPrFlow(
     fileCount?: number;
     localRepoPath?: string | null;
     pr?: { title: string; author: string; url: string; baseBranch: string; headBranch: string };
-    /** The agent answering this review's comments, which the server runs (#224). */
-    agent?: { conversationId: string; cwd: string } | null;
+    /** The agent answering this review's comments, which the server runs (#224, #226). */
+    agent?: {
+      name: string;
+      model: string | null;
+      label: string;
+      conversationId: string;
+      resumeCommand: string;
+    } | null;
+    /** Why the server started no agent: not installed, not logged in, unreadable settings. */
+    agentError?: string;
     error?: string;
   };
 
@@ -141,12 +154,9 @@ async function reviewPrFlow(
   }
 
   if (data.agent) {
-    const { conversationId, cwd } = data.agent;
-    // Claude Code keeps a conversation with the folder it ran in, so resuming
-    // has to happen from there.
-    const cd = cwd === process.cwd() ? "" : `cd ${/\s/.test(cwd) ? `"${cwd}"` : cwd} && `;
-    console.log(`\nReview open in browser. Claude Code is answering — comment on any line and it replies there.`);
-    console.log(`Once it has answered, continue the conversation in your terminal: ${cd}claude --resume ${conversationId}`);
+    const { label, model, resumeCommand } = data.agent;
+    console.log(`\nReview open in browser. ${label}${model ? ` (${model})` : ""} is answering — comment on any line and it replies there.`);
+    console.log(`Once it has answered, continue the conversation in your terminal: ${resumeCommand}`);
     return;
   }
 
@@ -157,9 +167,13 @@ async function reviewPrFlow(
     return;
   }
 
-  // The server runs the agent, so it's the server that found no Claude Code —
-  // or it's a server from before #224, which never starts one.
-  console.log(`\nReview open in browser. No agent started to answer your comments — is Claude Code installed?`);
+  // The server starts the agent, so it's the server that knows why it didn't:
+  // it says so when it can, and its log always does.
+  console.log(`\nReview open in browser. No agent started to answer your comments${data.agentError ? `: ${data.agentError}` : "."}`);
+  if (!data.agentError) {
+    // A server from before #226, which only logs why.
+    console.log(`~/.diffprism/server.log says why — usually the agent isn't installed or isn't logged in.`);
+  }
   console.log(`In a Claude Code session, ask: Answer my DiffPrism comments on ${data.sessionId}`);
 }
 
