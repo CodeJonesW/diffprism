@@ -5,6 +5,12 @@ on:
     types: [closed]
     branches: [main]
 
+# One release at a time: each reads the last published version, so two
+# merges racing would both try to publish the same one.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
   publish:
     if: github.event.pull_request.merged == true
@@ -16,26 +22,28 @@ jobs:
     steps:
       - name: Detect version bump from PR title
         id: bump
+        env:
+          # Passed through env, never pasted into the script: a title is text anyone can write.
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
-          TITLE="${{ github.event.pull_request.title }}"
-          echo "PR title: $TITLE"
+          echo "PR title: $PR_TITLE"
 
-          if echo "$TITLE" | grep -qi '^major:'; then
+          if echo "$PR_TITLE" | grep -qi '^major:'; then
             echo "type=major" >> "$GITHUB_OUTPUT"
-          elif echo "$TITLE" | grep -qi '^minor:'; then
+          elif echo "$PR_TITLE" | grep -qi '^minor:'; then
             echo "type=minor" >> "$GITHUB_OUTPUT"
-          elif echo "$TITLE" | grep -qi '^patch:'; then
+          elif echo "$PR_TITLE" | grep -qi '^patch:'; then
             echo "type=patch" >> "$GITHUB_OUTPUT"
           else
             echo "type=" >> "$GITHUB_OUTPUT"
             echo "No version prefix found, skipping publish"
           fi
 
+      # The merge commit itself, not whatever main has moved on to since.
       - if: steps.bump.outputs.type != ''
         uses: actions/checkout@v4
         with:
-          ref: main
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - if: steps.bump.outputs.type != ''
         uses: actions/setup-node@v4
@@ -48,33 +56,18 @@ jobs:
         with:
           version: 9
 
+      # main only changes through pull requests, so the release commits nothing
+      # to it. The last published version lives on npm; this bumps that, here
+      # in the workspace, and the tag on the merge commit records the release.
       - if: steps.bump.outputs.type != ''
-        name: Bump version
+        name: Choose version
         id: version
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-          PR_BODY: ${{ github.event.pull_request.body }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
+          PUBLISHED=$(npm view diffprism version)
+          npm version "$PUBLISHED" --no-git-tag-version --allow-same-version
           NEW_VERSION=$(npm version ${{ steps.bump.outputs.type }} --no-git-tag-version)
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Bumped to $NEW_VERSION"
-
-          git add package.json
-
-          COMMIT_MSG="release: $NEW_VERSION
-
-          $PR_TITLE"
-          if [ -n "$PR_BODY" ]; then
-            COMMIT_MSG="$COMMIT_MSG
-
-          $PR_BODY"
-          fi
-
-          git commit -m "$COMMIT_MSG"
-          git push
+          echo "Published: $PUBLISHED. Releasing $NEW_VERSION"
 
       - if: steps.bump.outputs.type != ''
         run: pnpm install --frozen-lockfile
@@ -95,6 +88,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_BODY: ${{ github.event.pull_request.body }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
@@ -104,11 +98,11 @@ jobs:
           fi
 
           if [ -s "$NOTES_FILE" ]; then
-            gh release create "$VERSION" \
+            gh release create "$VERSION" --target "$MERGE_SHA" \
               --title "$VERSION" \
               --notes-file "$NOTES_FILE"
           else
-            gh release create "$VERSION" \
+            gh release create "$VERSION" --target "$MERGE_SHA" \
               --title "$VERSION" \
               --generate-notes
           fi

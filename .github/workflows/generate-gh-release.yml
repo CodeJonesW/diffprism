@@ -21,7 +21,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_NOTES: ${{ inputs.notes }}
         run: |
-          VERSION="v$(node -p "require('./package.json').version")"
+          # package.json on main isn't the released version; npm has the last one published.
+          VERSION="v$(npm view diffprism version)"
 
           if gh release view "$VERSION" &>/dev/null; then
             echo "::error::Release $VERSION already exists"
