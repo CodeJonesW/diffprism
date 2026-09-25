@@ -32,7 +32,7 @@ export function FeedbackLink() {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
+      className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-text-primary transition-colors"
       title="Opens a prefilled GitHub issue. Nothing is sent until you submit it."
     >
       <MessageSquare className="w-3 h-3" />

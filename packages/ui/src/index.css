@@ -8,19 +8,19 @@
 
 :root {
   /* Layout */
-  --color-background: #e5e9f2;
-  --color-surface: #d8dde9;
-  --color-border: #b3bbd0;
+  --color-background: #f6f8fb;
+  --color-surface: #eaeef5;
+  --color-border: #c4ccdc;
   --color-text-primary: #141828;
   --color-text-secondary: #434e65;
   --color-accent: #4f3fba;
 
   /* Diff */
-  --color-diff-bg: #e5e9f2;
+  --color-diff-bg: #f6f8fb;
   --color-diff-text: #141828;
-  --color-gutter-bg: #d8dde9;
+  --color-gutter-bg: #eaeef5;
   --color-gutter-text: #434e65;
-  --color-gutter-border: #b3bbd0;
+  --color-gutter-border: #c4ccdc;
 
   /* Diff additions */
   --color-diff-insert-bg: rgba(30, 160, 120, 0.15);
@@ -34,7 +34,7 @@
 
   /* Diff hunks */
   --color-hunk-bg: rgba(90, 72, 201, 0.10);
-  --color-hunk-border: #b3bbd0;
+  --color-hunk-border: #c4ccdc;
   --color-hunk-gutter-bg: rgba(79, 63, 186, 0.15);
   --color-hunk-gutter-text: #4f3fba;
   --color-hunk-content-text: #434e65;
@@ -44,10 +44,10 @@
   --color-diff-edit-delete: rgba(210, 75, 65, 0.42);
 
   /* Split view divider */
-  --color-split-divider: #b3bbd0;
+  --color-split-divider: #c4ccdc;
 
   /* Widget */
-  --color-widget-bg: #d8dde9;
+  --color-widget-bg: #eaeef5;
 
   /* Inline comment button */
   --color-comment-btn-bg: #167a5c;
@@ -55,26 +55,26 @@
   --color-annotation-indicator: #c07820;
 
   /* Scrollbar */
-  --color-scrollbar-track: #e5e9f2;
-  --color-scrollbar-thumb: #b3bbd0;
+  --color-scrollbar-track: #f6f8fb;
+  --color-scrollbar-thumb: #c4ccdc;
   --color-scrollbar-thumb-hover: #98a2b8;
 
   /* Syntax tokens */
-  --color-token-comment: #6b7a8f;
+  --color-token-comment: #5a6678;
   --color-token-punctuation: #1a1f2e;
   --color-token-property: #0b6e82;
-  --color-token-string: #0e7a5c;
-  --color-token-operator: #c93c33;
+  --color-token-string: #0d7357;
+  --color-token-operator: #b7372f;
   --color-token-keyword: #6e45c9;
-  --color-token-function: #2870c9;
-  --color-token-variable: #b06e18;
+  --color-token-function: #2465b5;
+  --color-token-variable: #8f5914;
 
   /* Semantic status colors */
-  --color-success: #0e7a5c;
-  --color-danger: #c93c33;
-  --color-warning: #b06e18;
-  --color-info: #2870c9;
-  --color-neutral: #6b7a8f;
+  --color-success: #0d7357;
+  --color-danger: #b7372f;
+  --color-warning: #8f5914;
+  --color-info: #2465b5;
+  --color-neutral: #5a6678;
   --color-perf: #c07820;
 
   /* Semantic colors for Tailwind */
@@ -86,17 +86,17 @@
   /* Layout */
   --color-background: #0b0f1a;
   --color-surface: #131829;
-  --color-border: #252d3f;
-  --color-text-primary: #dfe5f1;
-  --color-text-secondary: #7585a3;
-  --color-accent: #7c6bf0;
+  --color-border: #2e374b;
+  --color-text-primary: #f1f4f9;
+  --color-text-secondary: #929bad;
+  --color-accent: #9689f3;
 
   /* Diff */
   --color-diff-bg: #0b0f1a;
-  --color-diff-text: #dfe5f1;
+  --color-diff-text: #f1f4f9;
   --color-gutter-bg: #111623;
-  --color-gutter-text: #7585a3;
-  --color-gutter-border: #252d3f;
+  --color-gutter-text: #929bad;
+  --color-gutter-border: #2e374b;
 
   /* Diff additions */
   --color-diff-insert-bg: rgba(45, 185, 140, 0.12);
@@ -110,33 +110,33 @@
 
   /* Diff hunks */
   --color-hunk-bg: rgba(124, 107, 240, 0.08);
-  --color-hunk-border: #252d3f;
+  --color-hunk-border: #2e374b;
   --color-hunk-gutter-bg: rgba(124, 107, 240, 0.12);
-  --color-hunk-gutter-text: #9688f0;
-  --color-hunk-content-text: #7585a3;
+  --color-hunk-gutter-text: #9e91f1;
+  --color-hunk-content-text: #929bad;
 
   /* Word-level diff */
   --color-diff-edit-insert: rgba(45, 185, 140, 0.35);
   --color-diff-edit-delete: rgba(235, 100, 90, 0.35);
 
   /* Split view divider */
-  --color-split-divider: #252d3f;
+  --color-split-divider: #2e374b;
 
   /* Widget */
   --color-widget-bg: #131829;
 
   /* Inline comment button */
   --color-comment-btn-bg: #2db98c;
-  --color-comment-indicator: #7c6bf0;
+  --color-comment-indicator: #9689f3;
   --color-annotation-indicator: #e0a050;
 
   /* Scrollbar */
   --color-scrollbar-track: #0b0f1a;
-  --color-scrollbar-thumb: #252d3f;
+  --color-scrollbar-thumb: #2e374b;
   --color-scrollbar-thumb-hover: #3a4560;
 
   /* Syntax tokens */
-  --color-token-comment: #5f6f8a;
+  --color-token-comment: #8b95a5;
   --color-token-punctuation: #bec8db;
   --color-token-property: #56c8e0;
   --color-token-string: #42c9a2;
@@ -150,7 +150,7 @@
   --color-danger: #f07a6e;
   --color-warning: #e0a050;
   --color-info: #6aabf7;
-  --color-neutral: #5f6f8a;
+  --color-neutral: #8b95a5;
   --color-perf: #e89040;
 
   /* Semantic colors for Tailwind */

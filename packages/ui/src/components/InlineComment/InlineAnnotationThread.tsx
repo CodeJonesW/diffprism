@@ -39,12 +39,12 @@ interface InlineAnnotationThreadProps {
 
 function AuthorLabel({ author, agent }: { author: "agent" | "reviewer"; agent?: string }) {
   return author === "reviewer" ? (
-    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-accent">
+    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent">
       <User className="w-3 h-3" />
       You
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 text-[10px] text-text-secondary">
+    <span className="inline-flex items-center gap-1 text-[11px] text-text-secondary">
       <Bot className="w-3 h-3" />
       {agent ?? "agent"}
     </span>
@@ -70,7 +70,7 @@ function UnheardNotice({ sessionId }: { sessionId?: string }) {
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
 
   return (
-    <div className="mt-1.5 text-[11px]">
+    <div className="mt-1.5 text-xs">
       <p className="text-warning">No agent is listening, so nothing will answer this. Ask Claude Code:</p>
       <div className="mt-1 flex items-center gap-2">
         <code className="select-all px-1.5 py-0.5 rounded border border-border bg-background text-text-primary">
@@ -118,7 +118,7 @@ export function InlineAnnotationThread({
         ) : (
           <Bot className="w-3 h-3 text-text-secondary" />
         )}
-        <span className="text-[10px] font-semibold text-text-secondary uppercase tracking-wide">
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wide">
           {isConversation
             ? `Discussion${annotations.length > 1 ? ` (${annotations.length})` : ""}`
             : `Agent ${annotations.length === 1 ? "Annotation" : `Annotations (${annotations.length})`}`}
@@ -138,10 +138,10 @@ export function InlineAnnotationThread({
               {author === "agent" ? (
                 <>
                   <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${colorClass}`} />
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${badgeStyle}`}>
+                  <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded border ${badgeStyle}`}>
                     {annotation.category}
                   </span>
-                  <span className="text-text-secondary text-[10px]">{annotation.source.agent}</span>
+                  <span className="text-text-secondary text-[11px]">{annotation.source.agent}</span>
                 </>
               ) : (
                 <AuthorLabel author="reviewer" />
@@ -170,7 +170,7 @@ export function InlineAnnotationThread({
               (pickup(annotation) === "unheard" ? (
                 <UnheardNotice sessionId={sessionId} />
               ) : (
-                <p className="mt-1.5 text-[11px] text-text-secondary italic">
+                <p className="mt-1.5 text-xs text-text-secondary italic">
                   Waiting for the agent to reply.
                 </p>
               ))}
@@ -192,7 +192,7 @@ export function InlineAnnotationThread({
               ) : (
                 <button
                   onClick={() => setReplyingTo(annotation.id)}
-                  className="mt-1 text-[11px] text-text-secondary hover:text-accent transition-colors cursor-pointer"
+                  className="mt-1 text-xs text-text-secondary hover:text-accent transition-colors cursor-pointer"
                 >
                   Reply
                 </button>

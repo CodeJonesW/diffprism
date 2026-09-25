@@ -64,7 +64,7 @@ function AnnotationBody({ body }: { body: string }) {
     return (
       <div>
         <p className="text-xs text-text-primary whitespace-pre-wrap">{body}</p>
-        <button onClick={toggle} className="text-[10px] text-accent hover:underline mt-0.5 cursor-pointer">
+        <button onClick={toggle} className="text-[11px] text-accent hover:underline mt-0.5 cursor-pointer">
           Show less
         </button>
       </div>
@@ -74,7 +74,7 @@ function AnnotationBody({ body }: { body: string }) {
   return (
     <div>
       <p className="text-xs text-text-primary truncate">{body}</p>
-      <button onClick={toggle} className="text-[10px] text-accent hover:underline mt-0.5 cursor-pointer">
+      <button onClick={toggle} className="text-[11px] text-accent hover:underline mt-0.5 cursor-pointer">
         Show more
       </button>
     </div>
@@ -185,7 +185,7 @@ export function AnnotationPanel({
                       </span>
                       {(annotation.author ?? "agent") === "agent" && (
                         <span
-                          className={`text-[10px] font-semibold uppercase ${colorClass}`}
+                          className={`text-[11px] font-semibold uppercase ${colorClass}`}
                         >
                           {annotation.category}
                         </span>
@@ -194,12 +194,12 @@ export function AnnotationPanel({
                     <AnnotationBody body={annotation.body} />
                     {awaitingAgent(annotation) ? (
                       pickup(annotation) === "unheard" ? (
-                        <p className="text-[10px] text-warning mt-0.5">No agent listening</p>
+                        <p className="text-[11px] text-warning mt-0.5">No agent listening</p>
                       ) : (
-                        <p className="text-[10px] text-text-secondary italic mt-0.5">Waiting for an agent</p>
+                        <p className="text-[11px] text-text-secondary italic mt-0.5">Waiting for an agent</p>
                       )
                     ) : (annotation.replies?.length ?? 0) > 0 ? (
-                      <p className="text-[10px] text-text-secondary mt-0.5">
+                      <p className="text-[11px] text-text-secondary mt-0.5">
                         {annotation.replies!.length} {annotation.replies!.length === 1 ? "reply" : "replies"}
                       </p>
                     ) : null}

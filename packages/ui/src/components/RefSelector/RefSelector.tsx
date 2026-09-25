@@ -198,7 +198,7 @@ export function RefSelector() {
               <div>
                 {filteredLocalBranches.length > 0 && (
                   <div>
-                    <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary bg-background/50">
+                    <div className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-secondary bg-background/50">
                       Local
                     </div>
                     {filteredLocalBranches.map((branch) => (
@@ -212,7 +212,7 @@ export function RefSelector() {
                         <GitBranch className="w-3 h-3 flex-shrink-0 text-text-secondary" />
                         <span className="font-mono truncate">{branch}</span>
                         {branch === refs?.currentBranch && (
-                          <span className="ml-auto text-[10px] text-text-secondary">current</span>
+                          <span className="ml-auto text-[11px] text-text-secondary">current</span>
                         )}
                       </button>
                     ))}
@@ -221,7 +221,7 @@ export function RefSelector() {
 
                 {filteredRemoteBranches.length > 0 && (
                   <div>
-                    <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary bg-background/50">
+                    <div className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-text-secondary bg-background/50">
                       Remote
                     </div>
                     {filteredRemoteBranches.map((branch) => (
@@ -264,7 +264,7 @@ export function RefSelector() {
                           <span className="font-mono text-accent">{commit.shortHash}</span>
                           <span className="truncate">{commit.subject}</span>
                         </div>
-                        <div className="text-[10px] text-text-secondary mt-0.5">
+                        <div className="text-[11px] text-text-secondary mt-0.5">
                           {commit.author} &middot; {formatRelativeTime(commit.date)}
                         </div>
                       </div>
