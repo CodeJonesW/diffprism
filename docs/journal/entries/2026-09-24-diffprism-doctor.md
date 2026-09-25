@@ -2,6 +2,7 @@
 title: diffprism doctor says whether your install matches the version you run
 date: 2026-09-24
 kind: feature
+pr: 232
 ---
 
 ## What changed
