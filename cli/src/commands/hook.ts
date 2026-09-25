@@ -228,15 +228,9 @@ export function installHook(): void {
     return;
   }
 
-  const block = `${MARKER_START}\n${HOOK_LINE}\n${MARKER_END}\n`;
-  const base = existing === "" ? "#!/bin/sh\n" : ensureTrailingNewline(existing);
-  const created = existing === "";
+  writeHook(hookPath, existing);
 
-  fs.mkdirSync(path.dirname(hookPath), { recursive: true });
-  fs.writeFileSync(hookPath, `${base}\n${block}`);
-  fs.chmodSync(hookPath, 0o755);
-
-  console.log(`${created ? "Created" : "Updated"} ${hookPath}`);
+  console.log(`${existing === "" ? "Created" : "Updated"} ${hookPath}`);
   console.log(
     `Staged changes of ${DEFAULT_MIN_LINES}+ lines now open a review before the commit lands.`,
   );
@@ -271,6 +265,44 @@ export function uninstallHook(): void {
 
   fs.writeFileSync(hookPath, cleaned);
   console.log(`Removed the diffprism block from ${hookPath}`);
+}
+
+/** The pre-commit hook, and whether its diffprism block is the one this build writes. */
+export interface HookStatus {
+  hookPath: string;
+  state: "not-installed" | "current" | "stale";
+}
+
+export function hookStatus(cwd: string): HookStatus {
+  const hookPath = resolveHookPath(cwd);
+  const existing = fs.existsSync(hookPath) ? fs.readFileSync(hookPath, "utf8") : "";
+  const block = markedBlock(existing);
+  if (block === null) return { hookPath, state: "not-installed" };
+  return { hookPath, state: block === HOOK_LINE ? "current" : "stale" };
+}
+
+/** Replace an installed diffprism block with this build's, keeping the rest of the hook. */
+export function refreshHook(cwd: string): void {
+  const hookPath = resolveHookPath(cwd);
+  writeHook(hookPath, removeMarkedBlock(fs.readFileSync(hookPath, "utf8")));
+}
+
+/** The lines between the markers, or null when there is no diffprism block. */
+function markedBlock(contents: string): string | null {
+  const lines = contents.split("\n").map((line) => line.trim());
+  const start = lines.indexOf(MARKER_START);
+  if (start === -1) return null;
+  const end = lines.indexOf(MARKER_END, start);
+  return lines.slice(start + 1, end === -1 ? undefined : end).filter((l) => l !== "").join("\n");
+}
+
+/** Append this build's diffprism block to a hook's other contents. */
+function writeHook(hookPath: string, rest: string): void {
+  const block = `${MARKER_START}\n${HOOK_LINE}\n${MARKER_END}\n`;
+  const base = rest.trim() === "" ? "#!/bin/sh\n" : ensureTrailingNewline(rest);
+  fs.mkdirSync(path.dirname(hookPath), { recursive: true });
+  fs.writeFileSync(hookPath, `${base}\n${block}`);
+  fs.chmodSync(hookPath, 0o755);
 }
 
 export function removeMarkedBlock(contents: string): string {

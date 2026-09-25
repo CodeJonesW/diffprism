@@ -376,6 +376,10 @@ export interface GlobalServerInfo {
   startedAt: number;
   /** When the server's bundle was built. Absent for servers from before #181, or run from source. */
   builtAt?: number;
+  /** The DiffPrism version the server runs. Absent for servers from before #214. */
+  version?: string;
+  /** The checkout a dev build runs from; absent for a release (or a server from before #214). */
+  devRoot?: string;
 }
 
 export type GlobalSessionStatus = "pending" | "in_review" | "submitted";

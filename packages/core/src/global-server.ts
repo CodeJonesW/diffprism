@@ -36,7 +36,7 @@ import type {
 } from "./types.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
-import { builtAt } from "./build-info.js";
+import { builtAt, getBuildInfo } from "./build-info.js";
 import {
   resolveUiDist,
   resolveUiRoot,
@@ -45,7 +45,7 @@ import {
 } from "./ui-server.js";
 import { hashDiff, detectChangedFiles } from "./diff-utils.js";
 import { DEFAULT_DIFF_REF } from "./diff-scope.js";
-import { buildFeedbackUrl, readLastError } from "./feedback.js";
+import { buildFeedbackUrl, readLastError, currentVersion } from "./feedback.js";
 import { buildGitHubReview, PR_EVENT_DECISION } from "./pr-review.js";
 import { watcherPollDelay, DEFAULT_WATCH_SCHEDULE } from "./watch-schedule.js";
 import type { WatchScheduleOptions } from "./watch-schedule.js";
@@ -1795,7 +1795,13 @@ export async function startGlobalServer(
     wsPort,
     pid: process.pid,
     startedAt: Date.now(),
+    // Which build this is, so `diffprism doctor` can say what is serving reviews.
+    version: currentVersion(),
   };
+  const build = getBuildInfo();
+  if (build.root) {
+    serverInfo.devRoot = build.root;
+  }
   const serverBuiltAt = builtAt();
   if (serverBuiltAt !== null) {
     serverInfo.builtAt = serverBuiltAt;

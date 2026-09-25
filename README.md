@@ -200,6 +200,8 @@ diffprism hook pre-commit           # Run the gate (what the installed hook call
 diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent
 diffprism feedback                  # Share feedback as a prefilled GitHub issue
 diffprism feedback --bug            # Report a bug, including the last error
+diffprism doctor                    # Check what's installed matches this version, and which build the server runs
+diffprism doctor --fix              # Update whatever is out of date, as setup would
 diffprism teardown                  # Remove configuration
 diffprism serve                     # Run the MCP server over stdio (your MCP client launches this)
 ```

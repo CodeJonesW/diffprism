@@ -9,6 +9,7 @@ import { defaultAction } from "./commands/default.js";
 import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
 import { feedback } from "./commands/feedback.js";
 import { reply } from "./commands/reply.js";
+import { doctor } from "./commands/doctor.js";
 import { describeVersion, currentVersion } from "@diffprism/core";
 
 /** The full command tree, built without parsing argv. */
@@ -94,6 +95,12 @@ export function createProgram(): Command {
     .option("--dev", "Use Vite dev server")
     .option("--no-demo", "Skip the demo review after setup")
     .action((flags) => { setup(flags); });
+
+  program
+    .command("doctor")
+    .description("Report whether what DiffPrism installed matches this version, and which build the server runs")
+    .option("--fix", "Update what is out of date, as setup would")
+    .action((flags) => doctor(flags));
 
   program
     .command("teardown")
