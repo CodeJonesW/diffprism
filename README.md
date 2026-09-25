@@ -49,15 +49,36 @@ diffprism review https://github.com/owner/repo/pull/123   # Full GitHub URL
 diffprism review owner/repo#123                            # Shorthand format
 ```
 
-Claude Code then answers your comments: comment on any line and the answer appears in the thread. You don't need to open a Claude Code session or paste anything, and the command gives your terminal back straight away. A PR you open from the dashboard's **Review PR** form gets the same agent. The DiffPrism server runs it, for as long as the review is open.
+An agent then answers your comments — Claude Code unless you choose otherwise (see [Choosing the agent](#choosing-the-agent)): comment on any line and the answer appears in the thread. You don't need to open a Claude Code session or paste anything, and the command gives your terminal back straight away. A PR you open from the dashboard's **Review PR** form gets the same agent. The DiffPrism server runs it, for as long as the review is open.
 
 - The agent is **read-only**. It can read the PR, your clone and the review, and reply, but it can't edit files or run commands.
 - One conversation lasts the whole review, so a follow-up question can build on an earlier answer.
-- The command prints the `claude --resume` command that continues that conversation in your terminal once Claude has answered something.
-- It waits without using Claude: DiffPrism watches for comments and runs Claude only when there's something to answer.
-- It needs the `claude` command installed and logged in. Without it, the command says so, and tells you what to ask in a Claude Code session instead.
+- The command prints the command that continues that conversation in your terminal (`claude --resume …` or `cursor-agent --resume …`) once the agent has answered something.
+- It waits without using the agent: DiffPrism watches for comments and runs the agent only when there's something to answer.
+- It needs the agent's command installed and logged in. Without it, the command says so, and tells you what to ask in a Claude Code session instead.
 - Pass `--no-agent` to open the review without starting one.
 - What the agent does, and why it stopped if it did, goes to the server's log, `~/.diffprism/server.log`.
+
+### Choosing the agent
+
+Claude Code answers by default. Choose Cursor, or a model for either, in three places:
+
+- **The dashboard:** **Review agent** at the bottom of the sessions list.
+- **The CLI:** `diffprism config`, which changes the same saved setting:
+
+  ```bash
+  diffprism config get                    # What's set
+  diffprism config set agent cursor       # Cursor answers from now on
+  diffprism config set cursor.model gpt-5 # ...with this model
+  diffprism config set claude.model opus  # Claude Code's model, for when you switch back
+  diffprism config unset cursor.model     # Back to Cursor's own default
+  ```
+
+- **One review:** `diffprism review <PR URL> --agent cursor --model gpt-5`.
+
+Each agent keeps its own model, so switching agents and back doesn't lose either. Settings live in `~/.diffprism/config.json`. Cursor works from a folder of its own that holds its DiffPrism tool settings and a permissions file. The permissions let it read, and use DiffPrism's tools, replying included; they refuse every file write and shell command, in that folder and in your clone. It can read your clone, but nothing is written into it. Run `cursor-agent login` once before choosing it.
+
+Reviews opened by the [commit gate](#commit-gate) don't start an agent: the agent that made the commit is the one that answers.
 
 Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
 
@@ -198,6 +219,9 @@ diffprism hook install              # Gate commits on a review
 diffprism hook uninstall            # Remove the gate
 diffprism hook pre-commit           # Run the gate (what the installed hook calls)
 diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent
+diffprism config get [key]          # Show settings: which agent answers PR reviews, and its model
+diffprism config set <key> <value>  # Change one (agent, claude.model, cursor.model)
+diffprism config unset <key>        # Put one back to its default
 diffprism feedback                  # Share feedback as a prefilled GitHub issue
 diffprism feedback --bug            # Report a bug, including the last error
 diffprism doctor                    # Check what's installed matches this version, and which build the server runs

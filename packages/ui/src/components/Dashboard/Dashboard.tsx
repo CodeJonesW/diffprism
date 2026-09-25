@@ -2,6 +2,7 @@ import { SessionSidebar } from "../SessionSidebar";
 import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
 import { FeedbackLink } from "../FeedbackLink";
+import { AgentSettingsControl } from "../AgentSettings";
 import { PrInput } from "../PrInput";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
@@ -279,7 +280,7 @@ export function Dashboard({
             onReviewPr={() => setDetailView("review-pr")}
             onHide={() => sessionsPane.setCollapsed(true)}
           />
-          {/* Sidebar footer: notifications and feedback */}
+          {/* Sidebar footer: notifications, the review agent, and feedback */}
           <div className="px-3 py-2 border-t border-border bg-surface space-y-1.5">
             {onToggleNotifications && notificationPermission && (
               <NotificationToggle
@@ -288,6 +289,7 @@ export function Dashboard({
                 onToggle={onToggleNotifications}
               />
             )}
+            <AgentSettingsControl />
             <FeedbackLink />
           </div>
         </Splitter.Pane>

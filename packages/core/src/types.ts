@@ -1,3 +1,4 @@
+import type { ReviewAgentChoice } from "./agent-settings.js";
 // ─── Diff Types ───
 
 export interface Change {
@@ -450,20 +451,34 @@ export interface PrAgentRequest {
   localRepoPath: string | null;
   /** The server the review is on — the agent reads and replies through it. */
   server: GlobalServerInfo;
+  /** Which agent to start, and with which model (#226). */
+  agent: ReviewAgentChoice;
 }
 
 /** An agent that has started answering a PR review. */
 export interface PrAgentHandle {
-  /** Its Claude Code conversation, which `claude --resume` continues. */
+  /** The agent and model answering. */
+  agent: ReviewAgentChoice;
+  /** How the agent signs its replies, e.g. "Claude Code". */
+  label: string;
+  /** Its conversation, which the reviewer can continue in a terminal. */
   conversationId: string;
-  /** The folder it runs in — the one `claude --resume` has to be run from. */
+  /** The folder it runs in. */
   cwd: string;
+  /** The shell command that continues the conversation, from any folder. */
+  resumeCommand: string;
   /** Settles when the agent stops, for whatever reason. Never rejects. */
   done: Promise<void>;
 }
 
-/** Starts an agent for a PR review, or returns null when none can run here. */
-export type PrAgentStarter = (request: PrAgentRequest) => PrAgentHandle | null;
+/**
+ * Starts an agent for a PR review. Rejects with the reason when none can
+ * start here — not installed, not logged in — so whoever opened the review
+ * can be told. Asynchronous because starting can take a moment (Cursor checks
+ * its login and opens a chat), and the server mustn't stop answering while it
+ * does.
+ */
+export type PrAgentStarter = (request: PrAgentRequest) => Promise<PrAgentHandle>;
 
 export interface GlobalServerHandle {
   httpPort: number;
