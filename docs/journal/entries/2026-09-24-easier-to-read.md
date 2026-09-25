@@ -2,6 +2,7 @@
 title: Easier to read, measured against GitHub
 date: 2026-09-24
 kind: fix
+pr: 230
 ---
 
 ## What changed
