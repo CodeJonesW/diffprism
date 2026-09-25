@@ -34,6 +34,21 @@ function writeServerFile(info: Record<string, unknown>): void {
   );
 }
 
+/**
+ * A server that answers: /api/status says it's up, /api/reviews lists these
+ * sessions. Tests without one get a fetch that fails, so none of them can reach
+ * a real DiffPrism server on this machine's default port.
+ */
+function stubServer(sessions: Array<{ status: string }> = []): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => ({
+      ok: true,
+      json: async () => (url.endsWith("/api/reviews") ? { sessions } : { running: true }),
+    })),
+  );
+}
+
 function hookFile(): string {
   return path.join(repo, ".git", "hooks", "pre-commit");
 }
@@ -48,6 +63,9 @@ beforeEach(() => {
   vi.spyOn(process, "cwd").mockReturnValue(repo);
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
+  vi.stubGlobal("fetch", vi.fn(async () => {
+    throw new Error("tests don't talk to a real server");
+  }));
   process.exitCode = undefined;
 });
 
@@ -125,6 +143,7 @@ describe("diffprism doctor (#214)", () => {
 
   it("says which build the server is running", async () => {
     writeServerFile({ version: "1.10.2", devRoot: "/src/diffprism" });
+    stubServer();
 
     const [check] = (await diagnose(repo)).server.checks;
 
@@ -136,7 +155,7 @@ describe("diffprism doctor (#214)", () => {
   it("--fix replaces an older server nobody is reviewing in", async () => {
     vi.mocked(builtAt).mockReturnValue(2000);
     writeServerFile({ builtAt: 1000 });
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ sessions: [] }) })));
+    stubServer();
 
     expect((await diagnose(repo)).server.checks[0].state).toBe("fixable");
 
@@ -147,10 +166,7 @@ describe("diffprism doctor (#214)", () => {
   it("leaves an older server alone while a review is open in it", async () => {
     vi.mocked(builtAt).mockReturnValue(2000);
     writeServerFile({ builtAt: 1000 });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({ ok: true, json: async () => ({ sessions: [{ status: "in_review" }] }) })),
-    );
+    stubServer([{ status: "in_review" }]);
 
     const [check] = (await diagnose(repo)).server.checks;
     expect(check.state).toBe("stale");
