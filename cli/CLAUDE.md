@@ -64,6 +64,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - `src/commands/review.ts` — Review command handler
 - `src/commands/pr-agent.ts` — The agent that answers comments on a PR review: one listener, with an `AgentKind` per agent (`CLAUDE`, `CURSOR`) saying how to start a conversation and run one turn. `prAgentStarter()` is what `diffprism server` hands the server to start one per PR review
 - `src/commands/config.ts` — `diffprism config`: the saved agent and models
+- `src/commands/dojo.ts` — The review dojo (#231): every chosen agent reviews the PR, then votes on the others' findings, over the same `AgentKind`s as the PR agent. `dojoRunner()` is what `diffprism server` hands the server
 - `src/commands/serve.ts` — MCP serve command (dynamic import)
 - `src/commands/setup.ts` — Setup command: git root detection, file merging, skill installation, global setup, `isGlobalSetupDone()`
 - `src/commands/doctor.ts` — Doctor command: reports the install against this build, `--fix` applies setup

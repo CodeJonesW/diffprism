@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { AgentSettings, DiffSide, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
+import type { AgentSettings, DiffSide, DojoAvailableAgent, ReviewAgentName, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -191,6 +191,28 @@ export function useHttpApi() {
     [httpPort],
   );
 
+  /** The agents a review dojo can seat on this machine (#231). */
+  const getDojoAgents = useCallback(
+    async (): Promise<{ ok: true; agents: DojoAvailableAgent[] } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/dojo/agents`);
+        const data = (await response.json().catch(() => ({}))) as { agents?: DojoAvailableAgent[]; error?: string };
+        if (response.ok && data.agents) return { ok: true, agents: data.agents };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  /** Start a review dojo. Its progress and result arrive as dojo:update. */
+  const startDojo = useCallback(
+    (sessionId: string, agents: ReviewAgentName[]) => postJson(`/api/reviews/${sessionId}/dojo`, { agents }),
+    [postJson],
+  );
+
   return {
     isAvailable,
     fetchRefs,
@@ -202,5 +224,7 @@ export function useHttpApi() {
     submitPrReview,
     getAgentSettings,
     saveAgentSettings,
+    getDojoAgents,
+    startDojo,
   };
 }

@@ -349,9 +349,58 @@ export type ServerMessage =
   | { type: "session:removed"; payload: { sessionId: string } }
   | { type: "annotation:added"; payload: Annotation }
   | { type: "annotation:dismissed"; payload: { annotationId: string } }
-  | { type: "annotation:updated"; payload: Annotation };
+  | { type: "annotation:updated"; payload: Annotation }
+  | { type: "dojo:update"; payload: DojoState };
 
 export type ClientMessage =
   | { type: "diff:change_ref"; payload: { diffRef: string } }
   | { type: "session:select"; payload: { sessionId: string } }
   | { type: "session:close"; payload: { sessionId: string } };
+
+// ─── The review dojo (#231) — mirrors packages/core/src/dojo.ts ───
+
+export type DojoSeverity = "critical" | "major" | "minor" | "nit";
+
+export interface DojoVote {
+  agent: ReviewAgentName;
+  stance: "agree" | "disagree";
+  severity: DojoSeverity;
+  note: string;
+}
+
+export type DojoConsensus = "agreed" | "disputed" | "partial" | "solo";
+
+export interface DojoCombinedFinding {
+  id: string;
+  raisedBy: ReviewAgentName;
+  file: string;
+  line: number;
+  side: DiffSide;
+  severity: DojoSeverity;
+  title: string;
+  body: string;
+  votes: DojoVote[];
+  consensus: DojoConsensus;
+  annotationId?: string;
+}
+
+export interface DojoAgentOutcome {
+  agent: { name: ReviewAgentName; model?: string };
+  label: string;
+  error?: string;
+}
+
+export interface DojoState {
+  status: "running" | "done" | "failed";
+  agents: DojoAgentOutcome[];
+  findings: DojoCombinedFinding[];
+  startedAt: number;
+  finishedAt?: number;
+  error?: string;
+}
+
+export interface DojoAvailableAgent {
+  name: ReviewAgentName;
+  label: string;
+  model?: string;
+}

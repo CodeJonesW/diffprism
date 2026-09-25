@@ -14,6 +14,7 @@ import {
   CLAUDE,
   CURSOR,
   agentPrompt,
+  agentSystemPrompt,
   listenWithAgent,
   AgentStalledError,
   AGENT_ALLOWED_TOOLS,
@@ -73,7 +74,7 @@ function argAfter(args: string[], flag: string): string | undefined {
 }
 
 describe("Claude Code", () => {
-  const args = (first: boolean, r = review()) => CLAUDE.turn(r, conversation, { first, prompt: "the threads" }).args;
+  const args = (first: boolean, r = review()) => CLAUDE.turn(r, conversation, { first, prompt: "the threads", instructions: "the instructions" }).args;
 
   it("starts the conversation on the first turn and resumes it after", () => {
     expect(argAfter(args(true), "--session-id")).toBe("conv-7");
@@ -83,7 +84,7 @@ describe("Claude Code", () => {
   });
 
   it("sends the threads on stdin", () => {
-    expect(CLAUDE.turn(review(), conversation, { first: true, prompt: "the threads" }).stdin).toBe("the threads");
+    expect(CLAUDE.turn(review(), conversation, { first: true, prompt: "the threads", instructions: "the instructions" }).stdin).toBe("the threads");
   });
 
   it("can read and reply, and cannot change anything", () => {
@@ -110,8 +111,12 @@ describe("Claude Code", () => {
     expect(args(true)).toContain("--strict-mcp-config");
   });
 
-  it("tells the agent which review to reply on, and to sign as Claude Code", () => {
-    const system = argAfter(args(true), "--append-system-prompt")!;
+  it("gives the agent its instructions as a system prompt", () => {
+    expect(argAfter(args(true), "--append-system-prompt")).toBe("the instructions");
+  });
+
+  it("tells a thread-answering agent which review to reply on, and how to sign", () => {
+    const system = agentSystemPrompt(review(), "Claude Code");
     expect(system).toContain('session_id "session-1"');
     expect(system).toContain('source_agent "Claude Code"');
   });
@@ -134,7 +139,7 @@ describe("Claude Code", () => {
 
 describe("Cursor (#226)", () => {
   const cursorConversation = { ...conversation, cwd: "/tmp/diffprism-agent/session-1" };
-  const args = (first: boolean, r = review()) => CURSOR.turn(r, cursorConversation, { first, prompt: "the threads" }).args;
+  const args = (first: boolean, r = review()) => CURSOR.turn(r, cursorConversation, { first, prompt: "the threads", instructions: "the instructions" }).args;
 
   it("resumes the chat it started, every turn", () => {
     expect(argAfter(args(true), "--resume")).toBe("conv-7");
@@ -162,9 +167,7 @@ describe("Cursor (#226)", () => {
 
   // Cursor has no separate system prompt.
   it("leads the first turn with the instructions, and later turns with just the threads", () => {
-    const first = args(true).at(-1)!;
-    expect(first).toContain('source_agent "Cursor"');
-    expect(first).toMatch(/the threads$/);
+    expect(args(true).at(-1)).toBe("the instructions\n\nthe threads");
     expect(args(false).at(-1)).toBe("the threads");
   });
 

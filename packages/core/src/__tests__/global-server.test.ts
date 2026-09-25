@@ -6,6 +6,7 @@ import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
 import type { PrAgentRequest } from "../types.js";
+import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoState } from "../dojo.js";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -2800,5 +2801,167 @@ describe("agent settings API", () => {
   it("refuses a model for an agent it doesn't know", async () => {
     handle = await startGlobalServer({ silent: true, openBrowser: false });
     expect((await put({ agent: "claude", models: { copilot: "x" } })).status).toBe(400);
+  });
+});
+
+describe("the review dojo (#231)", () => {
+  const send = (baseUrl: string, route: string, body: unknown) =>
+    fetch(`${baseUrl}${route}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+
+  const finding: DojoCombinedFinding = {
+    id: "claude-1",
+    raisedBy: "claude",
+    file: "src/widget.ts",
+    line: 12,
+    side: "new",
+    severity: "major",
+    title: "Cache never expires",
+    body: "Entries are written with no TTL.",
+    votes: [{ agent: "cursor", stance: "agree", severity: "critical", note: "and it grows forever" }],
+    consensus: "agreed",
+  };
+  const agents = [
+    { agent: { name: "claude" as const }, label: "Claude Code" },
+    { agent: { name: "cursor" as const, model: "gpt-5" }, label: "Cursor" },
+  ];
+
+  /** A runner whose dojo finishes when `finish` is called, or fails with `fail`. */
+  function runner() {
+    let finish = (_r: DojoResult): void => {};
+    let fail = (_e: Error): void => {};
+    const run = vi.fn(
+      (_request: DojoRequest) =>
+        new Promise<DojoResult>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    const dojo: DojoRunner = { available: vi.fn(async () => [{ name: "claude" as const, label: "Claude Code" }]), run };
+    return { dojo, run, finish: (r: DojoResult) => finish(r), fail: (e: Error) => fail(e) };
+  }
+
+  async function openPr(baseUrl: string): Promise<string> {
+    const res = await send(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", agent: false });
+    return ((await res.json()) as { sessionId: string }).sessionId;
+  }
+
+  /** What a dashboard opening the review is sent, once the dojo state arrives. */
+  async function viewerSees(sessionId: string): Promise<{ dojo: DojoState; annotations: Annotation[] }> {
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle!.wsPort}?sessionId=${sessionId}`);
+    const messages: ServerMessage[] = [];
+    await new Promise<void>((resolve) =>
+      ws.on("message", (data) => {
+        const message = JSON.parse(data.toString()) as ServerMessage;
+        messages.push(message);
+        if (message.type === "dojo:update") resolve();
+      }),
+    );
+    ws.close();
+    return {
+      dojo: messages.find((m) => m.type === "dojo:update")!.payload as DojoState,
+      annotations: messages.filter((m) => m.type === "annotation:added").map((m) => m.payload as Annotation),
+    };
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it("lists the agents it can seat", async () => {
+    const { dojo } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const res = await fetch(`http://localhost:${handle.httpPort}/api/dojo/agents`);
+    expect(await res.json()).toEqual({ agents: [{ name: "claude", label: "Claude Code" }] });
+  });
+
+  it("runs the chosen agents, with their saved models, and posts each finding as a thread on its line", async () => {
+    fs.mkdirSync(path.join(os.homedir(), ".diffprism"), { recursive: true });
+    fs.writeFileSync(path.join(os.homedir(), ".diffprism", "config.json"), JSON.stringify({ agent: { models: { cursor: "gpt-5" } } }));
+    const { dojo, run, finish } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+
+    const res = await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude", "cursor"] });
+
+    expect(res.status).toBe(202);
+    expect(((await res.json()) as { dojo: DojoState }).dojo.status).toBe("running");
+    expect(run).toHaveBeenCalledWith({
+      sessionId,
+      prUrl: "https://github.com/acme/widget/pull/7",
+      localRepoPath: null,
+      server: expect.objectContaining({ httpPort: handle.httpPort }),
+      agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
+    });
+
+    finish({ agents, findings: [finding] });
+    await settle();
+
+    const { dojo: state, annotations } = await viewerSees(sessionId);
+    expect(state).toMatchObject({ status: "done", agents });
+    expect(annotations).toHaveLength(1);
+    expect(state.findings[0].annotationId).toBe(annotations[0].id);
+    expect(annotations[0]).toMatchObject({ file: "src/widget.ts", line: 12, side: "new", type: "finding" });
+    expect(annotations[0].body).toContain("[major] Cache never expires");
+    expect(annotations[0].body).toContain("Raised by Claude Code");
+    expect(annotations[0].body).toContain("Cursor agrees (critical): and it grows forever");
+  });
+
+  it("says why when no agent could take part", async () => {
+    const { dojo, fail } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+    await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+    fail(new Error("Claude Code isn't installed."));
+    await settle();
+
+    expect((await viewerSees(sessionId)).dojo).toMatchObject({ status: "failed", error: "Claude Code isn't installed." });
+  });
+
+  it("won't start a second dojo while one is running", async () => {
+    const { dojo, run } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+    await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+    const again = await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+    expect(again.status).toBe(409);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses no agents, the same agent twice, and agents it doesn't know", async () => {
+    const { dojo, run } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+
+    expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: [] })).status).toBe(409);
+    expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude", "claude"] })).status).toBe(409);
+    expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["copilot"] })).status).toBe(400);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("runs only on a pull request review", async () => {
+    const { dojo, run } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const created = await send(baseUrl, "/api/reviews", { payload: makePayload(), projectPath: "/repo" });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+
+    const res = await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+    expect(res.status).toBe(409);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("has no dojo on a server given no runner", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+    expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] })).status).toBe(404);
+    expect((await fetch(`${baseUrl}/api/dojo/agents`)).status).toBe(404);
   });
 });

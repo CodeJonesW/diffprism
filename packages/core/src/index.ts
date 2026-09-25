@@ -76,6 +76,23 @@ export {
   chooseReviewAgent,
 } from "./agent-settings.js";
 export type { ReviewAgentName, ReviewAgentChoice, AgentSettings } from "./agent-settings.js";
+export { DOJO_SEVERITIES, combineFindings, dojoFindingId } from "./dojo.js";
+export type {
+  DojoSeverity,
+  DojoFinding,
+  DojoVote,
+  DojoConsensus,
+  DojoCombinedFinding,
+  DojoAgentOutcome,
+  DojoStatus,
+  DojoState,
+  DojoAvailableAgent,
+  DojoRequest,
+  DojoResult,
+  DojoRunner,
+  DojoRoundOne,
+  DojoRoundTwo,
+} from "./dojo.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,
