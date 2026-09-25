@@ -2,6 +2,7 @@
 title: The review dojo — agents review a PR, then argue about it
 date: 2026-09-24
 kind: feature
+pr: 234
 ---
 
 ## What changed
