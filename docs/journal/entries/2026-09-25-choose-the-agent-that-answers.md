@@ -2,6 +2,7 @@
 title: Choose the agent that answers, and its model
 date: 2026-09-25
 kind: feature
+pr: 233
 ---
 
 ## What changed
