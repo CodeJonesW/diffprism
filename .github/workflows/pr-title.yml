@@ -9,8 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Validate PR title format
+        env:
+          # Passed through env, never pasted into the script: this runs on
+          # anyone's pull request, and a title is text they choose.
+          TITLE: ${{ github.event.pull_request.title }}
         run: |
-          TITLE="${{ github.event.pull_request.title }}"
           echo "PR title: $TITLE"
 
           if echo "$TITLE" | grep -qiE '^(patch|minor|major):'; then

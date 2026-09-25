@@ -345,6 +345,6 @@ The PR body becomes release notes, so write it clearly.
 ### Rules
 
 - **Never push to main** — always use a feature branch + PR
-- **Never bump the version** — CI handles versioning based on the PR title prefix
+- **Never bump the version** — CI handles versioning based on the PR title prefix. `package.json` on main says `0.0.0-development`: the release job bumps the last version published to npm in its own workspace, publishes, and tags the merge commit. It commits nothing, because main only changes through pull requests
 - **Never force push** — it rewrites history and breaks review
 - **One issue per PR** — keep changes focused and reviewable
