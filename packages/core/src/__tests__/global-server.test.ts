@@ -6,7 +6,8 @@ import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
 import type { PrAgentRequest } from "../types.js";
-import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoState } from "../dojo.js";
+import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoSeat, DojoState } from "../dojo.js";
+import { AsyncQueue } from "../async-queue.js";
 import type {
   GlobalServerHandle,
   ReviewInitPayload,
@@ -2820,24 +2821,40 @@ describe("the review dojo (#231)", () => {
     votes: [{ agent: "cursor", stance: "agree", severity: "critical", note: "and it grows forever" }],
     consensus: "agreed",
   };
-  const agents = [
-    { agent: { name: "claude" as const }, label: "Claude Code" },
-    { agent: { name: "cursor" as const, model: "gpt-5" }, label: "Cursor" },
+  const agents: DojoSeat[] = [
+    { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 5, raised: 1 },
+    { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor", stage: "done", stageStartedAt: 6, raised: 0 },
   ];
 
-  /** A runner whose dojo finishes when `finish` is called, or fails with `fail`. */
+  /**
+   * A runner whose dojo reports `progress(seat)` as it goes, and finishes when
+   * `finish` is called, or fails with `fail`.
+   */
   function runner() {
     let finish = (_r: DojoResult): void => {};
     let fail = (_e: Error): void => {};
-    const run = vi.fn(
-      (_request: DojoRequest) =>
-        new Promise<DojoResult>((resolve, reject) => {
-          finish = resolve;
-          fail = reject;
-        }),
-    );
+    const queue = new AsyncQueue<DojoSeat>();
+    const run = vi.fn((_request: DojoRequest) => ({
+      progress: queue,
+      result: new Promise<DojoResult>((resolve, reject) => {
+        finish = (r) => {
+          queue.end();
+          resolve(r);
+        };
+        fail = (e) => {
+          queue.end();
+          reject(e);
+        };
+      }),
+    }));
     const dojo: DojoRunner = { available: vi.fn(async () => [{ name: "claude" as const, label: "Claude Code" }]), run };
-    return { dojo, run, finish: (r: DojoResult) => finish(r), fail: (e: Error) => fail(e) };
+    return {
+      dojo,
+      run,
+      progress: (seat: DojoSeat) => queue.push(seat),
+      finish: (r: DojoResult) => finish(r),
+      fail: (e: Error) => fail(e),
+    };
   }
 
   async function openPr(baseUrl: string): Promise<string> {
@@ -2904,6 +2921,33 @@ describe("the review dojo (#231)", () => {
     expect(annotations[0].body).toContain("[major] Cache never expires");
     expect(annotations[0].body).toContain("Raised by Claude Code");
     expect(annotations[0].body).toContain("Cursor agrees (critical): and it grows forever");
+  });
+
+  it("shows each agent's progress while the dojo runs, in the order they were chosen", async () => {
+    const { dojo, progress, finish } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openPr(baseUrl);
+    await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude", "cursor"] });
+
+    progress({ agent: { name: "cursor" }, label: "Cursor", stage: "reviewing", stageStartedAt: 2, activity: "Reading the pull request" });
+    progress({ agent: { name: "claude" }, label: "Claude Code", stage: "starting", stageStartedAt: 1 });
+    progress({ agent: { name: "claude" }, label: "Claude Code", stage: "reviewing", stageStartedAt: 3, activity: "Reading the diff of src/a.ts" });
+    await settle();
+
+    const { dojo: state } = await viewerSees(sessionId);
+    expect(state.status).toBe("running");
+    expect(state.agents.map((a) => [a.label, a.stage, a.activity])).toEqual([
+      ["Claude Code", "reviewing", "Reading the diff of src/a.ts"],
+      ["Cursor", "reviewing", "Reading the pull request"],
+    ]);
+
+    // Once it's done, the result is what stands — a late progress report doesn't undo it.
+    finish({ agents, findings: [] });
+    await settle();
+    progress({ agent: { name: "claude" }, label: "Claude Code", stage: "voting", stageStartedAt: 9 });
+    await settle();
+    expect((await viewerSees(sessionId)).dojo).toMatchObject({ status: "done", agents });
   });
 
   it("says why when no agent could take part", async () => {

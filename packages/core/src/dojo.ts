@@ -49,10 +49,20 @@ export interface DojoCombinedFinding extends DojoFinding {
   annotationId?: string;
 }
 
-/** How one agent's part in the dojo went. */
-export interface DojoAgentOutcome {
+/** Where one agent is in the dojo. `dropped` means it left early; `error` says why. */
+export type DojoStage = "starting" | "reviewing" | "voting" | "done" | "dropped";
+
+/** One agent's place in the dojo: what it's doing now, and how it went. */
+export interface DojoSeat {
   agent: ReviewAgentChoice;
   label: string;
+  stage: DojoStage;
+  /** When it entered this stage (ms since epoch). */
+  stageStartedAt: number;
+  /** What it's doing right now, e.g. "Reading the diff of src/cache.ts". */
+  activity?: string;
+  /** How many findings it raised in its own review, once it has. */
+  raised?: number;
   /** Why it dropped out, if it did. Its findings and votes are then missing. */
   error?: string;
 }
@@ -62,7 +72,7 @@ export type DojoStatus = "running" | "done" | "failed";
 /** A dojo on one review, as the dashboard shows it. */
 export interface DojoState {
   status: DojoStatus;
-  agents: DojoAgentOutcome[];
+  agents: DojoSeat[];
   findings: DojoCombinedFinding[];
   startedAt: number;
   finishedAt?: number;
@@ -87,8 +97,16 @@ export interface DojoRequest {
 }
 
 export interface DojoResult {
-  agents: DojoAgentOutcome[];
+  agents: DojoSeat[];
   findings: DojoCombinedFinding[];
+}
+
+/** A dojo under way: each seat as it changes, and the result at the end. */
+export interface DojoRun {
+  /** A seat, whole, every time anything about it changes. Ends when the dojo does. */
+  progress: AsyncIterable<DojoSeat>;
+  /** Rejects only when no agent could take part at all. */
+  result: Promise<DojoResult>;
 }
 
 /**
@@ -97,8 +115,7 @@ export interface DojoResult {
  */
 export interface DojoRunner {
   available(): Promise<DojoAvailableAgent[]>;
-  /** Rejects only when no agent could take part at all. */
-  run(request: DojoRequest): Promise<DojoResult>;
+  run(request: DojoRequest): DojoRun;
 }
 
 /** What each agent found in round one, by agent. */

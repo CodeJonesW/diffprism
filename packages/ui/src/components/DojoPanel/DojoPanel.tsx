@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle } from "lucide-react";
+import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX } from "lucide-react";
 import type {
   DojoAvailableAgent,
   DojoCombinedFinding,
   DojoConsensus,
+  DojoSeat,
   DojoSeverity,
   DojoState,
   ReviewAgentName,
@@ -64,7 +65,7 @@ export function DojoPanel({ sessionId, dojo, onNavigate, onHide }: DojoPanelProp
             onCancel={dojo ? () => setChoosing(false) : undefined}
           />
         ) : dojo.status === "running" ? (
-          <Running />
+          <Running dojo={dojo} />
         ) : (
           <Results dojo={dojo} onNavigate={onNavigate} onRunAgain={() => setChoosing(true)} />
         )}
@@ -168,11 +169,80 @@ function AgentPicker({
   );
 }
 
-function Running() {
+/** The current time, ticking every second while mounted — for the timers. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/** 0:07, 2:13, 1:02:30. */
+export function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+
+const STAGE_TEXT: Record<DojoSeat["stage"], string> = {
+  starting: "Starting",
+  reviewing: "Reviewing",
+  voting: "Voting on the others' findings",
+  done: "Done",
+  dropped: "Dropped out",
+};
+
+function Running({ dojo }: { dojo: DojoState }) {
+  const now = useNow();
   return (
-    <div className="flex items-start gap-2 text-xs text-text-secondary">
-      <Loader2 className="w-3.5 h-3.5 animate-spin mt-0.5 text-accent" />
-      <p>The agents are reviewing, then voting on each other's findings. This takes a few minutes.</p>
+    <div className="space-y-3">
+      <p className="text-xs text-text-secondary">
+        Each agent reviews on its own, then votes on the others' findings. Running for{" "}
+        <span className="font-mono text-text-primary">{formatElapsed(now - dojo.startedAt)}</span>.
+      </p>
+      {dojo.agents.length === 0 ? (
+        <p className="flex items-center gap-2 text-xs text-text-secondary">
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+          Starting the agents…
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {dojo.agents.map((seat) => (
+            <li key={seat.agent.name}>
+              <SeatRow seat={seat} now={now} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function SeatRow({ seat, now }: { seat: DojoSeat; now: number }) {
+  const active = seat.stage === "starting" || seat.stage === "reviewing" || seat.stage === "voting";
+  return (
+    <div className="rounded-md border border-border bg-background px-3 py-2" aria-label={seat.label}>
+      <div className="flex items-center gap-2">
+        {active ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-accent flex-shrink-0" />
+        ) : seat.stage === "done" ? (
+          <CircleCheck className="w-3.5 h-3.5 text-success flex-shrink-0" />
+        ) : (
+          <CircleX className="w-3.5 h-3.5 text-danger flex-shrink-0" />
+        )}
+        <span className="text-sm text-text-primary font-medium flex-1">{seat.label}</span>
+        {active && <span className="text-xs font-mono text-text-secondary">{formatElapsed(now - seat.stageStartedAt)}</span>}
+      </div>
+      <p className="mt-1 text-xs text-text-secondary">
+        {STAGE_TEXT[seat.stage]}
+        {seat.raised !== undefined && ` · raised ${seat.raised}`}
+      </p>
+      {active && seat.activity && <p className="mt-0.5 text-xs text-text-primary font-mono truncate">{seat.activity}</p>}
+      {seat.error && <p className="mt-0.5 text-xs text-danger">{seat.error}</p>}
     </div>
   );
 }

@@ -9,7 +9,7 @@ vi.mock("@diffprism/core", async () => {
   return { ...actual, waitForDecision: vi.fn() };
 });
 
-import { waitForDecision, ReviewerAskedError, ReviewTimeoutError } from "@diffprism/core";
+import { waitForDecision, ReviewerAskedError, ReviewTimeoutError, AsyncQueue } from "@diffprism/core";
 import {
   CLAUDE,
   CURSOR,
@@ -20,8 +20,10 @@ import {
   AGENT_ALLOWED_TOOLS,
   AGENT_DISALLOWED_TOOLS,
   prAgentStarter,
+  runAgent,
 } from "../commands/pr-agent.js";
 import type {
+  AgentProcess,
   AgentConversation,
   AgentKind,
   AgentReview,
@@ -236,6 +238,68 @@ describe("Cursor (#226)", () => {
   });
 });
 
+/** A turn that has already ended, with no events. */
+function finished(run: { code: number; output: string }): AgentProcess {
+  const events = new AsyncQueue<unknown>();
+  events.end();
+  return { events, done: Promise.resolve(run) };
+}
+
+// Events as the real CLIs stream them (claude 2.1 / cursor-agent 2026.09, --output-format stream-json).
+describe("what an agent is doing", () => {
+  const r = review({ localRepoPath: "/clones/widget" });
+
+  it("reads Claude Code's tool calls", () => {
+    const toolUse = (name: string, input: Record<string, unknown>) => ({
+      type: "assistant",
+      message: { content: [{ type: "thinking" }, { type: "tool_use", name, input }] },
+    });
+    expect(CLAUDE.describe(toolUse("mcp__diffprism__get_file_diff", { session_id: "s", file: "src/cache.ts" }), r)).toBe(
+      "Reading the diff of src/cache.ts",
+    );
+    expect(CLAUDE.describe(toolUse("Read", { file_path: "/clones/widget/src/a.ts" }), r)).toBe("Reading src/a.ts");
+    expect(CLAUDE.describe(toolUse("Grep", { pattern: "ttl" }), r)).toBe("Searching for “ttl”");
+    expect(CLAUDE.describe({ type: "assistant", message: { content: [{ type: "text", text: "hi" }] } }, r)).toBeNull();
+    expect(CLAUDE.describe({ type: "assistant", message: { content: [{ type: "thinking" }] } }, r)).toBe("Thinking");
+    expect(CLAUDE.describe({ type: "result", result: "x" }, r)).toBeNull();
+  });
+
+  it("reads Cursor's tool calls, when they start", () => {
+    const call = (subtype: string, tool_call: Record<string, unknown>) => ({ type: "tool_call", subtype, tool_call });
+    const mcp = { mcpToolCall: { args: { name: "diffprism-get_pr_context", toolName: "get_pr_context", args: { session_id: "s" } } } };
+    expect(CURSOR.describe(call("started", mcp), r)).toBe("Reading the pull request");
+    expect(CURSOR.describe(call("completed", mcp), r)).toBeNull();
+    expect(CURSOR.describe(call("started", { readToolCall: { args: { path: "/tmp/elsewhere/notes.md" } } }), r)).toBe("Reading notes.md");
+    expect(CURSOR.describe(call("started", { globToolCall: { args: { globPattern: "**/*.ts" } } }), r)).toBe("Looking for **/*.ts");
+    expect(CURSOR.describe({ type: "thinking", subtype: "delta", text: "hmm" }, r)).toBe("Thinking");
+    expect(CURSOR.describe({ type: "assistant", message: {} }, r)).toBeNull();
+  });
+});
+
+describe("runAgent", () => {
+  const script = (lines: string[], exit = 0) =>
+    `${lines.map((l) => `console.log(${JSON.stringify(l)});`).join("")}process.exit(${exit});`;
+
+  it("streams each event as it comes, and answers with the result event", async () => {
+    const lines = [
+      JSON.stringify({ type: "system", subtype: "init" }),
+      JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "Read", input: {} }] } }),
+      JSON.stringify({ type: "result", subtype: "success", result: "```json\n{}\n```" }),
+    ];
+    const running = runAgent(process.execPath, { args: ["-e", script(lines)] }, process.cwd());
+    const seen: unknown[] = [];
+    for await (const e of running.events) seen.push(e);
+
+    expect(seen.map((e) => (e as { type: string }).type)).toEqual(["system", "assistant", "result"]);
+    expect(await running.done).toEqual({ code: 0, output: "```json\n{}\n```" });
+  });
+
+  it("answers with everything printed when the agent fails", async () => {
+    const running = runAgent(process.execPath, { args: ["-e", script(["Not logged in"], 1)] }, process.cwd());
+    expect(await running.done).toEqual({ code: 1, output: "Not logged in\n" });
+  });
+});
+
 describe("agentPrompt", () => {
   it("names each thread's id and place, and everything said in it", () => {
     const prompt = agentPrompt([
@@ -267,9 +331,9 @@ describe("listenWithAgent", () => {
   /** A runner that answers every turn successfully and records what it was given. */
   function recordingRunner(): { run: AgentRunner; calls: Call[] } {
     const calls: Call[] = [];
-    const run: AgentRunner = async (command, { args, stdin }, cwd) => {
+    const run: AgentRunner = (command, { args, stdin }, cwd) => {
       calls.push({ command, args, stdin, cwd });
-      return { code: 0, output: "done" };
+      return finished({ code: 0, output: "done" });
     };
     return { run, calls };
   }
@@ -361,7 +425,7 @@ describe("listenWithAgent", () => {
 
   it("stops with the agent's output when it fails", async () => {
     mockWait.mockRejectedValueOnce(new ReviewerAskedError("session-1", [thread("t1")]));
-    const run: AgentRunner = async () => ({ code: 1, output: "Not logged in · Please run /login" });
+    const run: AgentRunner = () => finished({ code: 1, output: "Not logged in · Please run /login" });
 
     await expect(listen(run)).rejects.toThrow(/Claude Code exited with status 1:\nNot logged in/);
   });
@@ -386,6 +450,7 @@ describe("prAgentStarter", () => {
       installHint: "install it",
       begin: begin ?? (async (r) => ({ id: `${name}-conv`, cwd: r.localRepoPath ?? r.folder(), resumeCommand: `resume ${name}` })),
       turn: () => ({ args: [] }),
+      describe: () => null,
     };
   }
 
