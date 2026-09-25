@@ -870,6 +870,12 @@ async function handleApiRequest(
         source: "manual",
       });
 
+      // Same as a local review: with no dashboard open, open one. Without it,
+      // `diffprism review <PR>` started a review nobody could see (#223). The
+      // dashboard's own Review PR form is a connected client, so it opens
+      // nothing extra.
+      reopenBrowserIfNeeded?.();
+
       jsonResponse(res, reused ? 200 : 201, {
         sessionId: session.id,
         fileCount: normalized.diffSet.files.length,
