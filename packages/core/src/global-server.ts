@@ -904,6 +904,12 @@ async function handleApiRequest(
         source: "manual",
       });
 
+      // Same as a local review: with no dashboard open, open one. Without it,
+      // `diffprism review <PR>` started a review nobody could see (#223). The
+      // dashboard's own Review PR form is a connected client, so it opens
+      // nothing extra.
+      reopenBrowserIfNeeded?.();
+
       // Asked not to start one, this still reports an agent that is already
       // answering the review — it's there either way.
       const prAgent =
