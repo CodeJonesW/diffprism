@@ -75,8 +75,8 @@ function shellPath(p: string): string {
 export interface AgentReview {
   reviewSessionId: string;
   prUrl: string;
-  /** The local clone the review reads from, or null when there isn't one. */
-  localRepoPath: string | null;
+  /** The checkout of the PR's head the review reads from (#240). */
+  localRepoPath: string;
   model?: string;
   mcp: McpCommand;
   /** A folder of the agent's own for this review, created on demand. */
@@ -131,9 +131,9 @@ export interface AgentKind {
   describe(event: unknown, review: AgentReview): string | null;
 }
 
-/** A path as the reviewer knows it: relative to the clone when it's in there, else just its name. */
+/** A path as the reviewer knows it: relative to the checkout when it's in there, else just its name. */
 function shortPath(file: string, review: AgentReview): string {
-  if (review.localRepoPath && path.isAbsolute(file)) {
+  if (path.isAbsolute(file)) {
     const relative = path.relative(review.localRepoPath, file);
     if (!relative.startsWith("..")) return relative;
   }
@@ -207,10 +207,10 @@ export const CLAUDE: AgentKind = {
   installHint: "https://claude.com/claude-code",
 
   // Claude Code lets us name the conversation up front, and keeps it with the
-  // folder it ran in: the clone when there is one, so it can read whole files.
+  // folder it ran in: the PR's checkout, so it reads the PR's files.
   async begin(review) {
     const id = randomUUID();
-    const cwd = review.localRepoPath ?? review.folder();
+    const cwd = review.localRepoPath;
     return { id, cwd, resumeCommand: `cd ${shellPath(cwd)} && claude --resume ${id}` };
   },
 
@@ -255,7 +255,7 @@ export const CLAUDE: AgentKind = {
 /**
  * What a Cursor agent may do, in its workspace's .cursor/cli.json: read
  * anything, use the DiffPrism tools — replying included — and nothing else.
- * No file is written and no command runs, in its own folder or the clone.
+ * No file is written and no command runs, in its own folder or the checkout.
  */
 export const CURSOR_PERMISSIONS = {
   permissions: {
@@ -272,8 +272,8 @@ export const CURSOR: AgentKind = {
 
   // Cursor reads MCP servers and permissions only from files in its
   // workspace's .cursor folder, with no flags to pass them. So its workspace
-  // is a folder of its own holding those files — a reviewer's clone never gets
-  // one written into it — and the clone is added to what it can read. Cursor
+  // is a folder of its own holding those files — the PR's checkout never gets
+  // one written into it — and the checkout is added to what it can read. Cursor
   // names the conversation itself.
   async begin(review) {
     // Not logged in, Cursor opens a chat anyway and then waits indefinitely.
@@ -307,7 +307,8 @@ export const CURSOR: AgentKind = {
         conversation.id,
         "--workspace",
         conversation.cwd,
-        ...(review.localRepoPath ? ["--add-dir", review.localRepoPath] : []),
+        "--add-dir",
+        review.localRepoPath,
         "--trust",
         "--approve-mcps",
         ...(review.model ? ["--model", review.model] : []),

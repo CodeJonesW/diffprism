@@ -90,8 +90,8 @@ export interface DojoAvailableAgent {
 export interface DojoRequest {
   sessionId: string;
   prUrl: string;
-  /** The local clone the review reads from, or null when there isn't one. */
-  localRepoPath: string | null;
+  /** The checkout of the PR's head the review reads from (#240). */
+  localRepoPath: string;
   server: GlobalServerInfo;
   agents: ReviewAgentChoice[];
 }

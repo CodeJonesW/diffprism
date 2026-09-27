@@ -27,10 +27,6 @@ function formatRelativeTime(timestamp: number): string {
 }
 
 function getProjectName(projectPath: string): string {
-  // GitHub PR sessions: "github:owner/repo#123" → "owner/repo#123"
-  if (projectPath.startsWith("github:")) {
-    return projectPath.slice(7);
-  }
   const parts = projectPath.split("/");
   return parts[parts.length - 1] || projectPath;
 }
@@ -115,7 +111,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
             {sessions.map((session) => {
               const isActive = session.id === activeSessionId;
               const isManual = session.source === "manual";
-              const isGitHubPr = session.projectPath.startsWith("github:");
+              const isGitHubPr = session.pr !== undefined;
 
               return (
                 <div
@@ -167,7 +163,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
                         <FolderOpen className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
                       ) : null}
                       <span className="text-text-primary text-xs font-medium truncate">
-                        {session.title || getProjectName(session.projectPath)}
+                        {session.title || session.pr || getProjectName(session.projectPath)}
                       </span>
                     </div>
                     <div className="flex-shrink-0">

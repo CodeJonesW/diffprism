@@ -40,6 +40,8 @@ export function normalizePr(
     url: prMetadata.url,
     baseBranch: prMetadata.baseBranch,
     headBranch: prMetadata.headBranch,
+    headSha: prMetadata.headSha,
+    baseSha: prMetadata.baseSha,
     viewer: prMetadata.viewer,
   };
 

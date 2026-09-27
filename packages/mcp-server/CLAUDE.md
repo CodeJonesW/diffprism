@@ -74,7 +74,7 @@ There is no module-level "last session" and no "most recent session across all r
 #### `wait_for_comments`
 - **Params:** targeting, `timeout` (seconds, default and max 600)
 - **Behavior:** Polls the session's threads every 2s until one awaits a reply, then returns `{ sessionId, review, threads }`; `{ status: "timed_out" }` otherwise.
-- **`review` and `hunk` (#193):** the dashboard's prompt for an absent agent names only a session id. So the answer carries where the review is — `review`: `projectPath`, `localRepoConnected`, `branch`, `pr`, `title` — and each thread carries `hunk`, the diff hunk its line is in (`null` when the line is outside every hunk). Both come from one read of `/api/reviews/:id/payload`, made only once there's something to answer. If that read fails the threads still come back, without them. `reviewer_asked` from `open_review` and `get_review_result` carries the same.
+- **`review` and `hunk` (#193):** the dashboard's prompt for an absent agent names only a session id. So the answer carries where the review is — `review`: `projectPath`, `branch`, `pr`, `title` — and each thread carries `hunk`, the diff hunk its line is in (`null` when the line is outside every hunk). Both come from one read of `/api/reviews/:id/payload`, made only once there's something to answer. If that read fails the threads still come back, without them. `reviewer_asked` from `open_review` and `get_review_result` carries the same.
 
 #### `get_user_focus`
 - **Params:** targeting

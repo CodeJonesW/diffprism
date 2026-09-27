@@ -13,7 +13,7 @@ function getHttpPort(): string | null {
 interface PrOpenResult {
   sessionId: string;
   fileCount: number;
-  localRepoPath: string | null;
+  localRepoPath: string;
   pr: {
     title: string;
     author: string;

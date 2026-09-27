@@ -9,6 +9,10 @@ export interface PrMetadata {
   url: string;
   baseBranch: string;
   headBranch: string;
+  /** The commit the PR's head is at — what a review of it reads. */
+  headSha: string;
+  /** The base branch's commit the PR is measured against. */
+  baseSha: string;
   body: string | null;
   /**
    * The GitHub login DiffPrism acts as — whose token it holds. Null when the
@@ -68,6 +72,8 @@ export async function fetchPullRequest(
     url: data.html_url,
     baseBranch: data.base.ref,
     headBranch: data.head.ref,
+    headSha: data.head.sha,
+    baseSha: data.base.sha,
     body: data.body,
     viewer,
   };

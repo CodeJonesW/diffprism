@@ -330,6 +330,8 @@ export interface SessionSummary {
   /** The diff ref this session currently shows, e.g. "working-copy" or "staged". */
   diffRef?: string;
   source?: SessionSource;
+  /** The pull request this session reviews, as "owner/repo#n"; unset for local changes. */
+  pr?: string;
   /** Last time an agent read this session's threads. See @diffprism/core. */
   agentReadAt?: number;
 }
