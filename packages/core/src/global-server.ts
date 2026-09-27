@@ -9,6 +9,7 @@ import { analyze } from "@diffprism/analysis";
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 
 import type {
   GlobalServerOptions,
@@ -90,11 +91,12 @@ interface Session {
    */
   key: string;
   /**
-   * The local working tree this session reads from, or null for a PR with no
-   * local clone. Participant tools find a session by repo path through this
-   * (and a PR review also through the clone's GitHub remotes — see /resolve).
+   * The local working tree this session reads from: the reviewer's for local
+   * changes, DiffPrism's own checkout of the head for a PR (#240).
+   * Participant tools find a session by repo path through this (and a PR
+   * review also through a clone's GitHub remotes — see /resolve).
    */
-  repoRoot: string | null;
+  repoRoot: string;
   payload: ReviewInitPayload;
   projectPath: string;
   source: SessionSource;
@@ -201,22 +203,11 @@ function findSessionByKey(key: string): Session | undefined {
 
 interface OpenSessionRequest {
   key: string;
-  repoRoot: string | null;
+  repoRoot: string;
   projectPath: string;
   payload: ReviewInitPayload;
   diffRef?: string;
   source: SessionSource;
-}
-
-/**
- * The clone of `owner/repo` that `from` is inside, as its working tree root —
- * not `from` itself, which may be a subfolder — or null when it isn't in one.
- * A clone is recognized by its GitHub remotes.
- */
-function localCloneOf(owner: string, repo: string, from: string): string | null {
-  const root = getRepoRoot({ cwd: from });
-  if (!root) return null;
-  return getGitHubRemotes({ cwd: root }).includes(`${owner}/${repo}`.toLowerCase()) ? root : null;
 }
 
 /**
@@ -405,14 +396,13 @@ let dojoRunner: DojoRunner | null = null;
 
 /**
  * What a dojo on this session reviews: its pull request, or its local change
- * as the repo and the diff ref it shows (#238). Null when the session says
- * neither, so no agent could find the change.
+ * as the repo and the diff ref it shows (#238). Null for a local review
+ * that doesn't say which diff it shows, so no agent could find the change.
  */
 function dojoSubject(session: Session): DojoSubject | null {
   const pr = session.payload.metadata.githubPr;
   if (pr) return { kind: "pr", url: pr.url };
-  if (session.repoRoot && session.diffRef) return { kind: "local", repoPath: session.repoRoot, diffRef: session.diffRef };
-  return null;
+  return session.diffRef ? { kind: "local", repoPath: session.repoRoot, diffRef: session.diffRef } : null;
 }
 
 /** Why a dojo can't start on this session, or null when it can. */
@@ -510,7 +500,7 @@ const prAgents = new Map<string, Promise<PrAgentHandle>>();
 function ensurePrAgent(
   sessionId: string,
   prUrl: string,
-  localRepoPath: string | null,
+  localRepoPath: string,
   agent: ReviewAgentChoice,
 ): Promise<PrAgentHandle | null> {
   const existing = prAgents.get(sessionId);
@@ -568,6 +558,7 @@ function addAnnotation(
 
 function toSummary(session: Session): SessionSummary {
   const { payload } = session;
+  const pr = payload.metadata.githubPr;
   const fileCount = payload.diffSet.files.length;
   let additions = 0;
   let deletions = 0;
@@ -592,6 +583,7 @@ function toSummary(session: Session): SessionSummary {
     needsAttention: needsAttention(session),
     diffRef: session.diffRef,
     source: session.source,
+    pr: pr ? `${pr.owner}/${pr.repo}#${pr.number}` : undefined,
     agentReadAt: session.agentReadAt,
   };
 }
@@ -786,8 +778,8 @@ function recordVerdict(session: Session, result: ReviewResult): void {
 }
 
 function recordReviewHistory(session: Session, result: ReviewResult): void {
-  // Skip history for non-filesystem paths (e.g. github: prefixed paths)
-  if (session.projectPath.startsWith("github:")) return;
+  // History is kept per local project; a PR's checkout is DiffPrism's own.
+  if (session.payload.metadata.githubPr) return;
 
   try {
     const { payload } = session;
@@ -990,9 +982,8 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/pr/open") {
     try {
       const body = await readBody(req);
-      const { prUrl, cwd, title, reasoning, agent } = JSON.parse(body) as {
+      const { prUrl, title, reasoning, agent } = JSON.parse(body) as {
         prUrl: string;
-        cwd?: string;
         title?: string;
         reasoning?: string;
         /**
@@ -1022,6 +1013,7 @@ async function handleApiRequest(
         fetchPullRequest,
         fetchPullRequestDiff,
         normalizePr,
+        checkoutPullRequest,
       } = await import("@diffprism/github");
 
       if (!isPrRef(prUrl)) {
@@ -1052,20 +1044,29 @@ async function handleApiRequest(
       // What the caller said this review is about wins over the PR's own title.
       const normalized = normalizePr(rawDiff, prMetadata, { title, reasoning });
 
-      // Read from the clone the request came from: `diffprism review <PR>`
-      // sends the folder it ran in. The dashboard's form has no folder, so it
-      // gets the server's — a clone only if the daemon happened to start in
-      // one. Looking only there made every CLI review report "no local clone"
-      // (#197). Agents in any clone still find the session: see /resolve.
-      const localRepoPath = localCloneOf(owner, repo, cwd ?? process.cwd());
+      // The PR's code, checked out at its head in a worktree of DiffPrism's
+      // own. Reading the reviewer's clone meant starting in it, and then
+      // reading whatever branch it had checked out rather than the PR (#240).
+      // Without the code there's nothing for the agent to read, so a failed
+      // checkout fails the open.
+      const localRepoPath = await checkoutPullRequest({
+        owner,
+        repo,
+        number: prNumber,
+        headSha: prMetadata.headSha,
+        baseSha: prMetadata.baseSha,
+        root: path.join(os.homedir(), ".diffprism", "repos"),
+        remoteUrl: `https://github.com/${owner}/${repo}.git`,
+        token,
+      });
 
-      // A PR is its own review subject, keyed by the PR — not by the local
-      // clone it may be read from. Keying it by repo would make a PR review
+      // A PR is its own review subject, keyed by the PR — not by the
+      // checkout it is read from. Keying it by repo would make a PR review
       // and a working-copy review of the same repo overwrite each other.
       const { session, reused } = openSession({
         key: `pr:${owner}/${repo}#${prNumber}`.toLowerCase(),
         repoRoot: localRepoPath,
-        projectPath: localRepoPath ?? `github:${owner}/${repo}#${prNumber}`,
+        projectPath: localRepoPath,
         payload: normalized.payload,
         source: "manual",
       });
@@ -1270,9 +1271,9 @@ async function handleApiRequest(
   //
   // How participant tools find "the session for this repo" without guessing.
   // Returns every open session whose working tree matches, plus every PR
-  // review of a GitHub repo this clone has as a remote — a PR opened from the
-  // dashboard has no working tree, and an agent in the clone still has to
-  // find it. The caller decides what zero, one, or several matches mean.
+  // review of a GitHub repo this clone has as a remote — a PR is read from
+  // DiffPrism's own checkout, and an agent in the reviewer's clone still has
+  // to find it. The caller decides what zero, one, or several matches mean.
   // Must precede /api/reviews/:id.
   if (method === "GET" && url === "/api/reviews/resolve") {
     const parsed = new URL(req.url ?? "/", "http://localhost");
@@ -1690,8 +1691,8 @@ async function handleApiRequest(
       return true;
     }
 
-    // Ref listing requires a real filesystem path
-    if (session.projectPath.startsWith("github:")) {
+    // A PR's refs are its own head and base, not a branch to pick
+    if (session.payload.metadata.githubPr) {
       jsonResponse(res, 400, { error: "Ref listing not available for GitHub PRs" });
       return true;
     }
@@ -1717,8 +1718,8 @@ async function handleApiRequest(
       return true;
     }
 
-    // Ref comparison requires a real filesystem path
-    if (session.projectPath.startsWith("github:")) {
+    // A PR's diff is GitHub's, not one to recompute against another ref
+    if (session.payload.metadata.githubPr) {
       jsonResponse(res, 400, { error: "Ref comparison not available for GitHub PRs" });
       return true;
     }
@@ -1787,8 +1788,8 @@ async function handleApiRequest(
       return true;
     }
 
-    // Skip history for non-filesystem paths (e.g. github: prefixed paths)
-    if (session.projectPath.startsWith("github:")) {
+    // History is kept per local project; a PR's checkout is DiffPrism's own.
+    if (session.payload.metadata.githubPr) {
       jsonResponse(res, 200, { history: [] });
       return true;
     }
@@ -1805,12 +1806,6 @@ async function handleApiRequest(
       const projectPath = parsedUrl.searchParams.get("project");
       if (!projectPath) {
         jsonResponse(res, 400, { error: "Missing required query parameter: project" });
-        return true;
-      }
-
-      // Skip history for non-filesystem paths (e.g. github: prefixed paths)
-      if (projectPath.startsWith("github:")) {
-        jsonResponse(res, 200, { history: [] });
         return true;
       }
 

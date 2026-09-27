@@ -639,7 +639,6 @@ describe("threads", () => {
     expect(parse(result).review).toEqual({
       sessionId: "s1",
       projectPath: "/work/app",
-      localRepoConnected: true,
       branch: "feature",
       pr,
       title: "Retry loop",
@@ -665,16 +664,6 @@ describe("threads", () => {
     expect(threads.find((t) => t.id === "offhunk")?.hunk).toBeNull();
   });
 
-  it("marks a PR with no clone here as having no local repo", async () => {
-    stubFetch({
-      [`${base_}/api/reviews/s1/annotations`]: () => json({ annotations: [annotation("asked", { author: "reviewer" })] }),
-      [`${base_}/api/reviews/s1/payload`]: () =>
-        json({ ...payload({ githubPr: pr }), projectPath: "github:CodeJonesW/diffprism#193" }),
-    });
-
-    const result = await (await tool("wait_for_comments"))({ session_id: "s1" });
-    expect(parse(result).review).toMatchObject({ localRepoConnected: false });
-  });
 
   it("still returns the questions when the payload can't be read", async () => {
     // Orientation is a wrapper around the answer. Losing the questions
@@ -727,5 +716,50 @@ describe("threads", () => {
     const result = await (await tool("wait_for_comments"))({ session_id: "s1", timeout: 0 });
     expect(parse(result)).toMatchObject({ status: "timed_out", sessionId: "s1" });
     expect(String(parse(result).message)).toContain("wait_for_comments again");
+  });
+});
+
+// ─── #240: a PR's files are its own ───
+
+describe("get_file_context", () => {
+  let repo: string;
+  let headSha: string;
+  const gitIn = (...args: string[]) => execFileSync("git", args, { cwd: repo, encoding: "utf-8" }).trim();
+
+  /** A checkout whose head commit has a.ts, and whose working tree has since drifted from it. */
+  beforeEach(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "diffprism-file-context-"));
+    gitIn("init", "--quiet");
+    fs.writeFileSync(path.join(repo, "a.ts"), "export const head = true;\n");
+    gitIn("add", "a.ts");
+    gitIn("-c", "user.name=t", "-c", "user.email=t@t", "commit", "--quiet", "-m", "head");
+    headSha = gitIn("rev-parse", "HEAD");
+    fs.writeFileSync(path.join(repo, "a.ts"), "export const edited = true;\n");
+    fs.writeFileSync(path.join(repo, "b.ts"), "export const untracked = true;\n");
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  function pr() {
+    stubFetch({
+      [`${base}/api/reviews/s1/payload`]: () =>
+        json({ projectPath: repo, payload: { metadata: { githubPr: { headSha } } } }),
+    });
+  }
+
+  it("reads a PR's file at its head commit", async () => {
+    pr();
+    const result = await (await tool("get_file_context"))({ file: "a.ts", session_id: "s1" });
+    expect(parse(result)).toMatchObject({ ref: headSha, content: "export const head = true;\n" });
+  });
+
+  it("never reads a PR's file from the working tree", async () => {
+    pr();
+    const result = await (await tool("get_file_context"))({ file: "b.ts", session_id: "s1" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain(`File not found: "b.ts" at ${headSha}`);
   });
 });

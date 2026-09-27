@@ -249,6 +249,10 @@ export interface GitHubPrMetadata {
   url: string;
   baseBranch: string;
   headBranch: string;
+  /** The commit the PR's head is at: the one checked out for the review. */
+  headSha: string;
+  /** The base branch's commit the PR is measured against. */
+  baseSha: string;
   /**
    * The GitHub login DiffPrism posts reviews as, or null when its token has no
    * user. When it's the author, GitHub only accepts a comment: an author can't
@@ -406,6 +410,8 @@ export interface SessionSummary {
   /** The diff ref this session currently shows, e.g. "working-copy" or "staged". */
   diffRef?: string;
   source?: SessionSource;
+  /** The pull request this session reviews, as "owner/repo#n"; unset for local changes. */
+  pr?: string;
   /**
    * Last time an agent — an MCP tool, or a CLI/hook caller blocked on the
    * decision — read this session's threads. Unset until one does. A reviewer
@@ -454,8 +460,8 @@ export interface GlobalServerOptions {
 export interface PrAgentRequest {
   sessionId: string;
   prUrl: string;
-  /** The local clone the review reads from, or null when there isn't one. */
-  localRepoPath: string | null;
+  /** The checkout of the PR's head the review reads from (#240). */
+  localRepoPath: string;
   /** The server the review is on — the agent reads and replies through it. */
   server: GlobalServerInfo;
   /** Which agent to start, and with which model (#226). */

@@ -104,16 +104,14 @@ async function reviewPrFlow(
   // Auto-start server if needed
   const serverInfo = await ensureServer({ dev: flags.dev });
 
-  // Use /api/pr/open — handles GitHub fetch + local repo auto-detection
+  // Use /api/pr/open — fetches the PR and checks its head out for the review
   const response = await fetch(
     `http://localhost:${serverInfo.httpPort}/api/pr/open`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // cwd is where to look for a local clone to read the PR from (#197).
       body: JSON.stringify({
         prUrl: pr,
-        cwd: process.cwd(),
         title: flags.title,
         reasoning: flags.reasoning,
         agent: flags.agent === false ? false : { name: flags.agent, model: flags.model },
@@ -124,7 +122,7 @@ async function reviewPrFlow(
   const data = await response.json() as {
     sessionId?: string;
     fileCount?: number;
-    localRepoPath?: string | null;
+    localRepoPath?: string;
     pr?: { title: string; author: string; url: string; baseBranch: string; headBranch: string };
     /** The agent answering this review's comments, which the server runs (#224, #226). */
     agent?: {
@@ -147,11 +145,7 @@ async function reviewPrFlow(
   console.log(`${data.pr?.title ?? `PR #${number}`}`);
   console.log(`${data.fileCount} file${data.fileCount !== 1 ? "s" : ""} changed`);
 
-  if (data.localRepoPath) {
-    console.log(`Local repo: ${data.localRepoPath}`);
-  } else {
-    console.log("No local clone detected — file context unavailable");
-  }
+  console.log(`Checked out at ${data.localRepoPath}`);
 
   if (data.agent) {
     const { label, model, resumeCommand } = data.agent;

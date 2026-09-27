@@ -46,7 +46,7 @@ async function finish(run: DojoRun): Promise<{ seats: DojoSeat[]; result: Awaite
 const request: DojoRequest = {
   sessionId: "s1",
   subject: { kind: "pr", url: "https://github.com/acme/widget/pull/7" },
-  localRepoPath: null,
+  localRepoPath: "/checkouts/acme/widget/pr-7",
   server: { httpPort: 1, wsPort: 2, pid: 3, startedAt: 0 } as GlobalServerInfo,
   agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
 };

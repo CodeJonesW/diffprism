@@ -96,8 +96,8 @@ export type DojoSubject = { kind: "pr"; url: string } | { kind: "local"; repoPat
 export interface DojoRequest {
   sessionId: string;
   subject: DojoSubject;
-  /** The local clone the review reads from, or null when there isn't one. */
-  localRepoPath: string | null;
+  /** The folder the review reads from: the checkout of a PR's head (#240), or the local repo (#238). */
+  localRepoPath: string;
   server: GlobalServerInfo;
   agents: ReviewAgentChoice[];
 }

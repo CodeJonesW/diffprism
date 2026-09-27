@@ -56,10 +56,9 @@ vi.mock("@diffprism/git", () => ({
   // Test paths like "/test" are not repositories, so identity falls back to
   // the resolved path. Individual tests override this to model real repos.
   getRepoRoot: vi.fn().mockReturnValue(null),
-  // POST /api/pr/open reads from a local clone when the server runs in one.
-  // Pretend the process runs inside acme/widget. Passed as an implementation,
-  // not via mockReturnValue: restoreAllMocks in afterEach wipes mockReturnValue
-  // state but keeps a vi.fn(impl).
+  // /api/reviews/resolve finds PR reviews through a clone's remotes. Passed
+  // as an implementation, not via mockReturnValue: restoreAllMocks in
+  // afterEach wipes mockReturnValue state but keeps a vi.fn(impl).
   getGitHubRemotes: vi.fn(() => ["acme/widget"]),
   listBranches: vi.fn().mockReturnValue({
     local: ["main", "feature-branch"],
@@ -88,8 +87,12 @@ vi.mock("@diffprism/github", () => ({
     url: "https://github.com/acme/widget/pull/7",
     baseBranch: "main",
     headBranch: "feature",
+    headSha: "head-sha",
+    baseSha: "base-sha",
   })),
   fetchPullRequestDiff: vi.fn(async () => ""),
+  // POST /api/pr/open checks the PR's head out for the review (#240).
+  checkoutPullRequest: vi.fn(async () => "/checkouts/acme/widget/pr-7"),
   // A fresh payload per call: opening a session mutates it.
   normalizePr: vi.fn(() => {
     const diffSet = {
@@ -115,6 +118,7 @@ vi.mock("@diffprism/github", () => ({
           githubPr: {
             owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
             url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+            headSha: "head-sha", baseSha: "base-sha",
           },
         },
       },
@@ -1734,8 +1738,8 @@ describe("session identity", () => {
     });
 
     it("does not let a PR review and a working-copy review of the same repo overwrite each other", async () => {
-      // A PR session reads from the local clone, so keying it by repo would
-      // collide with a working-copy review of that clone.
+      // Keying a PR session by repo would collide with a working-copy review
+      // of that repo.
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
       vi.mocked(git.getRepoRoot).mockReturnValue("/work/widget");
@@ -1748,57 +1752,41 @@ describe("session identity", () => {
       expect(await listSessions(baseUrl)).toHaveLength(2);
     });
 
-    // #197: the clone to read a PR from is where the command ran, not wherever
-    // the background server happened to start.
-    describe("which clone a PR review reads from", () => {
-      /** /clones/widget is a clone of acme/widget; /clones/other is a clone of something else. */
-      function clones() {
-        vi.mocked(git.getRepoRoot).mockImplementation((options) => {
-          const dir = options?.cwd ?? "";
-          if (dir.startsWith("/clones/widget")) return "/clones/widget";
-          if (dir.startsWith("/clones/other")) return "/clones/other";
-          return null;
-        });
-        vi.mocked(git.getGitHubRemotes).mockImplementation((options) =>
-          options?.cwd === "/clones/widget" ? ["acme/widget"] : options?.cwd === "/clones/other" ? ["acme/other"] : [],
-        );
-      }
-
-      it("reads from the clone the command ran in, at its root", async () => {
+    // #240: a PR is read from DiffPrism's own checkout of its head, not from
+    // whatever clone the command ran in and whatever branch that had out.
+    describe("the checkout a PR review reads from", () => {
+      it("checks the PR's head out, and reads the review from there", async () => {
         handle = await startGlobalServer({ silent: true });
         const baseUrl = `http://localhost:${handle.httpPort}`;
-        clones();
-
-        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", cwd: "/clones/widget/src/lib" });
-        const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string | null };
-
-        expect(localRepoPath).toBe("/clones/widget");
-        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
-        expect(session?.projectPath).toBe("/clones/widget");
-      });
-
-      it("reads from no clone when the command ran in a clone of another repo", async () => {
-        handle = await startGlobalServer({ silent: true });
-        const baseUrl = `http://localhost:${handle.httpPort}`;
-        clones();
-
-        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7", cwd: "/clones/other" });
-        const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string | null };
-
-        expect(localRepoPath).toBeNull();
-        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
-        expect(session?.projectPath).toBe("github:acme/widget#7");
-      });
-
-      it("uses the server's own folder when the request has none, as the dashboard's does", async () => {
-        handle = await startGlobalServer({ silent: true });
-        const baseUrl = `http://localhost:${handle.httpPort}`;
-        const serverDir = process.cwd();
-        vi.mocked(git.getRepoRoot).mockImplementation((options) => (options?.cwd === serverDir ? "/clones/widget" : null));
-        vi.mocked(git.getGitHubRemotes).mockImplementation((options) => (options?.cwd === "/clones/widget" ? ["acme/widget"] : []));
 
         const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
-        expect(((await response.json()) as { localRepoPath: string | null }).localRepoPath).toBe("/clones/widget");
+        const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string };
+
+        expect(github.checkoutPullRequest).toHaveBeenCalledWith({
+          owner: "acme",
+          repo: "widget",
+          number: 7,
+          headSha: "head-sha",
+          baseSha: "base-sha",
+          root: path.join(os.homedir(), ".diffprism", "repos"),
+          remoteUrl: "https://github.com/acme/widget.git",
+          token: "test-token",
+        });
+        expect(localRepoPath).toBe("/checkouts/acme/widget/pr-7");
+        const session = (await listSessions(baseUrl)).find((s) => s.id === sessionId);
+        expect(session).toMatchObject({ projectPath: "/checkouts/acme/widget/pr-7", pr: "acme/widget#7" });
+      });
+
+      it("opens nothing, and says why, when the PR can't be checked out", async () => {
+        handle = await startGlobalServer({ silent: true });
+        const baseUrl = `http://localhost:${handle.httpPort}`;
+        vi.mocked(github.checkoutPullRequest).mockRejectedValueOnce(new Error("git fetch failed: repository not found"));
+
+        const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
+
+        expect(response.status).toBe(500);
+        expect(((await response.json()) as { error: string }).error).toBe("git fetch failed: repository not found");
+        expect(await listSessions(baseUrl)).toEqual([]);
       });
     });
 
@@ -1865,7 +1853,7 @@ describe("session identity", () => {
         expect(start).toHaveBeenCalledWith({
           sessionId,
           prUrl: "https://github.com/acme/widget/pull/7",
-          localRepoPath: null,
+          localRepoPath: "/checkouts/acme/widget/pr-7",
           server: expect.objectContaining({ httpPort: handle.httpPort }),
           // Nothing saved: Claude Code, with its own default model.
           agent: { name: "claude" },
@@ -2061,10 +2049,10 @@ describe("session identity", () => {
       expect(body.sessions).toHaveLength(2);
     });
 
-    it("finds a PR review with no local clone from any clone of that repo", async () => {
-      // "Review PR" in a dashboard whose server runs outside the clone leaves
-      // the session with no working tree. An agent in the clone must still
-      // find it without being handed a session id.
+    it("finds a PR review from any clone of that repo, and from its checkout", async () => {
+      // A PR is read from DiffPrism's own checkout of it (#240). An agent in
+      // the reviewer's clone must still find it without being handed a
+      // session id.
       handle = await startGlobalServer({ silent: true });
       const baseUrl = `http://localhost:${handle.httpPort}`;
       vi.mocked(git.getRepoRoot).mockImplementation((options) => options?.cwd ?? null);
@@ -2073,12 +2061,12 @@ describe("session identity", () => {
       );
 
       const prResponse = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
-      const { sessionId, localRepoPath } = (await prResponse.json()) as { sessionId: string; localRepoPath: string | null };
-      expect(localRepoPath).toBeNull();
+      const { sessionId } = (await prResponse.json()) as { sessionId: string };
 
       const resolve = async (dir: string) =>
         ((await (await fetch(`${baseUrl}/api/reviews/resolve?path=${dir}`)).json()) as { sessions: SessionSummary[] }).sessions;
       expect((await resolve("/clones/widget")).map((s) => s.id)).toEqual([sessionId]);
+      expect((await resolve("/checkouts/acme/widget/pr-7")).map((s) => s.id)).toEqual([sessionId]);
       expect(await resolve("/clones/other")).toEqual([]);
     });
 
@@ -2564,7 +2552,8 @@ describe("github review", () => {
 
   const PR = {
     owner: "acme", repo: "widget", number: 7, title: "Add widget", author: "someone",
-    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature", viewer: "reviewer",
+    url: "https://github.com/acme/widget/pull/7", baseBranch: "main", headBranch: "feature",
+    headSha: "head-sha", baseSha: "base-sha", viewer: "reviewer",
   };
 
   async function setup(metadata: ReviewInitPayload["metadata"] = { title: "Add widget", githubPr: PR }) {
@@ -2909,7 +2898,7 @@ describe("the review dojo (#231)", () => {
     expect(run).toHaveBeenCalledWith({
       sessionId,
       subject: { kind: "pr", url: "https://github.com/acme/widget/pull/7" },
-      localRepoPath: null,
+      localRepoPath: "/checkouts/acme/widget/pr-7",
       server: expect.objectContaining({ httpPort: handle.httpPort }),
       agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
     });

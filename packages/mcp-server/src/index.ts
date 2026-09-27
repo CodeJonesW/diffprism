@@ -163,9 +163,8 @@ async function readThreads(
  */
 interface ReviewBriefing {
   sessionId: string;
-  /** The directory on disk, or `github:owner/repo#n` for a PR with no clone here. */
+  /** The directory on disk: the reviewer's checkout, or DiffPrism's checkout of a PR's head (#240). */
   projectPath: string;
-  localRepoConnected: boolean;
   branch?: string;
   pr: GitHubPrMetadata | null;
   title?: string;
@@ -208,7 +207,6 @@ async function readReview(
     review: {
       sessionId,
       projectPath,
-      localRepoConnected: !projectPath.startsWith("github:"),
       branch: payload.metadata.currentBranch,
       pr: payload.metadata.githubPr ?? null,
       title: payload.metadata.title,
@@ -796,7 +794,6 @@ export function createMcpServer(): McpServer {
         return jsonResult({
           sessionId,
           projectPath,
-          localRepoConnected: !projectPath.startsWith("github:"),
           pr: payload.metadata.githubPr ?? null,
           title: payload.metadata.title,
           description: payload.metadata.description,
@@ -863,13 +860,13 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     "get_file_context",
-    "Get the full content of a file from the review's local repository, as the change under review has it, without switching branches: at a PR's head branch, the staged version for a review of staged changes, the working tree for one of uncommitted changes. Needs the review to be connected to a local clone.",
+    "Get the full content of a file from the review's repository, as the change under review has it. A PR review is read at the PR's head commit, from DiffPrism's own checkout of it; a local review at the version its diff shows — the staged version for a review of staged changes (the commit gate), the working tree for uncommitted changes.",
     {
       file: z.string().describe("File path relative to repo root (e.g., 'src/index.ts')"),
       ref: z
         .string()
         .optional()
-        .describe("Git ref to read from instead (e.g., 'origin/main', 'HEAD'). Defaults to the version the review's diff shows."),
+        .describe("Git ref to read from instead. For a PR review, its base commit (the PR's baseSha) can also be read. By default, the version the review's diff shows."),
       ...targetParams,
     },
     async ({ file, ref, session_id, repo_path }) =>
@@ -884,22 +881,17 @@ export function createMcpServer(): McpServer {
         const data = (await response.json()) as {
           projectPath: string;
           diffRef?: string;
-          payload: { metadata: { githubPr?: { headBranch: string } } };
+          payload: { metadata: { githubPr?: { headSha: string } } };
         };
 
-        if (data.projectPath.startsWith("github:")) {
-          return toolError(
-            "No local repo connected. Run the server from within a local clone of the repository to enable file context.",
-          );
-        }
-
-        // The version the reviewer is judging (#238). A staged review read at
-        // HEAD would show the code from before the change.
-        const prHead = data.payload.metadata.githubPr?.headBranch;
+        // The version the reviewer is judging: a PR's head commit (#240), or
+        // the new side of a local review's diff (#238). A staged review read
+        // at HEAD would show the code from before the change.
+        const pr = data.payload.metadata.githubPr;
         const side: DiffNewSide = ref
           ? { kind: "commit", ref }
-          : prHead
-            ? { kind: "commit", ref: `origin/${prHead}` }
+          : pr
+            ? { kind: "commit", ref: pr.headSha }
             : data.diffRef
               ? diffNewSide(data.diffRef)
               : { kind: "commit", ref: "HEAD" };
@@ -936,7 +928,14 @@ export function createMcpServer(): McpServer {
           readFrom = side.ref;
           try {
             content = gitShow(`${side.ref}:${file}`);
-          } catch {
+          } catch (err) {
+            // A PR's checkout holds exactly the commits it's read at; a file
+            // missing there is missing from the PR, and any other copy of it
+            // would be the wrong code (#240).
+            if (pr) {
+              const stderr = (err as { stderr?: string }).stderr?.trim();
+              return toolError(`File not found: "${file}" at ${side.ref}${stderr ? ` (${stderr})` : ""}`);
+            }
             try {
               content = fromDisk();
               readFrom = "working tree";

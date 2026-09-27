@@ -274,9 +274,9 @@ Returns `{ sessionId, annotationId, replyId, next }`, where `next` is what happe
 
 Blocks until some thread is awaiting a reply, then returns `{ sessionId, review, threads }`. Returns `{ status: "timed_out" }` if nothing new was said — call it again.
 
-It returns enough to answer straight away. `review` says where the review is — `projectPath` (the checkout on disk, or `github:owner/repo#n` when there's no clone here), `localRepoConnected`, `branch`, `pr` and `title` — and each thread carries `hunk`, the code its line is on (`null` if the line isn't in the diff).
+It returns enough to answer straight away. `review` says where the review is — `projectPath` (the checkout on disk — for a PR, DiffPrism's own checkout of its head), `branch`, `pr` and `title` — and each thread carries `hunk`, the code its line is on (`null` if the line isn't in the diff).
 
-Nothing starts an agent for you. If no agent has read a reviewer's message within a few seconds, the thread says no agent is listening and names the session. Ask Claude Code to answer your DiffPrism comments on that session, and it runs this loop. A PR review opened from the dashboard is also found from any clone of the repo, via its GitHub remotes.
+Nothing starts an agent for you. If no agent has read a reviewer's message within a few seconds, the thread says no agent is listening and names the session. Ask Claude Code to answer your DiffPrism comments on that session, and it runs this loop. A PR review is also found from any clone of the repo, via its GitHub remotes.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
@@ -293,7 +293,7 @@ The file and line range the reviewer is currently looking at. Takes targeting.
 
 ### `get_pr_context`
 
-For a PR review: metadata (title, author, branches, URL), briefing summary, file list, and whether a local clone is connected. Takes targeting.
+For a PR review: metadata (title, author, branches, URL), briefing summary, file list, and `projectPath`, DiffPrism's checkout of the PR's head. Takes targeting.
 
 ### `get_file_diff`
 
@@ -306,7 +306,7 @@ Hunks for one file, with its triage category.
 
 ### `get_file_context`
 
-Full file content from the local clone, as the change under review has it: at a PR's head branch, the staged version on a review of staged changes (the commit gate), the working tree on a review of uncommitted changes, or the right end of a ref range.
+Full file content, as the change under review has it. For a PR review it's read from DiffPrism's checkout of the PR, at its head commit by default; a file that isn't there is an error, never a copy from somewhere else. For a local review it's the staged version on a review of staged changes (the commit gate), the working tree on a review of uncommitted changes, or the right end of a ref range.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|

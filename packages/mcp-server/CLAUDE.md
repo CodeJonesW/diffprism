@@ -74,7 +74,7 @@ There is no module-level "last session" and no "most recent session across all r
 #### `wait_for_comments`
 - **Params:** targeting, `timeout` (seconds, default and max 600)
 - **Behavior:** Polls the session's threads every 2s until one awaits a reply, then returns `{ sessionId, review, threads }`; `{ status: "timed_out" }` otherwise.
-- **`review` and `hunk` (#193):** the dashboard's prompt for an absent agent names only a session id. So the answer carries where the review is — `review`: `projectPath`, `localRepoConnected`, `branch`, `pr`, `title` — and each thread carries `hunk`, the diff hunk its line is in (`null` when the line is outside every hunk). Both come from one read of `/api/reviews/:id/payload`, made only once there's something to answer. If that read fails the threads still come back, without them. `reviewer_asked` from `open_review` and `get_review_result` carries the same.
+- **`review` and `hunk` (#193):** the dashboard's prompt for an absent agent names only a session id. So the answer carries where the review is — `review`: `projectPath`, `branch`, `pr`, `title` — and each thread carries `hunk`, the diff hunk its line is in (`null` when the line is outside every hunk). Both come from one read of `/api/reviews/:id/payload`, made only once there's something to answer. If that read fails the threads still come back, without them. `reviewer_asked` from `open_review` and `get_review_result` carries the same.
 
 #### `get_user_focus`
 - **Params:** targeting
@@ -90,7 +90,7 @@ There is no module-level "last session" and no "most recent session across all r
 
 #### `get_file_context`
 - **Params:** `file` (required), `ref`, targeting
-- **Behavior:** Full file content from the local clone, in the version the review's diff shows (#238): the PR's head branch, the index (`git show :<file>`) for a `staged` review such as the commit gate's, the working tree for `working-copy`/`unstaged`, the right end of a ref range. The choice is core's `diffNewSide()`, fed the session's `diffRef` from `/payload`. An explicit `ref` wins. A ref that `git show` can't read falls back to the working tree, and `ref` in the result then says `working tree`.
+- **Behavior:** Full file content, in the version the review's diff shows. A PR review reads DiffPrism's checkout of the PR at its `headSha` (#240); a file missing there is an error, never a copy from elsewhere. A local review reads the new side of its diff (#238): the index (`git show :<file>`) for a `staged` review such as the commit gate's, the working tree for `working-copy`/`unstaged`, the right end of a ref range. That choice is core's `diffNewSide()`, fed the session's `diffRef` from `/payload`. An explicit `ref` wins. On a local review, a ref that `git show` can't read falls back to the working tree, and `ref` in the result then says `working tree`.
 
 ## Server Interaction
 
