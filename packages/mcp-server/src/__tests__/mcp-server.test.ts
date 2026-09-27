@@ -520,6 +520,15 @@ describe("get_file_context", () => {
     expect(await read("staged", { ref: "HEAD" })).toMatchObject({ content: "committed\n", ref: "HEAD" });
   });
 
+  it("says so when a local review doesn't say which diff it shows, instead of guessing HEAD (#263)", async () => {
+    stubFetch({ [`${base}/api/reviews/s1/payload`]: () => json({ projectPath: repo, payload: { metadata: {} } }) });
+    const result = await (await tool("get_file_context"))({ session_id: "s1", file: "a.ts" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("doesn't say which diff it shows");
+    // Asking for a revision still works.
+    expect(await read(undefined, { ref: "HEAD" })).toMatchObject({ content: "committed\n", ref: "HEAD" });
+  });
+
   // ─── The path is an agent's, and untrusted: nothing outside the repo is read ───
 
   describe("outside the repo", () => {

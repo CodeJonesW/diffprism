@@ -729,6 +729,14 @@ function broadcastSessionRemoved(sessionId: string): void {
   });
 }
 
+/** Stop a session's watcher, forget it, and tell every client. False when there was no such session. */
+function removeSession(sessionId: string): boolean {
+  stopSessionWatcher(sessionId);
+  if (!sessions.delete(sessionId)) return false;
+  broadcastSessionRemoved(sessionId);
+  return true;
+}
+
 // ─── Session watcher management ───
 
 function hasViewersForSession(sessionId: string): boolean {
@@ -756,6 +764,15 @@ function startSessionWatcher(sessionId: string): void {
     onDiffChanged: (updatePayload) => {
       const s = sessions.get(sessionId);
       if (!s) return;
+
+      // A decided review whose diff is now empty is finished: the change it
+      // judged has landed, as when the commit gate lets an approved commit
+      // through, or was dropped. Nothing waits on it. Kept, it would show an
+      // empty diff with the decision buttons, asking for a verdict on nothing.
+      if (s.status === "submitted" && updatePayload.diffSet.files.length === 0) {
+        removeSession(sessionId);
+        return;
+      }
       touch(s);
       diffChanging(s, updatePayload.rawDiff, "changed");
 
@@ -1738,9 +1755,7 @@ async function handleApiRequest(
   // DELETE /api/reviews/:id — remove a session
   const deleteParams = matchRoute(method, url, "DELETE", "/api/reviews/:id");
   if (deleteParams) {
-    stopSessionWatcher(deleteParams.id);
-    if (sessions.delete(deleteParams.id)) {
-      broadcastSessionRemoved(deleteParams.id);
+    if (removeSession(deleteParams.id)) {
       jsonResponse(res, 200, { ok: true });
     } else {
       jsonResponse(res, 404, { error: "Session not found" });
@@ -2114,9 +2129,7 @@ export async function startGlobalServer(
           (session.status === "pending" && age > ABANDONED_TTL_MS));
 
       if (idle || expiredByAge) {
-        stopSessionWatcher(id);
-        sessions.delete(id);
-        broadcastSessionRemoved(id);
+        removeSession(id);
       }
     }
   }

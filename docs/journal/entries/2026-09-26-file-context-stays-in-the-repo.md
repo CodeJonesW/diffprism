@@ -1,6 +1,6 @@
 ---
 title: An agent can only read files inside the repo under review
-date: 2026-09-27
+date: 2026-09-26
 kind: fix
 ---
 
