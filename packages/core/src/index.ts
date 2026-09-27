@@ -38,6 +38,8 @@ export type {
   SessionSummary,
   ReviewCaller,
   ReviewCallerKind,
+  AgentModel,
+  AgentModelLister,
   GlobalServerOptions,
   GlobalServerHandle,
   PrAgentRequest,

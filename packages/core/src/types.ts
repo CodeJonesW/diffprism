@@ -1,4 +1,4 @@
-import type { ReviewAgentChoice } from "./agent-settings.js";
+import type { ReviewAgentChoice, ReviewAgentName } from "./agent-settings.js";
 import type { DojoRunner, DojoState } from "./dojo.js";
 // ─── Diff Types ───
 
@@ -511,7 +511,25 @@ export interface GlobalServerOptions {
    * findings (#231). The CLI supplies it. Without one, a PR review has no dojo.
    */
   dojo?: DojoRunner;
+  /**
+   * Lists the models each agent can use, as its own CLI names them (#244).
+   * The CLI supplies it. Without one, a model is typed by hand.
+   */
+  agentModels?: AgentModelLister;
 }
+
+/** A model an agent can use: the id to pass it, and what it's called. */
+export interface AgentModel {
+  id: string;
+  label: string;
+}
+
+/**
+ * The models an agent offers, read from its own CLI, so the list is the
+ * account's own and never goes stale in DiffPrism (#244). Rejects, with
+ * why, when the agent can't list them (not installed, not logged in).
+ */
+export type AgentModelLister = (agent: ReviewAgentName) => Promise<AgentModel[]>;
 
 /** What an agent needs to start answering a PR review. */
 export interface PrAgentRequest {

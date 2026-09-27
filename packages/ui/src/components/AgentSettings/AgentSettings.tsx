@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, Check } from "lucide-react";
-import type { AgentSettings, ReviewAgentName } from "../../types";
+import type { AgentModel, AgentSettings, ReviewAgentName } from "../../types";
 import { useHttpApi } from "../../hooks/useHttpApi";
 
 const AGENTS: Array<{ name: ReviewAgentName; label: string }> = [
@@ -121,19 +121,14 @@ export function AgentSettingsControl() {
                 ))}
               </fieldset>
 
-              <label className="block mb-3">
-                <span className="block text-text-secondary mb-1">Model for {labelOf(draft.agent)}</span>
-                <input
-                  type="text"
-                  value={draft.models[draft.agent] ?? ""}
-                  onChange={(e) => {
-                    setDraft({ ...draft, models: { ...draft.models, [draft.agent]: e.target.value } });
-                    setState("idle");
-                  }}
-                  placeholder={`${labelOf(draft.agent)}'s default`}
-                  className="w-full bg-background border border-border rounded px-2 py-1 text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-accent"
-                />
-              </label>
+              <ModelPicker
+                agent={draft.agent}
+                value={draft.models[draft.agent] ?? ""}
+                onChange={(model) => {
+                  setDraft({ ...draft, models: { ...draft.models, [draft.agent]: model } });
+                  setState("idle");
+                }}
+              />
 
               <div className="flex items-center gap-2">
                 <button
@@ -157,6 +152,109 @@ export function AgentSettingsControl() {
             </>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+/** A model's family: its id without the effort level and speed, e.g. gpt-5.3-codex-high-fast → gpt-5.3-codex. */
+export function modelFamily(id: string): string {
+  return id.replace(/-fast$/, "").replace(/-(none|minimal|low|medium|high|xhigh|max)$/, "");
+}
+
+const OTHER = "__other__";
+const inputClass =
+  "w-full bg-background border border-border rounded px-2 py-1 text-text-primary placeholder:text-text-secondary/50 focus:outline-none focus:ring-1 focus:ring-accent";
+
+/**
+ * The models the agent's own CLI lists, to pick from rather than type (#244):
+ * its default first, then each family together, then Other… for a model the
+ * list doesn't name. When the agent can't list them, a text field, and why.
+ */
+function ModelPicker({ agent, value, onChange }: { agent: ReviewAgentName; value: string; onChange: (model: string) => void }) {
+  const { getAgentModels } = useHttpApi();
+  const [models, setModels] = useState<AgentModel[] | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [typing, setTyping] = useState(false);
+
+  useEffect(() => {
+    setModels(null);
+    setProblem(null);
+    setTyping(false);
+    // Switched to another agent before this list came back: it's the wrong
+    // agent's now, so it must not land in this picker, or be saved from it.
+    let current = true;
+    getAgentModels(agent).then((result) => {
+      if (!current) return;
+      if (result.ok) setModels(result.models);
+      else setProblem(result.error);
+    });
+    return () => {
+      current = false;
+    };
+  }, [agent, getAgentModels]);
+
+  if (models === null && problem === null) {
+    return <p className="mb-3 text-text-secondary">Finding {labelOf(agent)}'s models…</p>;
+  }
+
+  const listed = models?.some((m) => m.id === value) ?? false;
+  // A model the list doesn't name stays as it was typed, not silently lost.
+  const freeText = problem !== null || typing || (value !== "" && !listed);
+
+  const families = new Map<string, AgentModel[]>();
+  for (const model of models ?? []) {
+    const family = modelFamily(model.id);
+    families.set(family, [...(families.get(family) ?? []), model]);
+  }
+
+  return (
+    <div className="mb-3">
+      <label className="block">
+        <span className="block text-text-secondary mb-1">Model for {labelOf(agent)}</span>
+        {freeText ? (
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={`${labelOf(agent)}'s default`}
+            className={inputClass}
+          />
+        ) : (
+          <select
+            value={value}
+            onChange={(e) => {
+              if (e.target.value === OTHER) setTyping(true);
+              else onChange(e.target.value);
+            }}
+            className={inputClass}
+          >
+            <option value="">{labelOf(agent)}'s default</option>
+            {[...families].map(([family, members]) => (
+              <optgroup key={family} label={family}>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.id})
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+            <option value={OTHER}>Other…</option>
+          </select>
+        )}
+      </label>
+      {problem && <p className="mt-1 text-text-secondary">Couldn't list models: {problem}</p>}
+      {freeText && models !== null && (
+        <button
+          type="button"
+          onClick={() => {
+            setTyping(false);
+            if (!listed) onChange("");
+          }}
+          className="mt-1 text-accent hover:underline"
+        >
+          Choose from the list
+        </button>
       )}
     </div>
   );

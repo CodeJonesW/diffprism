@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { AgentSettings, DiffSide, DojoAvailableAgent, ReviewAgentName, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
+import type { AgentModel, AgentSettings, DiffSide, DojoAvailableAgent, ReviewAgentName, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -191,6 +191,22 @@ export function useHttpApi() {
     [httpPort],
   );
 
+  /** The models an agent can use, from its own CLI, or why they can't be listed (#244). */
+  const getAgentModels = useCallback(
+    async (agent: ReviewAgentName): Promise<{ ok: true; models: AgentModel[] } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/settings/agent/models?agent=${agent}`);
+        const data = (await response.json().catch(() => ({}))) as { models?: AgentModel[]; error?: string };
+        if (response.ok && data.models) return { ok: true, models: data.models };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
   /** The agents a review dojo can seat on this machine (#231). */
   const getDojoAgents = useCallback(
     async (): Promise<{ ok: true; agents: DojoAvailableAgent[] } | { ok: false; error: string }> => {
@@ -237,6 +253,7 @@ export function useHttpApi() {
     getAgentSettings,
     saveAgentSettings,
     getDojoAgents,
+    getAgentModels,
     startDojo,
     stopDojo,
     markSeen,
