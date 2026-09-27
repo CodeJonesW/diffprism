@@ -9,6 +9,7 @@ import { HotkeyGuide } from "./HotkeyGuide";
 import { WorkflowTips } from "./WorkflowTips";
 import { AnnotationPanel, annotationPanelTitle } from "./AnnotationPanel";
 import { DojoPanel } from "./DojoPanel";
+import { SinceBanner } from "./SinceBanner";
 import { useSavedPane } from "../hooks/useSavedPane";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
@@ -57,6 +58,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
     <div className="h-screen flex flex-col bg-background">
       <BriefingBar />
       <ReasoningPanel />
+      <SinceBanner />
       <Splitter
         className="flex-1 min-h-0"
         withHandle={false}

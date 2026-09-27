@@ -13,6 +13,7 @@ import type {
   ContextUpdatePayload,
   SessionSummary,
   Annotation,
+  SinceLastLook,
 } from "../types";
 import { getFileKey } from "../lib/file-key";
 
@@ -102,6 +103,10 @@ export interface ReviewState {
   focusedAnnotationId: string | null;
   /** The review dojo on this review, as the server last reported it (#231). */
   dojo: DojoState | null;
+  /** What changed since the reviewer last looked, as the server last reported it (#265). */
+  since: SinceLastLook | null;
+  /** Show only the hunks that are new since the last look (#265). */
+  sinceOnly: boolean;
   draftComment: DraftComment | null;
   theme: Theme;
   verdict: VerdictStatus;
@@ -146,6 +151,8 @@ export interface ReviewState {
   setActiveCommentKey: (key: string | null) => void;
   focusAnnotation: (annotationId: string | null) => void;
   setDojo: (dojo: DojoState) => void;
+  setSince: (since: SinceLastLook | null) => void;
+  setSinceOnly: (sinceOnly: boolean) => void;
   setDraftComment: (draft: DraftComment | null) => void;
   saveDraftComment: () => void;
   toggleTheme: () => void;
@@ -186,6 +193,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   activeCommentKey: null,
   focusedAnnotationId: null,
   dojo: null,
+  since: null,
+  sinceOnly: false,
   draftComment: null,
   theme: (localStorage.getItem("diffprism-theme") as Theme) ?? "dark",
   panes: loadPanes(),
@@ -227,6 +236,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       comments: [],
       annotations: [],
       dojo: null,
+      since: null,
+      sinceOnly: false,
       activeCommentKey: null,
       draftComment: null,
       focusedHunkIndex: null,
@@ -287,6 +298,15 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
 
   setDojo: (dojo: DojoState) => {
     set({ dojo });
+  },
+
+  setSince: (since: SinceLastLook | null) => {
+    // Nothing new to show only of.
+    set(since ? { since } : { since: null, sinceOnly: false });
+  },
+
+  setSinceOnly: (sinceOnly: boolean) => {
+    set({ sinceOnly });
   },
   focusAnnotation: (annotationId: string | null) => {
     set({ focusedAnnotationId: annotationId });
@@ -448,6 +468,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
           selectedFile: null,
           fileStatuses: {},
           comments: [],
+          since: null,
+          sinceOnly: false,
           activeCommentKey: null,
           draftComment: null,
           focusedHunkIndex: null,
@@ -545,6 +567,8 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
       comments: [],
       annotations: [],
       dojo: null,
+      since: null,
+      sinceOnly: false,
       activeCommentKey: null,
       draftComment: null,
       focusedHunkIndex: null,

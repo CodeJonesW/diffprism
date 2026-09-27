@@ -13,6 +13,7 @@ Shared types + server-client utilities + global server. This is the central pack
 - `src/diff-poller.ts` — Watches a repo for diff changes. The delay before each poll is asked for anew, so it can change; `wake()` polls immediately.
 - `src/diff-scope.ts` — Which diff a review shows: the default ref, the commit gate's, and `diffNewSide()`, where the new side of a diff lives (#238).
 - `src/dojo.ts` — Review dojo types, `DojoSubject` (a PR, or a local change), and `combineFindings()`, which turns the agents' votes into agreed/disputed/partial/solo. Plain arithmetic, never a model
+- `src/since-last-look.ts` — `sinceLastLook()`: which files and hunks of a diff are new since the one the reviewer last saw (#265). Hunks are matched by the lines they add and remove (not line numbers or context), counted so identical hunks are each accounted for, and `lines` cites only added lines. The server keeps a session's `seenDiff` (last delivered to a viewer) and `sinceBase` (what the reviewer saw before unseen changes), and sends `review:since` after each delivery. `POST /api/reviews/:id/seen` clears it; comparing another ref, or reopening the review on one, starts over. A viewer is marked as having seen the diff only after `attachViewer` polls, so a first look never starts from a stale snapshot.
 - `src/watch-schedule.ts` — `watcherPollDelay()`: how often a session's watcher runs `git diff`.
 
 ## Important Patterns

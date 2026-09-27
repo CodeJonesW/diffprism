@@ -8,6 +8,7 @@ import type {
   DojoSeat,
   DojoSeverity,
   DojoState,
+  FileSinceLastLook,
   ReviewAgentName,
 } from "../../types";
 import { useHttpApi } from "../../hooks/useHttpApi";
@@ -290,6 +291,13 @@ function Results({
   const pickup = useAgentPickup(sendBack?.annotations ?? [], sendBack?.agentReadAt);
   const threadOf = (f: DojoCombinedFinding) => sendBack?.annotations.find((a) => a.id === f.annotationId);
   const sentOf = (f: DojoCombinedFinding) => findingSent(threadOf(f), pickup);
+  // What changed in each finding's file since the last look, to check a fix against (#265).
+  const since = useReviewStore((s) => s.since);
+  const setSinceOnly = useReviewStore((s) => s.setSinceOnly);
+  const selectFile = useReviewStore((s) => s.selectFile);
+  // Every copy of the finding's file (a working copy has a staged one and an
+  // unstaged one, each numbered in its own version), kept apart.
+  const changedSinceIn = (f: DojoCombinedFinding) => (since ? since.files.filter((c) => c.path === f.file) : undefined);
   // Agreed findings are the obvious ones to send; the rest are the reviewer's call.
   const [chosen, setChosen] = useState<Set<string>>(
     () =>
@@ -367,6 +375,11 @@ function Results({
                     onNavigate={onNavigate}
                     sent={sendBack ? sentOf(f) : undefined}
                     onDismiss={sendBack && f.annotationId && threadOf(f) ? () => dismissAnnotation(f.annotationId!) : undefined}
+                    changedSince={sendBack ? changedSinceIn(f) : undefined}
+                    onShowChanges={(key) => {
+                      setSinceOnly(true);
+                      selectFile(key);
+                    }}
                   />
                 </li>
               ))}
@@ -458,6 +471,8 @@ function FindingCard({
   onNavigate,
   sent,
   onDismiss,
+  changedSince,
+  onShowChanges,
 }: {
   finding: DojoCombinedFinding;
   labels: Record<ReviewAgentName, string>;
@@ -466,8 +481,18 @@ function FindingCard({
   sent?: FindingSent;
   /** Dismiss its thread: done with it, fixed or not (#256). Absent when there's no thread to dismiss. */
   onDismiss?: () => void;
+  /**
+   * What changed in the finding's file since the reviewer last looked
+   * (#265), one entry per copy of it in the diff: where to check a fix.
+   * Empty when nothing in that file changed; absent when nothing has changed
+   * since the last look at all.
+   */
+  changedSince?: FileSinceLastLook[];
+  /** Go to this copy of the file, showing only what changed since the last look. */
+  onShowChanges?: (key: string) => void;
 }) {
   const dismissed = !!sent?.dismissed;
+  const name = finding.file.split("/").pop();
   return (
     <div className={`w-full rounded-md border border-border bg-background ${dismissed ? "opacity-60" : ""}`}>
       <FindingBody finding={finding} labels={labels} onNavigate={onNavigate} />
@@ -486,6 +511,16 @@ function FindingCard({
               <p className={`text-xs ${sent.asked === "unheard" ? "text-warning" : "text-accent"}`}>{ASKED_TEXT[sent.asked]}</p>
             )
           )}
+          {/* Where to check the fix: what changed in this file since the last look (#265). */}
+          {sent.asked === "fixed" && changedSince && (
+            changedSince.length > 0 ? (
+              changedSince.map((entry) => (
+                <ChangedSinceLine key={entry.key} entry={entry} name={name ?? finding.file} onShow={onShowChanges} />
+              ))
+            ) : (
+              <p className="text-xs text-warning">Nothing in {name} changed since you last looked.</p>
+            )
+          )}
           {dismissed ? (
             <p className="text-xs text-text-secondary">Dismissed</p>
           ) : (
@@ -498,6 +533,37 @@ function FindingCard({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * What changed in one copy of a finding's file since the last look (#265):
+ * the lines a fix added, or that it removed lines, or that the file left the
+ * diff. A removal is how many fixes look, so it's never reported as nothing.
+ */
+function ChangedSinceLine({
+  entry,
+  name,
+  onShow,
+}: {
+  entry: FileSinceLastLook;
+  name: string;
+  onShow?: (key: string) => void;
+}) {
+  const stage = entry.key.startsWith("staged:") ? " (staged)" : entry.key.startsWith("unstaged:") ? " (unstaged)" : "";
+  if (entry.status === "removed") {
+    return <p className="text-xs text-accent">{name}{stage} left the diff since you last looked.</p>;
+  }
+  const oneLine = entry.lines.length === 1 && entry.lines[0].start === entry.lines[0].end;
+  const lines = entry.lines.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}–${r.end}`)).join(", ");
+  const text =
+    entry.lines.length > 0
+      ? `Changed since you last looked: ${name}${stage} ${oneLine ? "line" : "lines"} ${lines}`
+      : `Lines removed from ${name}${stage} since you last looked`;
+  return (
+    <button onClick={() => onShow?.(entry.key)} className="block text-left text-xs text-accent hover:underline">
+      {text}
+    </button>
   );
 }
 

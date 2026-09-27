@@ -74,6 +74,9 @@ interface FileBrowserProps {
 export function FileBrowser({ onSubmit }: FileBrowserProps) {
   const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments, navigateHunk, setFileStatus, briefing } =
     useReviewStore();
+  // Files that moved since the reviewer last looked (#265), by key.
+  const since = useReviewStore((s) => s.since);
+  const changedSince = new Map((since?.files ?? []).map((f) => [f.key, f]));
 
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const [menuOpen, setMenuOpen] = useState(false);
@@ -255,6 +258,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
   const renderFileRow = (file: DiffFile) => {
     const key = getFileKey(file);
     const isSelected = key === selectedFile;
+    const round = changedSince.get(key);
     const badge = getStatusBadge(file.status);
     const dir = dirname(file.path);
 
@@ -282,6 +286,14 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
           >
             {basename(file.path)}
           </div>
+          {round && (
+            <div className="text-[11px] text-accent" aria-label="changed since you last looked">
+              {round.status === "added" ? "new since you last looked" : "changed since you last looked"}
+              {round.additions > 0 && <span className="text-success font-mono"> +{round.additions}</span>}
+              {round.deletions > 0 && <span className="text-danger font-mono"> −{round.deletions}</span>}
+              {round.droppedHunks > 0 && <span className="text-text-secondary"> · {round.droppedHunks} gone</span>}
+            </div>
+          )}
           {dir && (
             <div className="text-xs text-text-secondary truncate">
               {dir}

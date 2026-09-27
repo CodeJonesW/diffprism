@@ -280,8 +280,35 @@ export interface DiffErrorPayload {
   error: string;
 }
 
+/**
+ * One file's changes since the reviewer last looked at a local review (#265):
+ * `added` to the diff, `changed` (some hunks are new or gone), or `removed`
+ * from the diff.
+ */
+export interface FileSinceLastLook {
+  /** The file's key in the diff (its stage prefix and path), as the file list keys it. */
+  key: string;
+  path: string;
+  status: "added" | "changed" | "removed";
+  /** Indexes of this file's hunks, in the current diff, that are new since the last look. */
+  hunks: number[];
+  /** The lines those hunks add, as ranges in the new version of the file. A hunk that only deletes adds none. */
+  lines: Array<{ start: number; end: number }>;
+  /** Lines added and removed in those hunks. */
+  additions: number;
+  deletions: number;
+  /** Hunks the reviewer saw that are no longer in the diff. */
+  droppedHunks: number;
+}
+
+/** What changed since the reviewer last looked, file by file (#265). */
+export interface SinceLastLook {
+  files: FileSinceLastLook[];
+}
+
 export type ServerMessage =
   | { type: "review:init"; payload: ReviewInitPayload }
+  | { type: "review:since"; payload: SinceLastLook | null }
   | { type: "diff:update"; payload: DiffUpdatePayload }
   | { type: "diff:error"; payload: DiffErrorPayload }
   | { type: "context:update"; payload: ContextUpdatePayload }

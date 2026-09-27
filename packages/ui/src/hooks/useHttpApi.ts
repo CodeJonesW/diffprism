@@ -207,6 +207,12 @@ export function useHttpApi() {
     [httpPort],
   );
 
+  /** The reviewer has seen what changed since they last looked; it arrives back as review:since (#265). */
+  const markSeen = useCallback(
+    (sessionId: string) => postJson(`/api/reviews/${sessionId}/seen`, {}),
+    [postJson],
+  );
+
   /** Start a review dojo. Its progress and result arrive as dojo:update. */
   const startDojo = useCallback(
     (sessionId: string, agents: ReviewAgentName[]) => postJson(`/api/reviews/${sessionId}/dojo`, { agents }),
@@ -226,5 +232,6 @@ export function useHttpApi() {
     saveAgentSettings,
     getDojoAgents,
     startDojo,
+    markSeen,
   };
 }

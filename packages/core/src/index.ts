@@ -44,11 +44,14 @@ export type {
   CommitInfo,
   BranchList,
   GitRefsPayload,
+  FileSinceLastLook,
+  SinceLastLook,
 } from "./types.js";
 
 export { createDiffPoller } from "./diff-poller.js";
 export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
+export { sinceLastLook } from "./since-last-look.js";
 export { startGlobalServer } from "./global-server.js";
 export { ensureServer, decideOnRunningServer, submitReviewToServer, waitForDecision, ReviewTimeoutError, ReviewerAskedError } from "./server-client.js";
 export { getBuildInfo, describeVersion, builtAt } from "./build-info.js";
