@@ -2,6 +2,7 @@
 title: The dojo times each agent on its own, and models are picked from a list
 date: 2026-09-27
 kind: feature
+pr: 278
 ---
 
 ## What changed
