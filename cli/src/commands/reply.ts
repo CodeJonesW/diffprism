@@ -3,6 +3,8 @@ import { isServerAlive, recordError, REPORT_HINT } from "@diffprism/core";
 export interface ReplyFlags {
   session: string;
   agent?: string;
+  /** The reply says the thread's issue is fixed, and how (#256). */
+  fixed?: boolean;
 }
 
 /**
@@ -13,6 +15,11 @@ export interface ReplyFlags {
  */
 export function replyCommandFor(sessionId: string, annotationId: string): string {
   return `diffprism reply --session ${sessionId} ${annotationId} "<your answer>"`;
+}
+
+/** The command that says a thread's issue is fixed, once the fix is made and staged (#256). */
+export function fixedCommandFor(sessionId: string, annotationId: string): string {
+  return `diffprism reply --session ${sessionId} ${annotationId} --fixed "<what you changed>"`;
 }
 
 /** Post an agent's reply to a thread on an open review. */
@@ -36,7 +43,7 @@ export async function reply(annotationId: string, words: string[], flags: ReplyF
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ author: "agent", agent: flags.agent ?? "agent", body }),
+        body: JSON.stringify({ author: "agent", agent: flags.agent ?? "agent", body, ...(flags.fixed ? { fixed: true } : {}) }),
       },
     );
   } catch (err) {
@@ -55,7 +62,11 @@ export async function reply(annotationId: string, words: string[], flags: ReplyF
   }
 
   const where = data.annotation ? ` on ${data.annotation.file}:${data.annotation.line}` : "";
-  console.log(`Replied${where}. It shows in the review now.`);
+  console.log(
+    flags.fixed
+      ? `Marked fixed${where}. The reviewer sees it as fixed, and the change in the diff once it's staged.`
+      : `Replied${where}. It shows in the review now.`,
+  );
   // Said here, at the moment of acting, and not only where the question was
   // printed: an agent that has just answered tends to stop and report back in
   // the terminal, while the reviewer is still in the dashboard — and whatever

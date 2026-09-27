@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, MessageSquare, Send } from "lucide-react";
+import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, Send } from "lucide-react";
 import type {
   Annotation,
   DojoAvailableAgent,
@@ -13,7 +13,7 @@ import type {
 import { useHttpApi } from "../../hooks/useHttpApi";
 import { useAgentPickup } from "../../hooks/useAgentPickup";
 import { useReviewStore } from "../../store/review";
-import { ASK_AGENT, findingComment, findingSent } from "../../lib/dojo-send";
+import { ASK_AGENT, findingSent } from "../../lib/dojo-send";
 import type { FindingSent } from "../../lib/dojo-send";
 
 const GROUPS: Array<{ consensus: DojoConsensus; title: string; hint: string }> = [
@@ -286,16 +286,19 @@ function Results({
 }) {
   const labels = Object.fromEntries(dojo.agents.map((a) => [a.agent.name, a.label])) as Record<ReviewAgentName, string>;
   const dropped = dojo.agents.filter((a) => a.error);
-  const comments = useReviewStore((s) => s.comments);
+  const dismissAnnotation = useReviewStore((s) => s.dismissAnnotation);
   const pickup = useAgentPickup(sendBack?.annotations ?? [], sendBack?.agentReadAt);
   const threadOf = (f: DojoCombinedFinding) => sendBack?.annotations.find((a) => a.id === f.annotationId);
-  const sentOf = (f: DojoCombinedFinding) => findingSent(f, threadOf(f), comments, pickup);
+  const sentOf = (f: DojoCombinedFinding) => findingSent(threadOf(f), pickup);
   // Agreed findings are the obvious ones to send; the rest are the reviewer's call.
   const [chosen, setChosen] = useState<Set<string>>(
     () =>
       new Set(
         dojo.findings
-          .filter((f) => f.consensus === "agreed" && threadOf(f) && sentOf(f).asked === null && !sentOf(f).inVerdict)
+          .filter((f) => {
+            const sent = sentOf(f);
+            return f.consensus === "agreed" && threadOf(f) && sent.asked === null && !sent.dismissed;
+          })
           .map((f) => f.id),
       ),
   );
@@ -331,7 +334,6 @@ function Results({
         <SendBar
           sessionId={sessionId}
           chosen={dojo.findings.filter((f) => chosen.has(f.id))}
-          threadOf={threadOf}
           sentOf={sentOf}
           onSent={(ids) =>
             setChosen((current) => new Set([...current].filter((id) => !ids.includes(id))))
@@ -353,13 +355,19 @@ function Results({
                     <input
                       type="checkbox"
                       className="mt-2.5"
-                      checked={chosen.has(f.id)}
-                      disabled={!threadOf(f)}
+                      checked={chosen.has(f.id) && !sentOf(f).dismissed}
+                      disabled={!threadOf(f) || sentOf(f).dismissed}
                       onChange={() => toggle(f.id)}
                       aria-label={`Choose “${f.title}”`}
                     />
                   )}
-                  <FindingCard finding={f} labels={labels} onNavigate={onNavigate} sent={sendBack ? sentOf(f) : undefined} />
+                  <FindingCard
+                    finding={f}
+                    labels={labels}
+                    onNavigate={onNavigate}
+                    sent={sendBack ? sentOf(f) : undefined}
+                    onDismiss={sendBack && f.annotationId && threadOf(f) ? () => dismissAnnotation(f.annotationId!) : undefined}
+                  />
                 </li>
               ))}
             </ul>
@@ -371,55 +379,51 @@ function Results({
 }
 
 /**
- * Send the chosen findings to the agent that made the change (#238), the two
- * ways it hears from the reviewer: as a question on each finding's thread,
- * which the agent's next wait on the review returns, or as inline comments in
- * the request for changes the ActionBar sends.
+ * Send the chosen findings to the agent that made the change to fix (#238,
+ * #256). Each goes as a request on its own thread, which the agent's next
+ * wait on the review hands over, so each can be followed on its card: sent,
+ * picked up, then fixed or answered. This is the only way a finding reaches
+ * the agent: a request for changes ends the round and tracks nothing per
+ * finding, so the ActionBar's Request Changes is for the reviewer's own words.
  */
 function SendBar({
   sessionId,
   chosen,
-  threadOf,
   sentOf,
   onSent,
 }: {
   sessionId: string;
   chosen: DojoCombinedFinding[];
-  threadOf: (f: DojoCombinedFinding) => Annotation | undefined;
   sentOf: (f: DojoCombinedFinding) => FindingSent;
   onSent: (ids: string[]) => void;
 }) {
   const { replyToThread } = useHttpApi();
-  const addComment = useReviewStore((s) => s.addComment);
-  const [asking, setAsking] = useState(false);
+  const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const count = (n: number) => `${n} finding${n === 1 ? "" : "s"}`;
 
-  // A question already waiting on the agent isn't asked twice.
-  const toAsk = chosen.filter((f) => {
-    const asked = sentOf(f).asked;
-    return asked === null || asked === "answered";
+  // A request already waiting on the agent isn't sent twice, and a dismissed
+  // finding goes nowhere. Sending a fixed or answered one again reopens it.
+  const toSend = chosen.filter((f) => {
+    const { asked, dismissed } = sentOf(f);
+    return !dismissed && (asked === null || asked === "answered" || asked === "fixed");
   });
-  const toAdd = chosen.filter((f) => !sentOf(f).inVerdict);
 
-  async function ask() {
-    setAsking(true);
+  async function send() {
+    setSending(true);
     setNotice(null);
-    const results = await Promise.all(toAsk.map((f) => replyToThread(sessionId, f.annotationId!, ASK_AGENT)));
-    setAsking(false);
+    const results = await Promise.all(toSend.map((f) => replyToThread(sessionId, f.annotationId!, ASK_AGENT)));
+    setSending(false);
     const failed = results.find((r) => !r.ok);
-    onSent(toAsk.filter((_, i) => results[i].ok).map((f) => f.id));
+    onSent(toSend.filter((_, i) => results[i].ok).map((f) => f.id));
     setNotice(
       failed
         ? { ok: false, text: `${results.filter((r) => !r.ok).length} didn't send: ${failed.error}` }
-        : { ok: true, text: `Asked the agent about ${count(toAsk.length)}. Its next wait on this review hands them over.` },
+        : {
+            ok: true,
+            text: `Sent ${count(toSend.length)} to the agent. Each card shows when it has them, and when each is fixed.`,
+          },
     );
-  }
-
-  function addToVerdict() {
-    for (const f of toAdd) addComment(findingComment(f, threadOf(f)!));
-    onSent(toAdd.map((f) => f.id));
-    setNotice({ ok: true, text: `Added ${count(toAdd.length)} to your request for changes. Send it with Request Changes below.` });
   }
 
   const button =
@@ -427,17 +431,13 @@ function SendBar({
   return (
     <div className="space-y-2 rounded-md border border-border px-3 py-2" aria-label="Send to the agent">
       <p className="text-xs text-text-secondary">
-        Send the ticked findings to the agent that made this change: ask it about them now, or send them with your request
-        for changes.
+        Send the ticked findings to the agent that made this change. It fixes each one without committing and marks it
+        fixed, or replies with why not.
       </p>
       <div className="flex flex-wrap gap-2">
-        <button onClick={ask} disabled={asking || toAsk.length === 0} className={button}>
-          {asking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-          Ask the agent ({toAsk.length})
-        </button>
-        <button onClick={addToVerdict} disabled={toAdd.length === 0} className={button}>
-          <MessageSquare className="w-3.5 h-3.5" />
-          Add to request for changes ({toAdd.length})
+        <button onClick={send} disabled={sending || toSend.length === 0} className={button}>
+          {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+          Send to the agent to fix ({toSend.length})
         </button>
       </div>
       {notice && <p className={`text-xs ${notice.ok ? "text-text-secondary" : "text-danger"}`}>{notice.text}</p>}
@@ -445,7 +445,7 @@ function SendBar({
   );
 }
 
-const ASKED_TEXT: Record<NonNullable<FindingSent["asked"]>, string> = {
+const ASKED_TEXT: Record<Exclude<NonNullable<FindingSent["asked"]>, "fixed">, string> = {
   pending: "Sent to the agent",
   picked_up: "Sent to the agent — it has it",
   unheard: "Sent — no agent is waiting on this review yet. It gets this the next time one does.",
@@ -457,17 +457,64 @@ function FindingCard({
   labels,
   onNavigate,
   sent,
+  onDismiss,
 }: {
   finding: DojoCombinedFinding;
   labels: Record<ReviewAgentName, string>;
   onNavigate: (finding: DojoCombinedFinding) => void;
   /** Where it stands with the agent that made the change, on a local review. */
   sent?: FindingSent;
+  /** Dismiss its thread: done with it, fixed or not (#256). Absent when there's no thread to dismiss. */
+  onDismiss?: () => void;
+}) {
+  const dismissed = !!sent?.dismissed;
+  return (
+    <div className={`w-full rounded-md border border-border bg-background ${dismissed ? "opacity-60" : ""}`}>
+      <FindingBody finding={finding} labels={labels} onNavigate={onNavigate} />
+      {sent && (sent.asked || dismissed || onDismiss) && (
+        <div className="px-3 pb-2 space-y-1">
+          {sent.asked === "fixed" ? (
+            <div className="flex gap-1.5 text-xs">
+              <CircleCheck className="w-3.5 h-3.5 text-success flex-shrink-0 mt-0.5" />
+              <p>
+                <span className="text-success font-medium">Fixed by the agent</span>
+                {sent.fixedNote && <span className="text-text-primary">: {sent.fixedNote}</span>}
+              </p>
+            </div>
+          ) : (
+            sent.asked && (
+              <p className={`text-xs ${sent.asked === "unheard" ? "text-warning" : "text-accent"}`}>{ASKED_TEXT[sent.asked]}</p>
+            )
+          )}
+          {dismissed ? (
+            <p className="text-xs text-text-secondary">Dismissed</p>
+          ) : (
+            onDismiss && (
+              <button onClick={onDismiss} className="text-xs text-text-secondary hover:text-text-primary hover:underline">
+                Dismiss
+              </button>
+            )
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The finding itself; clicking it goes to its thread on its line. */
+function FindingBody({
+  finding,
+  labels,
+  onNavigate,
+}: {
+  finding: DojoCombinedFinding;
+  labels: Record<ReviewAgentName, string>;
+  onNavigate: (finding: DojoCombinedFinding) => void;
 }) {
   return (
     <button
       onClick={() => onNavigate(finding)}
-      className="w-full text-left rounded-md border border-border bg-background px-3 py-2 hover:border-accent/50 transition-colors"
+      className="w-full text-left rounded-md px-3 py-2 hover:bg-border/20 transition-colors"
     >
       <div className="flex items-start gap-2">
         <span className={`text-[11px] font-medium rounded border px-1.5 py-0.5 ${SEVERITY_STYLE[finding.severity]}`}>
@@ -495,10 +542,6 @@ function FindingCard({
           </li>
         ))}
       </ul>
-      {sent?.asked && (
-        <p className={`mt-2 text-xs ${sent.asked === "unheard" ? "text-warning" : "text-accent"}`}>{ASKED_TEXT[sent.asked]}</p>
-      )}
-      {sent?.inVerdict && <p className="mt-1 text-xs text-accent">In your request for changes</p>}
     </button>
   );
 }

@@ -619,6 +619,16 @@ describe("threads", () => {
     expect(parse(result).next).toBeUndefined();
   });
 
+  it("says a thread is fixed when the agent says so (#256)", async () => {
+    const fetchMock = stubFetch({
+      [`${base_}/api/reviews/s1/annotations/a1/replies`]: () => json({ replyId: "r1" }),
+    });
+
+    await (await tool("reply"))({ session_id: "s1", annotation_id: "a1", body: "Added a TTL", fixed: true, then_wait: false });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1]?.body ?? "{}")).toEqual({ author: "agent", agent: "unknown", body: "Added a TTL", fixed: true });
+  });
+
   it("reports a rejected reply as an error", async () => {
     stubFetch({ [`${base_}/api/reviews/s1/annotations/gone/replies`]: () => json({ error: "Annotation not found" }, 404) });
     const result = await (await tool("reply"))({ session_id: "s1", annotation_id: "gone", body: "x" });

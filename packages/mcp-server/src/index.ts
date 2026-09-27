@@ -643,6 +643,12 @@ export function createMcpServer(): McpServer {
       annotation_id: z.string().describe("The thread to reply to (an annotation id from get_review_comments or wait_for_comments)"),
       body: z.string().describe("Your reply"),
       source_agent: z.string().optional().describe("Who is replying, e.g. 'pr-reviewer'"),
+      fixed: z
+        .boolean()
+        .optional()
+        .describe(
+          "Say you fixed what the thread raised, with `body` describing the change. Make the fix first, without committing: the review is still open, so the fix goes into the change under review (for a staged review, stage it).",
+        ),
       then_wait: z
         .boolean()
         .optional()
@@ -650,14 +656,14 @@ export function createMcpServer(): McpServer {
           "Keep listening after replying (default true). With false, returns as soon as the reply is posted — use it when you have several threads to answer and want to post them all first.",
         ),
     },
-    async ({ session_id, repo_path, annotation_id, body, source_agent, then_wait }) =>
+    async ({ session_id, repo_path, annotation_id, body, source_agent, fixed, then_wait }) =>
       withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
         const response = await fetch(
           `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/annotations/${annotation_id}/replies`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ author: "agent", agent: source_agent ?? "unknown", body }),
+            body: JSON.stringify({ author: "agent", agent: source_agent ?? "unknown", body, ...(fixed ? { fixed: true } : {}) }),
           },
         );
         const data = (await response.json().catch(() => ({}))) as { replyId?: string; error?: string };

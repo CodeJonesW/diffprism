@@ -54,7 +54,16 @@ function AuthorLabel({ author, agent }: { author: "agent" | "reviewer"; agent?: 
 function Reply({ reply }: { reply: AnnotationReply }) {
   return (
     <div className="pl-3 ml-1.5 border-l border-border/70 py-1">
-      <AuthorLabel author={reply.author} agent={reply.agent} />
+      <div className="flex items-center gap-2">
+        <AuthorLabel author={reply.author} agent={reply.agent} />
+        {/* The agent says this reply's change fixes the thread (#256). */}
+        {reply.fixed && (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-success">
+            <Check className="w-3 h-3" />
+            Fixed
+          </span>
+        )}
+      </div>
       <p className="text-text-primary text-sm whitespace-pre-wrap mt-0.5">{reply.body}</p>
     </div>
   );

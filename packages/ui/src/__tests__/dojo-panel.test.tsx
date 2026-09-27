@@ -206,11 +206,11 @@ describe("sending findings to the agent that made the change (#238)", () => {
 
   it("has no send actions on a PR review, whose decision goes to GitHub", () => {
     render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} />);
-    expect(screen.queryByRole("button", { name: /Ask the agent/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Send to the agent/ })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
   });
 
-  it("ticks the agreed findings, and asks the agent about them on their threads", async () => {
+  it("ticks the agreed findings, and sends them to the agent to fix on their threads", async () => {
     const sendBack = { annotations: [thread("ann-1"), thread("ann-2")], agentReadAt: undefined };
     render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} sendBack={sendBack} />);
 
@@ -218,28 +218,20 @@ describe("sending findings to the agent that made the change (#238)", () => {
     expect((screen.getByRole("checkbox", { name: /Retry loop has no cap/ }) as HTMLInputElement).checked).toBe(false);
 
     fetchMock.mockImplementation(async () => new Response("{}", { status: 201 }));
-    fireEvent.click(screen.getByRole("button", { name: "Ask the agent (1)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send to the agent to fix (1)" }));
 
-    await screen.findByText(/Asked the agent about 1 finding/);
+    await screen.findByText(/Sent 1 finding to the agent/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("http://localhost:24680/api/reviews/s1/annotations/ann-1/replies");
     expect(JSON.parse(String(init.body))).toEqual({ author: "reviewer", body: "Please fix this, or reply to say why it isn't a problem." });
   });
 
-  it("adds the chosen findings to the request for changes, with the whole finding and a type from its severity", () => {
+  it("has one way to send findings, so each can be followed — none into the request for changes (#256)", () => {
     const sendBack = { annotations: [thread("ann-1"), thread("ann-2")], agentReadAt: undefined };
     render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} sendBack={sendBack} />);
-    fireEvent.click(screen.getByRole("checkbox", { name: /Retry loop has no cap/ }));
-
-    fireEvent.click(screen.getByRole("button", { name: "Add to request for changes (2)" }));
-
-    expect(useReviewStore.getState().comments).toEqual([
-      { file: "src/cache.ts", line: 12, side: "new", type: "must_fix", body: "[major] opening of ann-1" },
-      { file: "src/cache.ts", line: 12, side: "new", type: "must_fix", body: "[major] opening of ann-2" },
-    ]);
-    expect(screen.getAllByText("In your request for changes")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Add to request for changes (0)" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /request for changes/i })).toBeNull();
+    expect(useReviewStore.getState().comments).toEqual([]);
   });
 
   it("says on each card whether the agent has the finding, and when it has answered", () => {
@@ -258,5 +250,50 @@ describe("sending findings to the agent that made the change (#238)", () => {
     expect(screen.getByText("The agent answered — see the thread")).toBeTruthy();
     // Already asked, so neither is ticked to send again.
     expect(screen.getAllByRole("checkbox").every((c) => !(c as HTMLInputElement).checked)).toBe(true);
+  });
+
+  // ─── #256: fixed in place, and dismissed ───
+
+  /** The panel as ReviewView mounts it: fed the store's threads, so a dismissal shows. */
+  function LocalPanel() {
+    const annotations = useReviewStore((s) => s.annotations);
+    return <DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} sendBack={{ annotations, agentReadAt: 30 }} />;
+  }
+
+  it("shows a finding the agent fixed as fixed, with what it says it changed", () => {
+    const fixed = thread("ann-1", {
+      replies: [
+        { id: "r1", author: "reviewer", body: "Please fix this.", createdAt: 10 },
+        { id: "r2", author: "agent", body: "Added a 5 minute TTL.", createdAt: 20, fixed: true },
+      ],
+    });
+    render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} sendBack={{ annotations: [fixed, thread("ann-2")], agentReadAt: 30 }} />);
+
+    expect(screen.getByText("Fixed by the agent")).toBeTruthy();
+    expect(screen.getByText(/Added a 5 minute TTL\./)).toBeTruthy();
+    expect(screen.queryByText("The agent answered — see the thread")).toBeNull();
+    // Fixed, so it isn't ticked to send again — but asking about it again is still possible.
+    const box = screen.getByRole("checkbox", { name: /Cache never expires/ }) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(screen.getByRole("button", { name: "Send to the agent to fix (1)" })).toBeTruthy();
+  });
+
+  it("dismisses a finding's thread, and a dismissed finding can't be sent", async () => {
+    useReviewStore.setState({ reviewId: "s1", annotations: [thread("ann-1"), thread("ann-2")] });
+    render(<LocalPanel />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Dismiss" })[0]);
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("http://localhost:24680/api/reviews/s1/annotations/ann-1/dismiss", { method: "POST" }),
+    );
+    expect(screen.getByText("Dismissed")).toBeTruthy();
+    const box = screen.getByRole("checkbox", { name: /Cache never expires/ }) as HTMLInputElement;
+    expect(box.disabled).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(screen.getByRole("button", { name: "Send to the agent to fix (0)" })).toBeTruthy();
+    // The other finding can still be dismissed.
+    expect(screen.getAllByRole("button", { name: "Dismiss" })).toHaveLength(1);
   });
 });

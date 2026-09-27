@@ -1503,10 +1503,11 @@ async function handleApiRequest(
     }
 
     try {
-      const { author, agent, body: replyBody } = JSON.parse(await readBody(req)) as {
+      const { author, agent, body: replyBody, fixed } = JSON.parse(await readBody(req)) as {
         author?: ThreadAuthor;
         agent?: string;
         body?: string;
+        fixed?: unknown;
       };
 
       if (author !== "agent" && author !== "reviewer") {
@@ -1517,6 +1518,15 @@ async function handleApiRequest(
         jsonResponse(res, 400, { error: "A reply needs a body" });
         return true;
       }
+      if (fixed !== undefined && typeof fixed !== "boolean") {
+        jsonResponse(res, 400, { error: "fixed must be true or false" });
+        return true;
+      }
+      // Saying something is fixed is the agent's report on its own work (#256).
+      if (fixed && author !== "agent") {
+        jsonResponse(res, 400, { error: "Only an agent's reply can say it fixed the thread" });
+        return true;
+      }
 
       const reply: AnnotationReply = {
         id: randomUUID(),
@@ -1524,6 +1534,7 @@ async function handleApiRequest(
         ...(author === "agent" ? { agent: agent ?? "unknown" } : {}),
         body: replyBody,
         createdAt: Date.now(),
+        ...(fixed ? { fixed: true } : {}),
       };
       annotation.replies = [...(annotation.replies ?? []), reply];
       touch(session);

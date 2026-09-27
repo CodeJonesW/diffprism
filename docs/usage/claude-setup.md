@@ -266,6 +266,7 @@ Replies to a thread. The reply appears under it in the dashboard straight away â
 | `annotation_id` | Yes      | The thread, from `get_review_comments` or `wait_for_comments` |
 | `body`          | Yes      | The reply |
 | `source_agent`  | No       | Who is replying, e.g. `pr-reviewer` |
+| `fixed`         | No       | Say you fixed what the thread raised, with `body` describing the change. Make the fix without committing â€” the review is still open (stage it for a staged review). The dashboard shows the finding as fixed |
 | `then_wait`     | No       | Keep listening after replying (default `true`). `false` returns as soon as the reply is posted |
 
 Returns `{ sessionId, annotationId, replyId, next }`, where `next` is what happened after the reply: the reviewer's next question (`{ status: "reviewer_asked", review, threads }`), their decision (`{ status: "decided", result }`), or `{ status: "timed_out" }`. With `then_wait: false` there is no `next`.
