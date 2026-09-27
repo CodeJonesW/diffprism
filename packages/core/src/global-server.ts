@@ -34,8 +34,10 @@ import type {
   ThreadAuthor,
   DiffSide,
   PrReviewSubmission,
+  SinceLastLook,
 } from "./types.js";
 import { dojoThreadBody } from "./dojo.js";
+import { sinceLastLook } from "./since-last-look.js";
 import type { DojoRunner, DojoSeat, DojoState, DojoSubject } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
@@ -110,6 +112,14 @@ interface Session {
   annotations: Annotation[];
   /** The review dojo on this review, once one has been started (#231). */
   dojo?: DojoState;
+  /** The diff last delivered to someone viewing this review: what the reviewer has seen (#265). */
+  seenDiff?: { diffSet: DiffSet; hash: string };
+  /**
+   * What the reviewer saw before the changes they haven't marked seen: what
+   * "changed since you last looked" compares against (#265). It holds across
+   * several rounds of changes, until they mark them seen or compare another ref.
+   */
+  sinceBase?: DiffSet;
   userFocus?: UserFocus;
   /**
    * Set when the user closes the session in the UI. A closed session is kept
@@ -287,6 +297,9 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
   // A round still in progress keeps its status — resetting an in_review
   // session would pull it out from under the person reviewing it.
 
+  // Reopened on another ref (a working-copy review the gate reopens as
+  // staged, say), it's a different question, not a new round of this one.
+  diffChanging(existing, payload.rawDiff, existing.diffRef === diffRef ? "changed" : "compared");
   existing.payload = payload;
   existing.projectPath = request.projectPath;
   existing.repoRoot = request.repoRoot;
@@ -320,6 +333,7 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
     if (existing.dojo) {
       sendToSessionClients(id, { type: "dojo:update", payload: existing.dojo });
     }
+    diffDelivered(existing);
   } else if (contentChanged || wasClosed) {
     // Only a real change is news. A retry of the identical diff — the case the
     // kept verdict above exists for — should not light up the sidebar.
@@ -366,6 +380,45 @@ function attachViewer(ws: WebSocket, session: Session): void {
   // diff just sent could be stale. Poll now; a change reaches this viewer as
   // diff:update. (A watcher started just above already read the diff.)
   watcher?.wake();
+  // Only now is the diff on screen current, so only now is it seen (#265).
+  // Recorded before the poll, a stale snapshot would become the baseline and
+  // the first look would open on a "changed since you last looked" banner.
+  diffDelivered(session);
+}
+
+// ─── What changed since the reviewer last looked (#265) ───
+
+/**
+ * A review's diff is about to change. A change from outside, such as an agent
+ * staging fixes or committing again, keeps what the reviewer last saw as the
+ * baseline, the first time it moves on. A comparison the reviewer asked for
+ * starts over: that's a different question, not a new round.
+ */
+function diffChanging(session: Session, rawDiff: string, cause: "changed" | "compared"): void {
+  if (cause === "compared") {
+    session.sinceBase = undefined;
+    return;
+  }
+  if (!session.sinceBase && session.seenDiff && session.seenDiff.hash !== hashDiff(rawDiff)) {
+    session.sinceBase = session.seenDiff.diffSet;
+  }
+}
+
+/** What changed since the reviewer last looked, or null. A baseline nothing differs from any more is dropped. */
+function sinceFor(session: Session): SinceLastLook | null {
+  if (!session.sinceBase) return null;
+  const files = sinceLastLook(session.sinceBase, session.payload.diffSet);
+  if (files.length === 0) {
+    session.sinceBase = undefined;
+    return null;
+  }
+  return { files };
+}
+
+/** The viewers have the current diff: tell them what's new since they last looked, and note they've seen it. */
+function diffDelivered(session: Session): void {
+  sendToSessionClients(session.id, { type: "review:since", payload: sinceFor(session) });
+  session.seenDiff = { diffSet: session.payload.diffSet, hash: hashDiff(session.payload.rawDiff) };
 }
 
 /** Unseen, undismissed warnings — what the sidebar flags for attention. */
@@ -721,6 +774,7 @@ function startSessionWatcher(sessionId: string): void {
         return;
       }
       touch(s);
+      diffChanging(s, updatePayload.rawDiff, "changed");
 
       // Update session payload
       s.payload = {
@@ -737,6 +791,7 @@ function startSessionWatcher(sessionId: string): void {
           type: "diff:update",
           payload: updatePayload,
         });
+        diffDelivered(s);
         s.hasNewChanges = false;
       } else {
         s.hasNewChanges = true;
@@ -1769,6 +1824,7 @@ async function handleApiRequest(
       const changedFiles = detectChangedFiles(session.lastDiffSet ?? null, newDiffSet);
 
       // Update session state
+      diffChanging(session, newRawDiff, "compared");
       session.payload = {
         ...session.payload,
         diffSet: newDiffSet,
@@ -1797,11 +1853,27 @@ async function handleApiRequest(
           timestamp: Date.now(),
         },
       });
+      diffDelivered(session);
 
       jsonResponse(res, 200, { ok: true, fileCount: newDiffSet.files.length });
     } catch {
       jsonResponse(res, 400, { error: "Failed to compute diff for the given ref" });
     }
+    return true;
+  }
+
+  // POST /api/reviews/:id/seen — the reviewer has seen what changed since they
+  // last looked; the next change is measured from here (#265).
+  const seenParams = matchRoute(method, url, "POST", "/api/reviews/:id/seen");
+  if (seenParams) {
+    const session = sessions.get(seenParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    session.sinceBase = undefined;
+    diffDelivered(session);
+    jsonResponse(res, 200, { ok: true });
     return true;
   }
 
@@ -1977,6 +2049,7 @@ export async function startGlobalServer(
                 const newBriefing = analyze(newDiffSet);
 
                 // Update session
+                diffChanging(session, newRawDiff, "compared");
                 session.payload = {
                   ...session.payload,
                   diffSet: newDiffSet,
@@ -2002,6 +2075,7 @@ export async function startGlobalServer(
                     timestamp: Date.now(),
                   },
                 });
+                diffDelivered(session);
               } catch (err) {
                 const errorMsg: ServerMessage = {
                   type: "diff:error",

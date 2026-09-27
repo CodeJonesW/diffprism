@@ -3,6 +3,7 @@ import {
   parseDiff,
   Diff,
   Hunk as DiffHunk,
+  Decoration,
   getChangeKey,
   isInsert,
   isDelete,
@@ -192,6 +193,16 @@ export function DiffViewer() {
   const { isAvailable: hasServer, startThread, replyToThread } = useHttpApi();
   const canThread = hasServer && !!reviewId;
   const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
+
+  // This file's hunks that are new since the reviewer last looked (#265), by
+  // index — the server's parse and this one read the same unified diff.
+  const since = useReviewStore((s) => s.since);
+  const sinceOnly = useReviewStore((s) => s.sinceOnly);
+  const sinceEntry = useMemo(() => since?.files.find((f) => f.key === selectedFile) ?? null, [since, selectedFile]);
+  const newHunks = useMemo(() => new Set(sinceEntry?.hunks ?? []), [sinceEntry]);
+  // Filtering needs something new to show. A file whose only change is
+  // hunks that went away keeps its whole diff, with a note saying so.
+  const filterToNew = sinceOnly && newHunks.size > 0;
 
   const selectedDiffFile = useMemo(() => {
     if (!diffSet || !selectedFile) return null;
@@ -531,10 +542,18 @@ export function DiffViewer() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Sync hunk count to the store whenever the parsed file changes
+  // The hunks on screen, by index into the file's hunks: all of them, or only
+  // the new ones. Hunk navigation counts and steps through these, the same
+  // hunks the DOM holds (#265).
+  const shownHunks = useMemo(() => {
+    const all = (parsedFiles[0]?.hunks ?? []).map((_, index) => index);
+    return filterToNew ? all.filter((index) => newHunks.has(index)) : all;
+  }, [parsedFiles, filterToNew, newHunks]);
+
+  // Sync hunk count to the store whenever the hunks on screen change
   useEffect(() => {
-    setHunkCount(parsedFiles[0]?.hunks.length ?? 0);
-  }, [parsedFiles, setHunkCount]);
+    setHunkCount(shownHunks.length);
+  }, [shownHunks, setHunkCount]);
 
   // Scroll to focused hunk and apply visual highlight
   useEffect(() => {
@@ -554,7 +573,7 @@ export function DiffViewer() {
   useEffect(() => {
     function handleOpenComment() {
       if (focusedHunkIndex === null || parsedFiles.length === 0 || !selectedFile) return;
-      const hunk = parsedFiles[0].hunks[focusedHunkIndex];
+      const hunk = parsedFiles[0].hunks[shownHunks[focusedHunkIndex]];
       if (!hunk || hunk.changes.length === 0) return;
 
       const firstChange = hunk.changes[0];
@@ -564,7 +583,7 @@ export function DiffViewer() {
 
     document.addEventListener("diffprism:open-comment", handleOpenComment);
     return () => document.removeEventListener("diffprism:open-comment", handleOpenComment);
-  }, [focusedHunkIndex, parsedFiles, selectedFile, setActiveCommentKey]);
+  }, [focusedHunkIndex, parsedFiles, shownHunks, selectedFile, setActiveCommentKey]);
 
   // No file selected state
   if (!selectedFile || !diffSet) {
@@ -620,6 +639,18 @@ export function DiffViewer() {
 
   const diffData = parsedFiles[0];
 
+  // Showing only what's new, a file untouched since the last look says so rather than looking empty.
+  if (sinceOnly && !sinceEntry) {
+    return (
+      <div className="flex-1 flex flex-col bg-background">
+        <FileHeader path={displayPath} stage={selectedDiffFile?.stage} />
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-text-secondary text-sm">No changes in this file since you last looked.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col bg-background min-h-0">
       <FileHeader
@@ -632,6 +663,13 @@ export function DiffViewer() {
         onToggleHotkeyGuide={toggleHotkeyGuide}
         onToggleWorkflowTips={toggleWorkflowTips}
       />
+      {/* A file whose only change since the last look is hunks that went away (#265). */}
+      {sinceEntry && sinceEntry.hunks.length === 0 && sinceEntry.droppedHunks > 0 && (
+        <div className="px-4 py-1.5 text-xs text-accent bg-accent/10 border-b border-accent/30">
+          Nothing new here since you last looked, but {sinceEntry.droppedHunks} change
+          {sinceEntry.droppedHunks === 1 ? " you saw is" : "s you saw are"} gone.
+        </div>
+      )}
       <div ref={scrollContainerRef} className="flex-1 overflow-auto">
         <Diff
           viewType={viewMode}
@@ -643,9 +681,22 @@ export function DiffViewer() {
           renderGutter={renderGutter}
         >
           {(hunks) =>
-            hunks.map((hunk) => (
-              <DiffHunk key={hunk.content} hunk={hunk} />
-            ))
+            // Filtered here, not before <Diff>: tokens and line keys are
+            // built from every hunk, and the indexes must stay the server's.
+            hunks.flatMap((hunk, index) => {
+              const isNew = newHunks.has(index);
+              if (filterToNew && !isNew) return [];
+              const rendered = <DiffHunk key={hunk.content} hunk={hunk} />;
+              if (!isNew) return [rendered];
+              return [
+                <Decoration key={`since-${hunk.content}`}>
+                  <div className="px-3 py-1 text-[11px] font-medium text-accent bg-accent/10 border-y border-accent/30">
+                    New since you last looked
+                  </div>
+                </Decoration>,
+                rendered,
+              ];
+            })
           }
         </Diff>
       </div>

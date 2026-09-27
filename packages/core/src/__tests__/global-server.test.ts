@@ -18,6 +18,7 @@ import type {
   ServerMessage,
   SessionSummary,
   Annotation,
+  SinceLastLook,
 } from "../types.js";
 
 // ─── Mocks ───
@@ -2313,6 +2314,154 @@ describe("watcher cost", () => {
 
     const update = messages.find((m) => m.type === "diff:update");
     expect((update?.payload as { rawDiff?: string } | undefined)?.rawDiff).toBe(rawDiff);
+  });
+
+  describe("what changed since the reviewer last looked (#265)", () => {
+    const hunk = (newStart: number, content: string) => ({
+      oldStart: newStart, oldLines: 0, newStart, newLines: 1, changes: [{ type: "add" as const, lineNumber: newStart, content }],
+    });
+    const diffOf = (...hunks: ReturnType<typeof hunk>[]): DiffSet => ({
+      baseRef: "HEAD",
+      headRef: "staged",
+      files: [{ path: "src/cache.ts", status: "modified", hunks, language: "typescript", binary: false, additions: hunks.length, deletions: 0 }],
+    });
+    let current: DiffSet;
+
+    beforeEach(() => {
+      vi.mocked(git.getDiff).mockImplementation(() => ({ diffSet: current, rawDiff: JSON.stringify(current) }));
+    });
+
+    /** A staged review of `current`, viewed. Returns the session, and every message the viewer gets. */
+    async function viewedReview() {
+      handle = await startGlobalServer({ silent: true, pollInterval: 20 });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const created = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: makePayload({ diffSet: current, rawDiff: JSON.stringify(current) }),
+          projectPath: "/since",
+          diffRef: "staged",
+        }),
+      });
+      const { sessionId } = (await created.json()) as { sessionId: string };
+      const { ws, messages } = await connect(handle.wsPort);
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await sleep(80);
+      return { baseUrl, sessionId, ws, messages };
+    }
+    const lastSince = (messages: ServerMessage[]) =>
+      messages.filter((m) => m.type === "review:since").at(-1)?.payload as SinceLastLook | null | undefined;
+
+    it("tells the viewer which hunks are new when the agent stages a fix", async () => {
+      current = diffOf(hunk(12, "const TTL = 300_000;"));
+      const { ws, messages } = await viewedReview();
+      expect(lastSince(messages)).toBeNull();
+
+      current = diffOf(hunk(12, "const TTL = 300_000;"), hunk(40, "for (let i = 0; i < 3; i++) {"));
+      await sleep(150);
+      ws.close();
+
+      expect(lastSince(messages)).toEqual({
+        files: [expect.objectContaining({ key: "src/cache.ts", status: "changed", hunks: [1], lines: [{ start: 40, end: 40 }] })],
+      });
+    });
+
+    it("keeps counting from the last look over several rounds, until the reviewer marks it seen", async () => {
+      current = diffOf(hunk(12, "a"));
+      const { baseUrl, sessionId, ws, messages } = await viewedReview();
+
+      current = diffOf(hunk(12, "a"), hunk(20, "b"));
+      await sleep(120);
+      current = diffOf(hunk(12, "a"), hunk(20, "b"), hunk(30, "c"));
+      await sleep(120);
+      expect(lastSince(messages)?.files[0].hunks).toEqual([1, 2]);
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/seen`, { method: "POST" });
+      await sleep(30);
+      expect(lastSince(messages)).toBeNull();
+
+      current = diffOf(hunk(12, "a"), hunk(20, "b"), hunk(30, "c"), hunk(50, "d"));
+      await sleep(120);
+      ws.close();
+      expect(lastSince(messages)?.files[0].hunks).toEqual([3]);
+    });
+
+    it("still shows it after the reviewer reloads the page", async () => {
+      current = diffOf(hunk(12, "a"));
+      const { sessionId, ws } = await viewedReview();
+      current = diffOf(hunk(12, "a"), hunk(20, "b"));
+      await sleep(120);
+      ws.close();
+
+      const again = await connect(handle!.wsPort);
+      again.ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await sleep(60);
+      again.ws.close();
+      expect(lastSince(again.messages)?.files[0].hunks).toEqual([1]);
+    });
+
+    it("starts over when the review is reopened on another ref, a different question", async () => {
+      current = diffOf(hunk(12, "a"));
+      const { baseUrl, ws, messages } = await viewedReview();
+
+      // Say an agent's working-copy review, reopened by the commit gate as staged.
+      current = diffOf(hunk(12, "a"), hunk(20, "b"));
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: makePayload({ diffSet: current, rawDiff: JSON.stringify(current) }), projectPath: "/since", diffRef: "working-copy" }),
+      });
+      await sleep(60);
+      ws.close();
+      expect(lastSince(messages)).toBeNull();
+    });
+
+    it("doesn't greet a first look with a banner built from a stale poll", async () => {
+      // A review nobody has viewed: its watcher backs off, so its diff goes stale.
+      handle = await startGlobalServer({ silent: true, pollInterval: 20, unviewedPollInterval: 60_000 });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      current = diffOf(hunk(12, "a"));
+      const created = await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: makePayload({ diffSet: current, rawDiff: JSON.stringify(current) }), projectPath: "/stale", diffRef: "staged" }),
+      });
+      const { sessionId } = (await created.json()) as { sessionId: string };
+      // Keep the handshake from auto-selecting it before the change lands.
+      await fetch(`${baseUrl}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload: makePayload(), projectPath: "/other-stale", diffRef: "staged" }),
+      });
+      current = diffOf(hunk(12, "a"), hunk(20, "b"));
+
+      const { ws, messages } = await connect(handle.wsPort);
+      ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+      await sleep(80);
+      ws.close();
+
+      // The first look is whatever the reviewer sees now: nothing is "since".
+      expect(messages.some((m) => m.type === "review:since")).toBe(true);
+      expect(lastSince(messages)).toBeNull();
+    });
+
+    it("starts over when the reviewer compares against another ref", async () => {
+      current = diffOf(hunk(12, "a"));
+      const { baseUrl, sessionId, ws, messages } = await viewedReview();
+      current = diffOf(hunk(12, "a"), hunk(20, "b"));
+      await sleep(120);
+      expect(lastSince(messages)).not.toBeNull();
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ref: "HEAD~1..HEAD" }),
+      });
+      await sleep(30);
+      ws.close();
+      expect(lastSince(messages)).toBeNull();
+    });
   });
 
   it("removes a decided review once its change has landed, instead of showing it empty", async () => {
