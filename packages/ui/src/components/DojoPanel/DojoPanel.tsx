@@ -381,6 +381,14 @@ function Results({
           </span>
         </p>
       ))}
+      {/* A PR review has no agent waiting on it, so nothing to send findings back to (#254). */}
+      {!sendBack && dojo.findings.length > 0 && (
+        <p className="text-xs text-text-secondary">
+          On a pull request, these findings stay here as threads and aren't posted to GitHub. Raise what matters in
+          your review. Sending findings to an agent to fix is for local reviews, where an agent is waiting on your
+          decision.
+        </p>
+      )}
       {sendBack && dojo.findings.length > 0 && (
         <SendBar
           sessionId={sessionId}

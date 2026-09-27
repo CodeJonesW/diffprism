@@ -298,6 +298,8 @@ describe("sending findings to the agent that made the change (#238)", () => {
     render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} />);
     expect(screen.queryByRole("button", { name: /Send to the agent/ })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
+    // …and says why, so their absence doesn't look like a bug (#254).
+    expect(screen.getByText(/On a pull request, these findings stay here as threads and aren't posted to GitHub/)).toBeDefined();
   });
 
   it("ticks the agreed findings, and sends them to the agent to fix on their threads", async () => {

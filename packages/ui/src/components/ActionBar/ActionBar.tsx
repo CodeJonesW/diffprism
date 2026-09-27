@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Check, X, XCircle, MessageSquare, AlertTriangle } from "lucide-react";
+import { Check, X, XCircle, MessageSquare, AlertTriangle, Laptop } from "lucide-react";
 import type { ReviewResult, ReviewDecision } from "../../types";
 import { useReviewStore } from "../../store/review";
+import { useReviewKind } from "../../hooks/useReviewKind";
 import { ACTION_BUTTON_STYLES } from "../../lib/semantic-colors";
 
 interface ActionBarProps {
@@ -17,6 +18,7 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
   const [pendingDecision, setPendingDecision] = useState<ReviewDecision | null>(null);
   const { diffSet, fileStatuses, comments, draftComment, saveDraftComment, setActiveCommentKey, setDraftComment, verdict } = useReviewStore();
   const sending = verdict.state === "sending";
+  const { destination } = useReviewKind();
 
   const totalAdditions =
     diffSet?.files.reduce((sum, f) => sum + f.additions, 0) ?? 0;
@@ -116,6 +118,12 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
         </div>
       )}
 
+      {/* Where the decision and summary go: back to what's waiting, never GitHub (#250) */}
+      <p className="flex items-center gap-1.5 mb-2 text-xs text-text-primary">
+        <Laptop className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" />
+        {destination}
+      </p>
+
       {/* Stats row */}
       <div className="flex items-center gap-4 mb-3">
         <span className="text-text-secondary text-xs">
@@ -143,7 +151,8 @@ export function ActionBar({ onSubmit, onDismiss, isWatchMode, watchSubmitted, ha
       <textarea
         value={summary}
         onChange={(e) => setSummary(e.target.value)}
-        placeholder="Leave a summary comment (optional)..."
+        placeholder="Summary, sent back with your decision — not posted to GitHub (optional)"
+        aria-label="Summary"
         rows={3}
         className="w-full bg-background border border-border rounded-lg px-3 py-2 text-text-primary text-sm placeholder:text-text-secondary/50 resize-none focus:outline-none focus:ring-1 focus:ring-accent focus:border-accent mb-3"
       />

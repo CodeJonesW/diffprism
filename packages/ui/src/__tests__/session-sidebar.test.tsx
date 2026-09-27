@@ -27,6 +27,15 @@ function renderSidebar(sessions: SessionSummary[]) {
 afterEach(cleanup);
 
 describe("SessionSidebar signals", () => {
+  it("labels a pull request and a local review of the same branch apart (#254)", () => {
+    renderSidebar([
+      session({ id: "pr", branch: "fix-238", pr: "CodeJonesW/diffprism#239" }),
+      session({ id: "local", branch: "fix-238", diffRef: "staged", caller: { kind: "commit", waiting: true } }),
+    ]);
+    expect(screen.getByText("Pull request #239")).toBeTruthy();
+    expect(screen.getByText("Local · staged · commit gate")).toBeTruthy();
+  });
+
   it("shows when a session has new changes", () => {
     // Only the unmounted SessionList used to render this, so the signal the
     // server already sent never reached the screen.

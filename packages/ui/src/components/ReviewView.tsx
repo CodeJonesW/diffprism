@@ -13,6 +13,7 @@ import { SinceBanner } from "./SinceBanner";
 import { ReviewStatus } from "./ReviewStatus";
 import { useSavedPane } from "../hooks/useSavedPane";
 import { useReviewStore } from "../store/review";
+import { useReviewKind } from "../hooks/useReviewKind";
 import type { ReviewResult } from "../types";
 import { getFileKey } from "../lib/file-key";
 
@@ -27,7 +28,7 @@ interface ReviewViewProps {
 export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
   const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata, reviewId, dojo } = useReviewStore();
   const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
-  const isPrReview = !!metadata?.githubPr;
+  const isPrReview = useReviewKind().kind === "pr";
   const sidebar = useSavedPane("review-sidebar", 0);
   // Both panes stay mounted: Mantine sizes a splitter's panes once, so one
   // appearing later wouldn't fit, and remounting would reset the file list.
