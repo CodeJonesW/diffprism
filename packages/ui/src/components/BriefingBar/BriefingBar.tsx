@@ -13,8 +13,10 @@ import {
   GitPullRequest,
   ExternalLink,
   GitBranch,
+  Laptop,
 } from "lucide-react";
 import { useReviewStore } from "../../store/review";
+import { useReviewKind } from "../../hooks/useReviewKind";
 import { RefSelector } from "../RefSelector";
 import { BRIEFING_BADGE_STYLES, BRIEFING_SECTION_COLORS, SEVERITY_BADGE_STYLES, SEVERITY_COLORS } from "../../lib/semantic-colors";
 
@@ -37,6 +39,7 @@ export function BriefingBar() {
   const checkout = activeSession?.projectPath
     ? activeSession.projectPath.split("/").filter(Boolean).pop()
     : undefined;
+  const kind = useReviewKind();
 
   if (!briefing) return null;
   
@@ -146,10 +149,22 @@ export function BriefingBar() {
       </div>
       </div>
 
+      {/* What kind of review this is, and who gets the decision (#254) */}
+      <div className="px-4 py-2 border-t border-border/50 flex items-center gap-3 text-xs" aria-label="Review kind">
+        <span
+          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium flex-shrink-0 ${
+            kind.kind === "pr" ? "bg-accent/15 text-accent border border-accent/30" : "bg-neutral/15 text-text-primary border border-neutral/30"
+          }`}
+        >
+          {kind.kind === "pr" ? <GitPullRequest className="w-3 h-3" /> : <Laptop className="w-3 h-3" />}
+          {kind.label}
+        </span>
+        <span className="text-text-secondary">{kind.destination}</span>
+      </div>
+
       {/* GitHub PR context */}
       {metadata?.githubPr && (
         <div className="px-4 py-2 border-t border-border/50 flex items-center gap-3 text-xs">
-          <GitPullRequest className="w-3.5 h-3.5 text-accent flex-shrink-0" />
           <span className="text-text-primary font-medium truncate">
             {metadata.githubPr.owner}/{metadata.githubPr.repo}#{metadata.githubPr.number}
           </span>

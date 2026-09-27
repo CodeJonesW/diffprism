@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { GitBranch, GitCommit, ChevronDown, Loader2, RotateCcw, X, AlertCircle } from "lucide-react";
 import { useReviewStore } from "../../store/review";
+import { useReviewKind } from "../../hooks/useReviewKind";
 import { useHttpApi } from "../../hooks/useHttpApi";
 import type { GitRefsPayload } from "../../types";
+import { refLabel } from "../../lib/review-kind";
 
 export function RefSelector() {
   const [isOpen, setIsOpen] = useState(false);
@@ -18,7 +20,9 @@ export function RefSelector() {
   const { activeSessionId, compareRef, setCompareRef, metadata } = useReviewStore();
   const { isAvailable, fetchRefs, compareAgainst, resetCompare } = useHttpApi();
 
-  const displayRef = compareRef ?? "working copy";
+  // What the session reviews until another ref is picked: the commit gate's is "staged" (#254).
+  const sessionRef = useReviewStore((s) => s.sessions.find((session) => session.id === s.activeSessionId)?.diffRef);
+  const displayRef = compareRef ?? refLabel(sessionRef);
 
   const handleOpen = useCallback(async () => {
     if (!activeSessionId) return;
@@ -93,7 +97,7 @@ export function RefSelector() {
     }
   }, [isOpen]);
 
-  const isGitHubPr = !!metadata?.githubPr;
+  const isGitHubPr = useReviewKind().kind === "pr";
 
   if (!isAvailable || isGitHubPr) {
     // Non-server mode or GitHub PR — show static badge (no ref switching for PRs)

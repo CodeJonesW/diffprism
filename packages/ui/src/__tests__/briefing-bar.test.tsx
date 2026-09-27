@@ -44,6 +44,32 @@ beforeEach(() => {
 });
 
 describe("BriefingBar — which review am I looking at", () => {
+  it("says it's a pull request, and that the decision goes to GitHub (#254)", () => {
+    // Read from the review's own metadata — what picks the PR decision bar —
+    // so the badge agrees with the bar even before the session list catches up.
+    const githubPr = {
+      owner: "CodeJonesW", repo: "diffprism", number: 239, title: "t", author: "a",
+      url: "https://github.com/CodeJonesW/diffprism/pull/239", baseBranch: "main", headBranch: "f", viewer: "r",
+    };
+    useReviewStore.setState({ sessions: [session()], activeSessionId: "session-1", reviewId: "session-1", metadata: { githubPr } } as never);
+    render(<BriefingBar />);
+    const row = screen.getByLabelText("Review kind");
+    expect(row.textContent).toContain("Pull request #239");
+    expect(row.textContent).toContain("Your decision goes to GitHub, as a review on CodeJonesW/diffprism#239.");
+  });
+
+  it("says it's a local change, and that the decision goes back to what's waiting (#254)", () => {
+    useReviewStore.setState({
+      sessions: [session({ diffRef: "staged", caller: { kind: "commit", waiting: true } })],
+      activeSessionId: "session-1",
+      reviewId: "session-1",
+    } as never);
+    render(<BriefingBar />);
+    const row = screen.getByLabelText("Review kind");
+    expect(row.textContent).toContain("Local · staged · commit gate");
+    expect(row.textContent).toContain("go back to the git commit waiting on this review, not to GitHub");
+  });
+
   it("names the checkout and branch of the active session", () => {
     useReviewStore.setState({
       sessions: [session()],

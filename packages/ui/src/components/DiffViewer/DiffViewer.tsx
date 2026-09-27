@@ -12,6 +12,7 @@ import {
 import type { ChangeData, HunkData, GutterOptions, ChangeEventArgs, EventMap } from "react-diff-view";
 import type { DiffSide } from "../../types";
 import { useReviewStore } from "../../store/review";
+import { useReviewKind } from "../../hooks/useReviewKind";
 import { FileCode, Columns2, Rows2, HelpCircle, Lightbulb } from "lucide-react";
 import { InlineCommentForm, InlineCommentThread, InlineAnnotationThread, ThreadForm } from "../InlineComment";
 import { useHttpApi } from "../../hooks/useHttpApi";
@@ -185,7 +186,7 @@ export function DiffViewer() {
     reviewId,
   } = useReviewStore();
 
-  const isPrReview = !!metadata?.githubPr;
+  const isPrReview = useReviewKind().kind === "pr";
 
   // Threads live on the server, so they need a session to post to. A PR review
   // has no local review comments (the verdict happens on GitHub) — there, a

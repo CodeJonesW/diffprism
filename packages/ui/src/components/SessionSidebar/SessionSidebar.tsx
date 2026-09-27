@@ -1,6 +1,7 @@
 import { GitBranch, GitPullRequest, Clock, X, AlertCircle, FolderOpen, Plus, Radio, PanelLeftClose } from "lucide-react";
 import type { SessionSummary } from "../../types";
 import { STATUS_BADGE_STYLES } from "../../lib/semantic-colors";
+import { reviewKind } from "../../lib/review-kind";
 
 interface SessionSidebarProps {
   sessions: SessionSummary[];
@@ -192,9 +193,12 @@ export function SessionSidebar({ sessions, activeSessionId, onSelect, onClose, o
                     </span>
                   </div>
 
-                  {/* Row 4: File stats */}
+                  {/* Row 4: What kind of review (#254), and file stats */}
                   <div className="flex items-center gap-2 mt-0.5 text-[11px]">
-                    <span className="text-text-secondary">
+                    <span className={`truncate ${isGitHubPr ? "text-accent" : "text-text-primary"}`}>
+                      {reviewKind(session).label}
+                    </span>
+                    <span className="text-text-secondary flex-shrink-0">
                       {session.fileCount} file{session.fileCount !== 1 ? "s" : ""}
                     </span>
                     {session.additions > 0 && (
