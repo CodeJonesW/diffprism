@@ -2,6 +2,7 @@
 title: The dojo reviews your commits, and its findings go back to the agent that wrote them
 date: 2026-09-26
 kind: feature
+pr: 239
 ---
 
 ## What changed
