@@ -6,6 +6,7 @@ import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
 import type { PrAgentRequest } from "../types.js";
+import { DojoStoppedError } from "../dojo.js";
 import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoSeat, DojoState } from "../dojo.js";
 import { AsyncQueue } from "../async-queue.js";
 import type {
@@ -3033,6 +3034,8 @@ describe("the review dojo (#231)", () => {
     let finish = (_r: DojoResult): void => {};
     let fail = (_e: Error): void => {};
     const queue = new AsyncQueue<DojoSeat>();
+    // Stopped, it rejects as a real run does.
+    const stop = vi.fn((reason: string) => fail(new DojoStoppedError(reason)));
     const run = vi.fn((_request: DojoRequest) => ({
       progress: queue,
       result: new Promise<DojoResult>((resolve, reject) => {
@@ -3045,11 +3048,13 @@ describe("the review dojo (#231)", () => {
           reject(e);
         };
       }),
+      stop,
     }));
     const dojo: DojoRunner = { available: vi.fn(async () => [{ name: "claude" as const, label: "Claude Code" }]), run };
     return {
       dojo,
       run,
+      stop,
       progress: (seat: DojoSeat) => queue.push(seat),
       finish: (r: DojoResult) => finish(r),
       fail: (e: Error) => fail(e),
@@ -3173,6 +3178,72 @@ describe("the review dojo (#231)", () => {
 
     expect(again.status).toBe(409);
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  describe("stopping a dojo (#252, #242)", () => {
+    it("stops a running dojo when the reviewer asks, and lets another start", async () => {
+      const { dojo, run, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openPr(baseUrl);
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+      const res = await send(baseUrl, `/api/reviews/${sessionId}/dojo/stop`, {});
+      await settle();
+
+      expect(res.status).toBe(200);
+      expect(stop).toHaveBeenCalledWith("Stopped by the reviewer.");
+      expect((await viewerSees(sessionId)).dojo).toMatchObject({ status: "stopped", error: "Stopped by the reviewer.", findings: [] });
+      // Stopped, it's no longer in the way of another.
+      expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] })).status).toBe(202);
+      expect(run).toHaveBeenCalledTimes(2);
+    });
+
+    it("has nothing to stop when no dojo is running", async () => {
+      const { dojo } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openPr(baseUrl);
+      expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo/stop`, {})).status).toBe(409);
+    });
+
+    it("stops the dojo when the review is decided, rather than letting it run on (#242)", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+      await send(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "approved", comments: [] });
+      await settle();
+
+      expect(stop).toHaveBeenCalledWith("Stopped: the review was decided.");
+    });
+
+    it("stops the dojo when the review is closed", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}`, { method: "DELETE" });
+
+      expect(stop).toHaveBeenCalledWith("Stopped: the review was closed.");
+    });
+
+    it("stops the dojo when the server shuts down, so its agents don't outlive it", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+      await handle.stop();
+      handle = null;
+
+      expect(stop).toHaveBeenCalledWith("Stopped: the DiffPrism server shut down.");
+    });
   });
 
   it("refuses no agents, the same agent twice, and agents it doesn't know", async () => {

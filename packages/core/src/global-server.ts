@@ -36,7 +36,7 @@ import type {
   PrReviewSubmission,
   SinceLastLook,
 } from "./types.js";
-import { dojoThreadBody } from "./dojo.js";
+import { DojoStoppedError, dojoThreadBody } from "./dojo.js";
 import { sinceLastLook } from "./since-last-look.js";
 import type { DojoRunner, DojoSeat, DojoState, DojoSubject } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
@@ -112,6 +112,8 @@ interface Session {
   annotations: Annotation[];
   /** The review dojo on this review, once one has been started (#231). */
   dojo?: DojoState;
+  /** Stops the dojo running on this review; set while one is (#252). */
+  stopDojoRun?: (reason: string) => void;
   /** The diff last delivered to someone viewing this review: what the reviewer has seen (#265). */
   seenDiff?: { diffSet: DiffSet; hash: string };
   /**
@@ -492,6 +494,7 @@ function startDojo(
     sessions.get(session.id) === session && session.dojo?.startedAt === started.startedAt && session.dojo.status === "running";
 
   const run = runner.run({ sessionId: session.id, subject, localRepoPath: session.repoRoot, server, agents });
+  session.stopDojoRun = (reason) => run.stop(reason);
 
   // Each agent's progress, as it happens, so the reviewer can see the dojo working.
   void (async () => {
@@ -524,6 +527,8 @@ function startDojo(
       setDojo(session, { ...started, status: "done", agents: result.agents, findings, finishedAt: Date.now() });
     },
     (err: unknown) => {
+      // A stopped dojo already says so: stopDojo set it when it asked.
+      if (err instanceof DojoStoppedError) return;
       recordError("dojo", err);
       if (!running()) return;
       const error = err instanceof Error ? err.message : String(err);
@@ -531,6 +536,19 @@ function startDojo(
     },
   );
   return started;
+}
+
+/**
+ * Stop a running dojo: its agents are killed, and it shows as stopped, with
+ * why (#252). Also used when the review is decided or closed, since a dojo
+ * on a finished review has no one to report to (#242). No-op otherwise.
+ */
+function stopDojo(session: Session, reason: string): boolean {
+  if (session.dojo?.status !== "running") return false;
+  session.stopDojoRun?.(reason);
+  session.stopDojoRun = undefined;
+  setDojo(session, { ...session.dojo, status: "stopped", error: reason, finishedAt: Date.now() });
+  return true;
 }
 
 /** Starts an agent for a PR review; set from GlobalServerOptions.prAgent. */
@@ -731,6 +749,8 @@ function broadcastSessionRemoved(sessionId: string): void {
 
 /** Stop a session's watcher, forget it, and tell every client. False when there was no such session. */
 function removeSession(sessionId: string): boolean {
+  const session = sessions.get(sessionId);
+  if (session) stopDojo(session, "Stopped: the review was closed.");
   stopSessionWatcher(sessionId);
   if (!sessions.delete(sessionId)) return false;
   broadcastSessionRemoved(sessionId);
@@ -842,6 +862,8 @@ function broadcastSessionList(): void {
 
 /** Record a reviewer's decision, noting which diff it was a decision about. */
 function recordVerdict(session: Session, result: ReviewResult): void {
+  // The round is over: nobody will act on findings still coming in (#242).
+  stopDojo(session, "Stopped: the review was decided.");
   session.result = result;
   session.status = "submitted";
   session.verdictDiffHash = hashDiff(session.payload.rawDiff);
@@ -1291,6 +1313,22 @@ async function handleApiRequest(
     } catch (err) {
       jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
     }
+    return true;
+  }
+
+  // POST /api/reviews/:id/dojo/stop — stop the dojo running on this review (#252).
+  const stopDojoParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo/stop");
+  if (stopDojoParams) {
+    const session = sessions.get(stopDojoParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    if (!stopDojo(session, "Stopped by the reviewer.")) {
+      jsonResponse(res, 409, { error: "No dojo is running on this review." });
+      return true;
+    }
+    jsonResponse(res, 200, { dojo: session.dojo });
     return true;
   }
 
@@ -2028,6 +2066,7 @@ export async function startGlobalServer(
           stopSessionWatcher(closedId);
           const closedSession = sessions.get(closedId);
           if (closedSession) {
+            stopDojo(closedSession, "Stopped: the review was closed.");
             closedSession.closedAt = Date.now();
             if (!closedSession.result) {
               // Store dismiss result so MCP polling can pick it up
@@ -2200,6 +2239,11 @@ export async function startGlobalServer(
   async function stop(): Promise<void> {
     clearInterval(cleanupTimer);
     stopAllWatchers();
+    // A running dojo's agents are separate processes: stop them, or they
+    // outlive the server that started them (#252).
+    for (const session of sessions.values()) {
+      stopDojo(session, "Stopped: the DiffPrism server shut down.");
+    }
 
     // Close all WebSocket connections
     if (wss) {

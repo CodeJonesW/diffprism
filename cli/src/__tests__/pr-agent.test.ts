@@ -21,6 +21,7 @@ import {
   AGENT_DISALLOWED_TOOLS,
   prAgentStarter,
   runAgent,
+  AGENT_KILL_GRACE_MS,
 } from "../commands/pr-agent.js";
 import type {
   AgentProcess,
@@ -238,7 +239,7 @@ describe("Cursor (#226)", () => {
 function finished(run: { code: number; output: string }): AgentProcess {
   const events = new AsyncQueue<unknown>();
   events.end();
-  return { events, done: Promise.resolve(run) };
+  return { events, done: Promise.resolve(run), kill: () => {} };
 }
 
 // Events as the real CLIs stream them (claude 2.1 / cursor-agent 2026.09, --output-format stream-json).
@@ -293,6 +294,46 @@ describe("runAgent", () => {
   it("answers with everything printed when the agent fails", async () => {
     const running = runAgent(process.execPath, { args: ["-e", script(["Not logged in"], 1)] }, process.cwd());
     expect(await running.done).toEqual({ code: 1, output: "Not logged in\n" });
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "kill ends an agent that ignores SIGTERM, and what it started, so the turn always ends (#252)",
+    async () => {
+      // An agent that shrugs off SIGTERM, with a child that does too and holds its output open.
+      const stubborn = [
+        "process.on('SIGTERM', () => {});",
+        "const child = require('child_process').spawn(process.execPath, ['-e', \"process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)\"], { stdio: 'inherit' });",
+        "console.log(JSON.stringify({ type: 'child', pid: child.pid }));",
+        "setInterval(() => {}, 1000);",
+      ].join("\n");
+      const running = runAgent(process.execPath, { args: ["-e", stubborn] }, process.cwd());
+      let childPid = 0;
+      for await (const event of running.events) {
+        childPid = (event as { pid: number }).pid;
+        running.kill();
+      }
+
+      const { code } = await running.done;
+
+      expect(code).not.toBe(0);
+      expect(() => process.kill(childPid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+    },
+    AGENT_KILL_GRACE_MS + 5000,
+  );
+});
+
+describe("counting tool calls under way (#252)", () => {
+  it("counts Claude Code's tool calls from the tool_use blocks sent to the tool_result blocks back", () => {
+    expect(CLAUDE.toolCalls({ type: "assistant", message: { content: [{ type: "tool_use" }, { type: "tool_use" }] } })).toBe(2);
+    expect(CLAUDE.toolCalls({ type: "user", message: { content: [{ type: "tool_result" }] } })).toBe(-1);
+    expect(CLAUDE.toolCalls({ type: "assistant", message: { content: [{ type: "thinking" }] } })).toBe(0);
+    expect(CLAUDE.toolCalls({ type: "user", message: { content: "a plain prompt" } })).toBe(0);
+  });
+
+  it("counts Cursor's from started to completed", () => {
+    expect(CURSOR.toolCalls({ type: "tool_call", subtype: "started" })).toBe(1);
+    expect(CURSOR.toolCalls({ type: "tool_call", subtype: "completed" })).toBe(-1);
+    expect(CURSOR.toolCalls({ type: "thinking" })).toBe(0);
   });
 });
 
@@ -447,6 +488,7 @@ describe("prAgentStarter", () => {
       begin: begin ?? (async (r) => ({ id: `${name}-conv`, cwd: r.localRepoPath, resumeCommand: `resume ${name}` })),
       turn: () => ({ args: [] }),
       describe: () => null,
+      toolCalls: () => 0,
     };
   }
 

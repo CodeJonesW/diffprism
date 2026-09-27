@@ -409,7 +409,8 @@ export interface DojoCombinedFinding {
   annotationId?: string;
 }
 
-export type DojoStage = "starting" | "reviewing" | "voting" | "done" | "dropped";
+/** `waiting`: its review is in, and it waits for the others to vote on theirs (#251). */
+export type DojoStage = "starting" | "reviewing" | "waiting" | "voting" | "done" | "dropped";
 
 export interface DojoSeat {
   agent: { name: ReviewAgentName; model?: string };
@@ -422,7 +423,8 @@ export interface DojoSeat {
 }
 
 export interface DojoState {
-  status: "running" | "done" | "failed";
+  /** `stopped`: ended early, by the reviewer or because the review was decided or closed (#252). */
+  status: "running" | "done" | "failed" | "stopped";
   agents: DojoSeat[];
   findings: DojoCombinedFinding[];
   startedAt: number;

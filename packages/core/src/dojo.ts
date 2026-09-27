@@ -49,8 +49,12 @@ export interface DojoCombinedFinding extends DojoFinding {
   annotationId?: string;
 }
 
-/** Where one agent is in the dojo. `dropped` means it left early; `error` says why. */
-export type DojoStage = "starting" | "reviewing" | "voting" | "done" | "dropped";
+/**
+ * Where one agent is in the dojo. `waiting` means its review is in and it's
+ * waiting for the others' before it can vote on them (#251). `dropped` means
+ * it left early; `error` says why.
+ */
+export type DojoStage = "starting" | "reviewing" | "waiting" | "voting" | "done" | "dropped";
 
 /** One agent's place in the dojo: what it's doing now, and how it went. */
 export interface DojoSeat {
@@ -67,7 +71,12 @@ export interface DojoSeat {
   error?: string;
 }
 
-export type DojoStatus = "running" | "done" | "failed";
+/**
+ * `stopped`: ended before it finished, by the reviewer or because its review
+ * was decided or closed (#252, #242). `error` says why. A stopped dojo keeps
+ * no findings: an agent's are only worth reading once the others have voted.
+ */
+export type DojoStatus = "running" | "done" | "failed" | "stopped";
 
 /** A dojo on one review, as the dashboard shows it. */
 export interface DojoState {
@@ -76,7 +85,7 @@ export interface DojoState {
   findings: DojoCombinedFinding[];
   startedAt: number;
   finishedAt?: number;
-  /** Why the whole dojo failed, when status is "failed". */
+  /** Why the whole dojo failed or was stopped, when status is "failed" or "stopped". */
   error?: string;
 }
 
@@ -111,8 +120,18 @@ export interface DojoResult {
 export interface DojoRun {
   /** A seat, whole, every time anything about it changes. Ends when the dojo does. */
   progress: AsyncIterable<DojoSeat>;
-  /** Rejects only when no agent could take part at all. */
+  /** Rejects when no agent could take part at all, or with DojoStoppedError once stopped. */
   result: Promise<DojoResult>;
+  /** Stop it now: every agent still working is killed, and `result` rejects with DojoStoppedError (#252). */
+  stop(reason: string): void;
+}
+
+/** What a dojo's result rejects with once it has been stopped. */
+export class DojoStoppedError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "DojoStoppedError";
+  }
 }
 
 /**

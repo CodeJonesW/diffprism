@@ -125,6 +125,66 @@ describe("DojoPanel (#231)", () => {
     expect(screen.getByText("Starting the agents…")).toBeTruthy();
   });
 
+  describe("while it runs (#251, #252)", () => {
+    const running = (agents: DojoState["agents"]): DojoState => ({ status: "running", startedAt: Date.now(), agents, findings: [] });
+
+    it("says an agent whose review is in is waiting for the others, by name", () => {
+      render(
+        <DojoPanel
+          sessionId="s1"
+          dojo={running([
+            { agent: { name: "claude" }, label: "Claude Code", stage: "waiting", stageStartedAt: Date.now(), raised: 5 },
+            { agent: { name: "cursor" }, label: "Cursor", stage: "reviewing", stageStartedAt: Date.now(), activity: "Thinking" },
+          ])}
+          onNavigate={() => {}}
+          onHide={() => {}}
+        />,
+      );
+      const claude = screen.getByLabelText("Claude Code");
+      expect(claude.textContent).toContain("Waiting for Cursor · raised 5");
+      // Idle, not working: no spinner.
+      expect(within(claude).getByLabelText("waiting")).toBeTruthy();
+    });
+
+    it("says it's waiting to vote once nobody is left reviewing", () => {
+      render(
+        <DojoPanel
+          sessionId="s1"
+          dojo={running([{ agent: { name: "claude" }, label: "Claude Code", stage: "waiting", stageStartedAt: Date.now(), raised: 1 }])}
+          onNavigate={() => {}}
+          onHide={() => {}}
+        />,
+      );
+      expect(screen.getByLabelText("Claude Code").textContent).toContain("Waiting to vote");
+    });
+
+    it("stops the dojo", async () => {
+      fetchMock.mockImplementation(async () => new Response("{}", { status: 200 }));
+      render(<DojoPanel sessionId="s1" dojo={running([])} onNavigate={() => {}} onHide={() => {}} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Stop/ }));
+
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith("http://localhost:24680/api/reviews/s1/dojo/stop", expect.objectContaining({ method: "POST" })),
+      );
+      expect(screen.getByRole("button", { name: /Stopping/ })).toBeTruthy();
+    });
+
+    it("says why when it couldn't stop", async () => {
+      fetchMock.mockImplementation(async () => new Response(JSON.stringify({ error: "No dojo is running on this review." }), { status: 409 }));
+      render(<DojoPanel sessionId="s1" dojo={running([])} onNavigate={() => {}} onHide={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: /Stop/ }));
+      expect(await screen.findByText("No dojo is running on this review.")).toBeTruthy();
+    });
+
+    it("once stopped, says why and offers to run it again", async () => {
+      const stopped: DojoState = { status: "stopped", startedAt: 1, finishedAt: 2, agents: [], findings: [], error: "Stopped: the review was decided." };
+      render(<DojoPanel sessionId="s1" dojo={stopped} onNavigate={() => {}} onHide={() => {}} />);
+      expect(screen.getByText("The last dojo was stopped. Stopped: the review was decided.")).toBeTruthy();
+      expect(await screen.findByRole("button", { name: /Start the dojo/ })).toBeTruthy();
+    });
+  });
+
   it("shows what each agent is doing, and for how long, while the dojo runs", () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     try {

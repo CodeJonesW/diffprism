@@ -130,6 +130,12 @@ export interface AgentKind {
    * "Reading src/cache.ts" — or null for events that aren't an action.
    */
   describe(event: unknown, review: AgentReview): string | null;
+  /**
+   * How one event changes the number of tool calls under way: +n for calls it
+   * starts, −n for calls it finishes, 0 otherwise. A tool call sends nothing
+   * while it runs, so without this a slow one would look like silence (#252).
+   */
+  toolCalls(event: unknown): number;
 }
 
 /** A path as the reviewer knows it: relative to the checkout when it's in there, else just its name. */
@@ -249,6 +255,16 @@ export const CLAUDE: AgentKind = {
     if (use?.name) return describeToolCall(use.name.replace(/^mcp__diffprism__/, ""), use.input ?? {}, review);
     return content.some((c) => c.type === "thinking") ? "Thinking" : null;
   },
+
+  // Calls start as tool_use blocks in an assistant message, and end when their
+  // tool_result blocks come back in a user message.
+  toolCalls(event) {
+    const e = event as { type?: string; message?: { content?: Array<{ type?: string }> | string } };
+    const content = Array.isArray(e.message?.content) ? e.message.content : [];
+    if (e.type === "assistant") return content.filter((c) => c.type === "tool_use").length;
+    if (e.type === "user") return 0 - content.filter((c) => c.type === "tool_result").length;
+    return 0;
+  },
 };
 
 // ─── Cursor ───
@@ -341,6 +357,13 @@ export const CURSOR: AgentKind = {
         return null;
     }
   },
+
+  // A call is a tool_call event that's `started`, then `completed`.
+  toolCalls(event) {
+    const e = event as { type?: string; subtype?: string };
+    if (e.type !== "tool_call") return 0;
+    return e.subtype === "started" ? 1 : e.subtype === "completed" ? -1 : 0;
+  },
 };
 
 export const AGENT_KINDS: Record<ReviewAgentName, AgentKind> = { claude: CLAUDE, cursor: CURSOR };
@@ -399,6 +422,8 @@ export interface AgentRun {
 export interface AgentProcess {
   events: AsyncIterable<unknown>;
   done: Promise<AgentRun>;
+  /** End the turn now: the agent's process is stopped, and `done` resolves with its exit. */
+  kill(): void;
 }
 
 /** Runs one turn. Swapped out in tests. */
@@ -410,8 +435,13 @@ export type AgentRunner = (command: string, invocation: AgentInvocation, cwd: st
  */
 export const runAgent: AgentRunner = (command, { args, stdin }, cwd) => {
   const events = new AsyncQueue<unknown>();
+  // On POSIX the agent leads a process group of its own, so stopping it
+  // reaches everything it started too: its MCP server, a tool's subprocess.
+  // Signalling it alone could leave them running, and holding its output
+  // open, so the turn never ends (#252).
+  const ownGroup = process.platform !== "win32";
+  const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], detached: ownGroup });
   const done = new Promise<AgentRun>((resolve, reject) => {
-    const child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
     let raw = "";
     let pending = "";
     let result: string | undefined;
@@ -446,8 +476,35 @@ export const runAgent: AgentRunner = (command, { args, stdin }, cwd) => {
     });
     child.stdin.end(stdin ?? "");
   });
-  return { events, done };
+  const signal = (name: NodeJS.Signals) => {
+    try {
+      if (ownGroup && child.pid !== undefined) process.kill(-child.pid, name);
+      else child.kill(name);
+    } catch (err) {
+      // Already gone is what stopping is for; anything else is a real failure.
+      if ((err as NodeJS.ErrnoException).code !== "ESRCH") throw err;
+    }
+  };
+  let killed = false;
+  return {
+    events,
+    done,
+    kill() {
+      if (killed) return;
+      killed = true;
+      signal("SIGTERM");
+      // An agent that ignores SIGTERM gets SIGKILL after a grace, so `done`
+      // always settles and the turn ends.
+      const force = setTimeout(() => signal("SIGKILL"), AGENT_KILL_GRACE_MS);
+      force.unref();
+      const clear = () => clearTimeout(force);
+      done.then(clear, clear);
+    },
+  };
 };
+
+/** How long a stopped agent gets to exit on SIGTERM before it's killed outright. */
+export const AGENT_KILL_GRACE_MS = 3000;
 
 /**
  * Thrown when the agent finishes a turn and a thread it was given is still

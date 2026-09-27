@@ -4,6 +4,7 @@ import path from "node:path";
 import {
   AsyncQueue,
   DOJO_SEVERITIES,
+  DojoStoppedError,
   combineFindings,
   diffNewSide,
   dojoFindingId,
@@ -27,7 +28,7 @@ import type {
   ReviewAgentName,
 } from "@diffprism/core";
 import { AGENT_KINDS, agentInstalled, runAgent, thisBuildsMcpServer } from "./pr-agent.js";
-import type { AgentConversation, AgentKind, AgentReview, AgentRunner, McpCommand } from "./pr-agent.js";
+import type { AgentConversation, AgentKind, AgentProcess, AgentReview, AgentRunner, McpCommand } from "./pr-agent.js";
 
 // ─── The review dojo (#231) ───
 //
@@ -158,6 +159,35 @@ export interface DojoDeps {
   folder: (sessionId: string, agent: ReviewAgentName) => string;
   log: (line: string) => void;
   now: () => number;
+  /**
+   * How long an agent may go without doing anything (no tool call, no
+   * thinking, no output) before its turn is stopped and it drops out (#252).
+   * A limit on silence, not on length: a long review that keeps working is
+   * never cut off.
+   */
+  quietLimitMs: number;
+  /**
+   * The same, while a tool call is under way. A call sends nothing until it
+   * returns, so a slow one would look like silence under the shorter limit;
+   * this one still ends a call that has truly hung.
+   */
+  toolQuietLimitMs: number;
+}
+
+/** Five minutes without a sign of life: far past a slow model, well short of forever. */
+const QUIET_LIMIT_MS = 5 * 60 * 1000;
+/** A tool call gets three times as long before it counts as hung. */
+const TOOL_QUIET_LIMIT_MS = 15 * 60 * 1000;
+
+/** A dojo's stop switch, and the turns it has to end when thrown. */
+interface DojoControl {
+  stoppedBecause: string | null;
+  turns: Set<AgentProcess>;
+}
+
+/** 90s, 5 minutes. */
+function describeWait(ms: number): string {
+  return ms < 60_000 ? `${Math.round(ms / 1000)}s` : `${Math.round(ms / 60_000)} minute${ms < 90_000 ? "" : "s"}`;
 }
 
 interface Seat {
@@ -173,42 +203,91 @@ interface Seat {
  * Seat the chosen agents, run both rounds, and put the result together. Every
  * change to a seat — its stage, what it's reading, how many findings it raised
  * — goes out on `progress` as it happens. An agent that can't start, review or
- * vote drops out with the reason; the dojo fails only when nobody reviewed.
+ * vote, or goes quiet too long, drops out with the reason; the dojo fails only
+ * when nobody reviewed. `stop` ends it at once (#252).
  */
 export function runDojo(request: DojoRequest, deps: DojoDeps): DojoRun {
   const progress = new AsyncQueue<DojoSeat>();
-  const result = play(request, deps, progress).finally(() => progress.end());
-  return { progress, result };
+  const control: DojoControl = { stoppedBecause: null, turns: new Set() };
+  const result = play(request, deps, progress, control).finally(() => progress.end());
+  return {
+    progress,
+    result,
+    stop(reason) {
+      if (control.stoppedBecause !== null) return;
+      control.stoppedBecause = reason;
+      for (const turn of control.turns) turn.kill();
+    },
+  };
 }
 
-async function play(request: DojoRequest, deps: DojoDeps, progress: AsyncQueue<DojoSeat>): Promise<DojoResult> {
+async function play(
+  request: DojoRequest,
+  deps: DojoDeps,
+  progress: AsyncQueue<DojoSeat>,
+  control: DojoControl,
+): Promise<DojoResult> {
+  const stopIfAsked = () => {
+    if (control.stoppedBecause !== null) throw new DojoStoppedError(control.stoppedBecause);
+  };
   const update = (seat: Seat, change: Partial<DojoSeat>) => {
     const stage = change.stage && change.stage !== seat.view.stage ? { stageStartedAt: deps.now(), activity: undefined } : {};
     seat.view = { ...seat.view, ...stage, ...change };
     progress.push(seat.view);
   };
   const drop = (seat: Seat, stage: string, err: unknown) => {
+    // Stopped isn't a failure of this agent's: the whole dojo is ending.
+    if (err instanceof DojoStoppedError) {
+      update(seat, { stage: "dropped", error: "stopped" });
+      return;
+    }
     recordError("dojo", err);
     const error = `${stage}: ${err instanceof Error ? err.message : String(err)}`;
     update(seat, { stage: "dropped", error });
     deps.log(`${request.sessionId}: dojo — ${seat.kind.label} ${error}`);
   };
-  /** One turn, reporting each thing the agent does while it runs. */
+  /**
+   * One turn, reporting each thing the agent does while it runs. A turn that
+   * goes quiet past the limit is stopped, and so is every turn when the dojo is.
+   */
   const turn = async (seat: Seat, first: boolean, prompt: string): Promise<string> => {
+    stopIfAsked();
     const invocation = seat.kind.turn(seat.review, seat.conversation!, {
       first,
       prompt,
       instructions: dojoInstructions(request, seat.kind.label),
     });
     const running = deps.run(seat.kind.command, invocation, seat.conversation!.cwd);
-    for await (const event of running.events) {
-      const activity = seat.kind.describe(event, seat.review);
-      // Thinking streams in many pieces; one report of it is enough.
-      if (activity && activity !== seat.view.activity) update(seat, { activity });
+    control.turns.add(running);
+    let wentQuietAfter: number | null = null;
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    let toolsUnderWay = 0;
+    const listen = () => {
+      clearTimeout(quiet);
+      const limit = toolsUnderWay > 0 ? deps.toolQuietLimitMs : deps.quietLimitMs;
+      quiet = setTimeout(() => {
+        wentQuietAfter = limit;
+        running.kill();
+      }, limit);
+    };
+    try {
+      listen();
+      for await (const event of running.events) {
+        toolsUnderWay = Math.max(0, toolsUnderWay + seat.kind.toolCalls(event));
+        listen();
+        const activity = seat.kind.describe(event, seat.review);
+        // Thinking streams in many pieces; one report of it is enough.
+        if (activity && activity !== seat.view.activity) update(seat, { activity });
+      }
+      const { code, output } = await running.done;
+      stopIfAsked();
+      if (wentQuietAfter !== null) throw new Error(`went quiet: nothing for ${describeWait(wentQuietAfter)}, so it was stopped.`);
+      if (code !== 0) throw new Error(`exited with status ${code}:\n${output.trim()}`);
+      return output;
+    } finally {
+      clearTimeout(quiet);
+      control.turns.delete(running);
     }
-    const { code, output } = await running.done;
-    if (code !== 0) throw new Error(`exited with status ${code}:\n${output.trim()}`);
-    return output;
   };
 
   const seats: Seat[] = request.agents.map((choice) => {
@@ -243,12 +322,14 @@ async function play(request: DojoRequest, deps: DojoDeps, progress: AsyncQueue<D
         update(seat, { stage: "reviewing" });
         const findings = parseFindings(await turn(seat, true, reviewPrompt()));
         roundOne.push({ agent: seat.choice.name, findings });
-        update(seat, { raised: findings.length, activity: undefined });
+        // Its votes are on the others' findings, so it waits for theirs (#251).
+        update(seat, { stage: "waiting", raised: findings.length });
       } catch (err) {
         drop(seat, "couldn't review", err);
       }
     }),
   );
+  stopIfAsked();
   if (roundOne.length === 0) {
     throw new Error(`No agent could review. ${seats.map((s) => `${s.kind.label} ${s.view.error}`).join(" ")}`);
   }
@@ -275,6 +356,7 @@ async function play(request: DojoRequest, deps: DojoDeps, progress: AsyncQueue<D
         }
       }),
   );
+  stopIfAsked();
 
   return { agents: seats.map((s) => s.view), findings: combineFindings(roundOne, roundTwo) };
 }
@@ -289,6 +371,8 @@ export function dojoRunner(deps: Partial<DojoDeps> = {}): DojoRunner {
     folder: dojoFolder,
     log: (line) => console.log(line),
     now: () => Date.now(),
+    quietLimitMs: QUIET_LIMIT_MS,
+    toolQuietLimitMs: TOOL_QUIET_LIMIT_MS,
     ...deps,
   };
 
