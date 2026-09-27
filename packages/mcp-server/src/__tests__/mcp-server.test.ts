@@ -519,6 +519,55 @@ describe("get_file_context", () => {
   it("reads the ref asked for over the review's own", async () => {
     expect(await read("staged", { ref: "HEAD" })).toMatchObject({ content: "committed\n", ref: "HEAD" });
   });
+
+  // ─── The path is an agent's, and untrusted: nothing outside the repo is read ───
+
+  describe("outside the repo", () => {
+    let outside: string;
+
+    beforeEach(() => {
+      outside = fs.mkdtempSync(path.join(os.tmpdir(), "file-context-secret-"));
+      fs.writeFileSync(path.join(outside, "secret"), "do not read\n");
+    });
+
+    afterEach(() => {
+      fs.rmSync(outside, { recursive: true, force: true });
+    });
+
+    async function call(diffRef: string, file: string, args: Record<string, unknown> = {}) {
+      stubFetch({ [`${base}/api/reviews/s1/payload`]: () => json({ projectPath: repo, diffRef, payload: { metadata: {} } }) });
+      return (await tool("get_file_context"))({ session_id: "s1", file, ...args });
+    }
+
+    it.each(["working-copy", "staged"])("refuses a path that climbs out of the repo (%s)", async (diffRef) => {
+      const result = await call(diffRef, path.relative(repo, path.join(outside, "secret")));
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("isn't a path inside the repository");
+      expect(result.content[0].text).not.toContain("do not read");
+    });
+
+    it("refuses an absolute path", async () => {
+      const result = await call("working-copy", path.join(outside, "secret"));
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).not.toContain("do not read");
+    });
+
+    it("refuses a symlink in the repo that leads outside it", async () => {
+      fs.symlinkSync(path.join(outside, "secret"), path.join(repo, "link"));
+      const result = await call("working-copy", "link");
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("leads outside the repository");
+      expect(result.content[0].text).not.toContain("do not read");
+    });
+
+    it("says a file missing at the ref asked for is missing, not the working tree's copy", async () => {
+      fs.writeFileSync(path.join(repo, "new.ts"), "only on disk\n");
+      const result = await call("working-copy", "new.ts", { ref: "HEAD" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('File not found: "new.ts" at HEAD');
+      expect(result.content[0].text).not.toContain("only on disk");
+    });
+  });
 });
 
 // ─── #160: conversation threads ───
