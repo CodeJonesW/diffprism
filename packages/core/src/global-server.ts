@@ -36,7 +36,7 @@ import type {
   PrReviewSubmission,
 } from "./types.js";
 import { dojoThreadBody } from "./dojo.js";
-import type { DojoRunner, DojoSeat, DojoState } from "./dojo.js";
+import type { DojoRunner, DojoSeat, DojoState, DojoSubject } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
 import { awaitingAgent, pickedUpByAgent } from "./threads.js";
 import { builtAt, getBuildInfo } from "./build-info.js";
@@ -108,7 +108,7 @@ interface Session {
   lastDiffSet?: DiffSet;
   hasNewChanges: boolean;
   annotations: Annotation[];
-  /** The review dojo on this PR review, once one has been started (#231). */
+  /** The review dojo on this review, once one has been started (#231). */
   dojo?: DojoState;
   userFocus?: UserFocus;
   /**
@@ -315,6 +315,11 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
     for (const annotation of existing.annotations) {
       sendToSessionClients(id, { type: "annotation:added", payload: annotation });
     }
+    // So is the dojo: an agent committing again after fixing its findings
+    // would otherwise blank the pane that sent them (#238).
+    if (existing.dojo) {
+      sendToSessionClients(id, { type: "dojo:update", payload: existing.dojo });
+    }
   } else if (contentChanged || wasClosed) {
     // Only a real change is news. A retry of the identical diff — the case the
     // kept verdict above exists for — should not light up the sidebar.
@@ -389,9 +394,20 @@ let serverUiUrl: string | null = null;
 /** Runs review dojos; set from GlobalServerOptions.dojo. */
 let dojoRunner: DojoRunner | null = null;
 
+/**
+ * What a dojo on this session reviews: its pull request, or its local change
+ * as the repo and the diff ref it shows (#238). Null for a local review
+ * that doesn't say which diff it shows, so no agent could find the change.
+ */
+function dojoSubject(session: Session): DojoSubject | null {
+  const pr = session.payload.metadata.githubPr;
+  if (pr) return { kind: "pr", url: pr.url };
+  return session.diffRef ? { kind: "local", repoPath: session.repoRoot, diffRef: session.diffRef } : null;
+}
+
 /** Why a dojo can't start on this session, or null when it can. */
 function dojoRefusal(session: Session, agents: ReviewAgentChoice[]): string | null {
-  if (!session.payload.metadata.githubPr) return "A review dojo runs on a pull request review.";
+  if (session.payload.diffSet.files.length === 0) return "There are no changes here to review.";
   if (session.dojo?.status === "running") return "A dojo is already running on this review.";
   if (agents.length === 0) return "Choose at least one agent.";
   if (new Set(agents.map((a) => a.name)).size !== agents.length) return "Each agent can take part once.";
@@ -405,18 +421,24 @@ function setDojo(session: Session, dojo: DojoState): void {
 }
 
 /**
- * Run a dojo on a PR review (#231) and, when it's done, post each combined
- * finding as a thread on its line, so the reviewer can answer it there.
+ * Run a dojo on a review (#231) and, when it's done, post each combined
+ * finding as a thread on its line, so the reviewer can answer it there — or,
+ * on a local review, send it to the agent that made the change (#238).
  */
-function startDojo(session: Session, runner: DojoRunner, server: GlobalServerInfo, agents: ReviewAgentChoice[]): DojoState {
-  const pr = session.payload.metadata.githubPr!;
+function startDojo(
+  session: Session,
+  subject: DojoSubject,
+  runner: DojoRunner,
+  server: GlobalServerInfo,
+  agents: ReviewAgentChoice[],
+): DojoState {
   const started: DojoState = { status: "running", agents: [], findings: [], startedAt: Date.now() };
   setDojo(session, started);
   // Still the dojo on screen: not closed, replaced, or already finished.
   const running = () =>
     sessions.get(session.id) === session && session.dojo?.startedAt === started.startedAt && session.dojo.status === "running";
 
-  const run = runner.run({ sessionId: session.id, prUrl: pr.url, localRepoPath: session.repoRoot, server, agents });
+  const run = runner.run({ sessionId: session.id, subject, localRepoPath: session.repoRoot, server, agents });
 
   // Each agent's progress, as it happens, so the reviewer can see the dojo working.
   void (async () => {
@@ -1221,12 +1243,17 @@ async function handleApiRequest(
       }
       const settings = readAgentSettings();
       const agents = (names as ReviewAgentName[]).map((name) => chooseReviewAgent(settings, { name }));
+      const subject = dojoSubject(session);
+      if (!subject) {
+        jsonResponse(res, 409, { error: "This review doesn't say where its change is, so no agent could read it." });
+        return true;
+      }
       const refusal = dojoRefusal(session, agents);
       if (refusal) {
         jsonResponse(res, 409, { error: refusal });
         return true;
       }
-      jsonResponse(res, 202, { dojo: startDojo(session, dojoRunner, runningServer, agents) });
+      jsonResponse(res, 202, { dojo: startDojo(session, subject, dojoRunner, runningServer, agents) });
     } catch (err) {
       jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -1294,6 +1321,7 @@ async function handleApiRequest(
     jsonResponse(res, 200, {
       payload: session.payload,
       projectPath: session.projectPath,
+      diffRef: session.diffRef,
       annotations: session.annotations,
     });
     return true;

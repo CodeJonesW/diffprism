@@ -3,7 +3,7 @@ import type { DiffSide, GlobalServerInfo } from "./types.js";
 
 // ─── The review dojo (#231) ───
 //
-// Several coding agents review the same pull request on their own, then each
+// Several coding agents review the same change on their own, then each
 // votes on what the others found. What comes back says, for every finding,
 // who raised it, who agrees and who doesn't. Deciding that is plain
 // arithmetic over the votes, done here, never by a model: a summary written
@@ -87,10 +87,16 @@ export interface DojoAvailableAgent {
   model?: string;
 }
 
+/**
+ * What a dojo reviews: a pull request, or a local change — the commit gate's
+ * staged diff, or whatever diff ref a local review shows (#238).
+ */
+export type DojoSubject = { kind: "pr"; url: string } | { kind: "local"; repoPath: string; diffRef: string };
+
 export interface DojoRequest {
   sessionId: string;
-  prUrl: string;
-  /** The checkout of the PR's head the review reads from (#240). */
+  subject: DojoSubject;
+  /** The folder the review reads from: the checkout of a PR's head (#240), or the local repo (#238). */
   localRepoPath: string;
   server: GlobalServerInfo;
   agents: ReviewAgentChoice[];

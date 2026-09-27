@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX } from "lucide-react";
+import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, MessageSquare, Send } from "lucide-react";
 import type {
+  Annotation,
   DojoAvailableAgent,
   DojoCombinedFinding,
   DojoConsensus,
@@ -10,6 +11,10 @@ import type {
   ReviewAgentName,
 } from "../../types";
 import { useHttpApi } from "../../hooks/useHttpApi";
+import { useAgentPickup } from "../../hooks/useAgentPickup";
+import { useReviewStore } from "../../store/review";
+import { ASK_AGENT, findingComment, findingSent } from "../../lib/dojo-send";
+import type { FindingSent } from "../../lib/dojo-send";
 
 const GROUPS: Array<{ consensus: DojoConsensus; title: string; hint: string }> = [
   { consensus: "agreed", title: "Agreed", hint: "Every agent agrees this is a problem." },
@@ -25,20 +30,33 @@ const SEVERITY_STYLE: Record<DojoSeverity, string> = {
   nit: "bg-neutral/15 text-text-secondary border-border",
 };
 
+/**
+ * A local review's threads, for sending findings to the agent that made the
+ * change (#238). A PR review has no such agent here: its decision goes to
+ * GitHub.
+ */
+export interface DojoSendBack {
+  annotations: Annotation[];
+  /** SessionSummary.agentReadAt of the review. */
+  agentReadAt: number | undefined;
+}
+
 interface DojoPanelProps {
   sessionId: string;
   dojo: DojoState | null;
   /** Go to the finding's thread on its line. */
   onNavigate: (finding: DojoCombinedFinding) => void;
   onHide: () => void;
+  sendBack?: DojoSendBack;
 }
 
 /**
- * The review dojo (#231): pick the agents, they review the PR on their own and
- * vote on each other's findings, and this shows where they agree and where
- * they don't. Each finding is also a thread on its line.
+ * The review dojo (#231): pick the agents, they review the change on their
+ * own and vote on each other's findings, and this shows where they agree and
+ * where they don't. Each finding is also a thread on its line and, on a local
+ * review, can be sent to the agent that made the change (#238).
  */
-export function DojoPanel({ sessionId, dojo, onNavigate, onHide }: DojoPanelProps) {
+export function DojoPanel({ sessionId, dojo, onNavigate, onHide, sendBack }: DojoPanelProps) {
   const [choosing, setChoosing] = useState(false);
   // A failed dojo offers to run again, with why the last one failed.
   const showPicker = !dojo || choosing || dojo.status === "failed";
@@ -67,7 +85,13 @@ export function DojoPanel({ sessionId, dojo, onNavigate, onHide }: DojoPanelProp
         ) : dojo.status === "running" ? (
           <Running dojo={dojo} />
         ) : (
-          <Results dojo={dojo} onNavigate={onNavigate} onRunAgain={() => setChoosing(true)} />
+          <Results
+            sessionId={sessionId}
+            dojo={dojo}
+            onNavigate={onNavigate}
+            onRunAgain={() => setChoosing(true)}
+            sendBack={sendBack}
+          />
         )}
       </div>
     </div>
@@ -122,8 +146,8 @@ function AgentPicker({
   return (
     <div className="space-y-3">
       <p className="text-xs text-text-secondary">
-        Each agent reviews this pull request on its own, then votes on what the others found. You get one list, with who
-        agrees and who doesn't.
+        Each agent reviews this change on its own, then votes on what the others found. You get one list, with who agrees
+        and who doesn't.
       </p>
       {error && <p className="text-xs text-danger">The last dojo failed: {error}</p>}
       {agents === null && !problem && <p className="text-xs text-text-secondary">Finding your agents…</p>}
@@ -248,16 +272,40 @@ function SeatRow({ seat, now }: { seat: DojoSeat; now: number }) {
 }
 
 function Results({
+  sessionId,
   dojo,
   onNavigate,
   onRunAgain,
+  sendBack,
 }: {
+  sessionId: string;
   dojo: DojoState;
   onNavigate: (finding: DojoCombinedFinding) => void;
   onRunAgain: () => void;
+  sendBack?: DojoSendBack;
 }) {
   const labels = Object.fromEntries(dojo.agents.map((a) => [a.agent.name, a.label])) as Record<ReviewAgentName, string>;
   const dropped = dojo.agents.filter((a) => a.error);
+  const comments = useReviewStore((s) => s.comments);
+  const pickup = useAgentPickup(sendBack?.annotations ?? [], sendBack?.agentReadAt);
+  const threadOf = (f: DojoCombinedFinding) => sendBack?.annotations.find((a) => a.id === f.annotationId);
+  const sentOf = (f: DojoCombinedFinding) => findingSent(f, threadOf(f), comments, pickup);
+  // Agreed findings are the obvious ones to send; the rest are the reviewer's call.
+  const [chosen, setChosen] = useState<Set<string>>(
+    () =>
+      new Set(
+        dojo.findings
+          .filter((f) => f.consensus === "agreed" && threadOf(f) && sentOf(f).asked === null && !sentOf(f).inVerdict)
+          .map((f) => f.id),
+      ),
+  );
+  const toggle = (id: string) =>
+    setChosen((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <>
@@ -279,6 +327,17 @@ function Results({
           </span>
         </p>
       ))}
+      {sendBack && dojo.findings.length > 0 && (
+        <SendBar
+          sessionId={sessionId}
+          chosen={dojo.findings.filter((f) => chosen.has(f.id))}
+          threadOf={threadOf}
+          sentOf={sentOf}
+          onSent={(ids) =>
+            setChosen((current) => new Set([...current].filter((id) => !ids.includes(id))))
+          }
+        />
+      )}
       {GROUPS.map(({ consensus, title, hint }) => {
         const findings = dojo.findings.filter((f) => f.consensus === consensus);
         if (findings.length === 0) return null;
@@ -289,8 +348,18 @@ function Results({
             </h3>
             <ul className="mt-1.5 space-y-2">
               {findings.map((f) => (
-                <li key={f.id}>
-                  <FindingCard finding={f} labels={labels} onNavigate={onNavigate} />
+                <li key={f.id} className="flex items-start gap-2">
+                  {sendBack && (
+                    <input
+                      type="checkbox"
+                      className="mt-2.5"
+                      checked={chosen.has(f.id)}
+                      disabled={!threadOf(f)}
+                      onChange={() => toggle(f.id)}
+                      aria-label={`Choose “${f.title}”`}
+                    />
+                  )}
+                  <FindingCard finding={f} labels={labels} onNavigate={onNavigate} sent={sendBack ? sentOf(f) : undefined} />
                 </li>
               ))}
             </ul>
@@ -301,14 +370,99 @@ function Results({
   );
 }
 
+/**
+ * Send the chosen findings to the agent that made the change (#238), the two
+ * ways it hears from the reviewer: as a question on each finding's thread,
+ * which the agent's next wait on the review returns, or as inline comments in
+ * the request for changes the ActionBar sends.
+ */
+function SendBar({
+  sessionId,
+  chosen,
+  threadOf,
+  sentOf,
+  onSent,
+}: {
+  sessionId: string;
+  chosen: DojoCombinedFinding[];
+  threadOf: (f: DojoCombinedFinding) => Annotation | undefined;
+  sentOf: (f: DojoCombinedFinding) => FindingSent;
+  onSent: (ids: string[]) => void;
+}) {
+  const { replyToThread } = useHttpApi();
+  const addComment = useReviewStore((s) => s.addComment);
+  const [asking, setAsking] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const count = (n: number) => `${n} finding${n === 1 ? "" : "s"}`;
+
+  // A question already waiting on the agent isn't asked twice.
+  const toAsk = chosen.filter((f) => {
+    const asked = sentOf(f).asked;
+    return asked === null || asked === "answered";
+  });
+  const toAdd = chosen.filter((f) => !sentOf(f).inVerdict);
+
+  async function ask() {
+    setAsking(true);
+    setNotice(null);
+    const results = await Promise.all(toAsk.map((f) => replyToThread(sessionId, f.annotationId!, ASK_AGENT)));
+    setAsking(false);
+    const failed = results.find((r) => !r.ok);
+    onSent(toAsk.filter((_, i) => results[i].ok).map((f) => f.id));
+    setNotice(
+      failed
+        ? { ok: false, text: `${results.filter((r) => !r.ok).length} didn't send: ${failed.error}` }
+        : { ok: true, text: `Asked the agent about ${count(toAsk.length)}. Its next wait on this review hands them over.` },
+    );
+  }
+
+  function addToVerdict() {
+    for (const f of toAdd) addComment(findingComment(f, threadOf(f)!));
+    onSent(toAdd.map((f) => f.id));
+    setNotice({ ok: true, text: `Added ${count(toAdd.length)} to your request for changes. Send it with Request Changes below.` });
+  }
+
+  const button =
+    "flex items-center gap-1.5 bg-accent/15 text-accent text-xs font-medium rounded-md px-2.5 py-1.5 hover:bg-accent/25 disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
+  return (
+    <div className="space-y-2 rounded-md border border-border px-3 py-2" aria-label="Send to the agent">
+      <p className="text-xs text-text-secondary">
+        Send the ticked findings to the agent that made this change: ask it about them now, or send them with your request
+        for changes.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={ask} disabled={asking || toAsk.length === 0} className={button}>
+          {asking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+          Ask the agent ({toAsk.length})
+        </button>
+        <button onClick={addToVerdict} disabled={toAdd.length === 0} className={button}>
+          <MessageSquare className="w-3.5 h-3.5" />
+          Add to request for changes ({toAdd.length})
+        </button>
+      </div>
+      {notice && <p className={`text-xs ${notice.ok ? "text-text-secondary" : "text-danger"}`}>{notice.text}</p>}
+    </div>
+  );
+}
+
+const ASKED_TEXT: Record<NonNullable<FindingSent["asked"]>, string> = {
+  pending: "Sent to the agent",
+  picked_up: "Sent to the agent — it has it",
+  unheard: "Sent — no agent is waiting on this review yet. It gets this the next time one does.",
+  answered: "The agent answered — see the thread",
+};
+
 function FindingCard({
   finding,
   labels,
   onNavigate,
+  sent,
 }: {
   finding: DojoCombinedFinding;
   labels: Record<ReviewAgentName, string>;
   onNavigate: (finding: DojoCombinedFinding) => void;
+  /** Where it stands with the agent that made the change, on a local review. */
+  sent?: FindingSent;
 }) {
   return (
     <button
@@ -341,6 +495,10 @@ function FindingCard({
           </li>
         ))}
       </ul>
+      {sent?.asked && (
+        <p className={`mt-2 text-xs ${sent.asked === "unheard" ? "text-warning" : "text-accent"}`}>{ASKED_TEXT[sent.asked]}</p>
+      )}
+      {sent?.inVerdict && <p className="mt-1 text-xs text-accent">In your request for changes</p>}
     </button>
   );
 }

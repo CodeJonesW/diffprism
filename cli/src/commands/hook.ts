@@ -155,18 +155,34 @@ export function lineLabel(at: { file: string; line: number; side: DiffSide }): s
  * Print the threads waiting on the agent, with the ids a reply needs.
  *
  * Whoever ran the command only sees its output, so the whole question has to
- * be here: where it was asked, what was said last, and which thread to answer.
+ * be here: where it was asked, what was said, and which thread to answer.
+ *
+ * A reply means little without what it answers — "please fix this" on a
+ * review dojo's finding says nothing of the finding (#238) — so a thread
+ * with replies shows its opening message and then the reviewer's latest.
+ * Anything said between them the agent can read with get_review_comments.
  */
 export function printQuestions(sessionId: string, threads: Annotation[]): void {
   console.error("");
   for (const t of threads) {
-    const last = t.replies?.at(-1)?.body ?? t.body;
+    const latest = t.replies?.at(-1);
     console.error(`  ${lineLabel(t)}`);
-    for (const line of last.split("\n")) {
-      console.error(`    ${line}`);
+    if (latest) {
+      printMessage(t.author === "reviewer" ? "Reviewer" : t.source.agent, t.body);
+      printMessage("Reviewer", latest.body);
+    } else {
+      printMessage(null, t.body);
     }
     console.error(`  Answer: ${replyCommandFor(sessionId, t.id)}`);
     console.error("");
+  }
+}
+
+function printMessage(who: string | null, body: string): void {
+  if (who) console.error(`    ${who}:`);
+  const indent = who ? "      " : "    ";
+  for (const line of body.split("\n")) {
+    console.error(`${indent}${line}`);
   }
 }
 

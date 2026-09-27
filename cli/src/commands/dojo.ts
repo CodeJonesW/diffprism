@@ -5,6 +5,7 @@ import {
   AsyncQueue,
   DOJO_SEVERITIES,
   combineFindings,
+  diffNewSide,
   dojoFindingId,
   readAgentSettings,
   recordError,
@@ -21,6 +22,7 @@ import type {
   DojoRunner,
   DojoSeat,
   DojoSeverity,
+  DojoSubject,
   ReviewAgentChoice,
   ReviewAgentName,
 } from "@diffprism/core";
@@ -29,7 +31,7 @@ import type { AgentConversation, AgentKind, AgentReview, AgentRunner, McpCommand
 
 // ─── The review dojo (#231) ───
 //
-// Round one: every agent reviews the pull request on its own, in parallel.
+// Round one: every agent reviews the change on its own, in parallel.
 // Round two: each one votes on what the others found. Both rounds are one
 // turn of the same conversation, so a vote is cast by an agent that remembers
 // its own review. Agents answer in JSON on their output; anything else is a
@@ -37,20 +39,43 @@ import type { AgentConversation, AgentKind, AgentReview, AgentRunner, McpCommand
 
 const MAX_FINDINGS = 15;
 
-export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "prUrl">, label: string): string {
-  return [
-    `You are ${label}, one of several AI code reviewers in a review dojo on ${request.prUrl} (DiffPrism review ${request.sessionId}).`,
-    `Read the change with the DiffPrism tools, passing session_id "${request.sessionId}": get_pr_context for what the PR is and which files it touches, get_file_diff for each file's changes, get_file_context for surrounding code. Read the rest of the repository as you need to.`,
+/** A local change, by the diff ref it's shown with. */
+const LOCAL_CHANGE: Record<string, string> = {
+  staged: "the staged changes — what the next commit will contain —",
+  unstaged: "the unstaged changes",
+  "working-copy": "the uncommitted changes",
+};
+
+/** What a dojo reviews, in words for a prompt: a PR's URL, or a local change and where it is (#238). */
+export function describeSubject(subject: DojoSubject): string {
+  if (subject.kind === "pr") return subject.url;
+  return `${LOCAL_CHANGE[subject.diffRef] ?? `the diff ${subject.diffRef}`} in ${subject.repoPath}`;
+}
+
+export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subject">, label: string): string {
+  const { subject } = request;
+  const lines = [
+    `You are ${label}, one of several AI code reviewers in a review dojo on ${describeSubject(subject)} (DiffPrism review ${request.sessionId}).`,
+    `Read the change with the DiffPrism tools, passing session_id "${request.sessionId}": get_pr_context for what is under review and which files it touches, get_file_diff for each file's changes, get_file_context for surrounding code. Read the rest of the repository as you need to.`,
+  ];
+  // A commit is the index, not the files on disk (#238).
+  if (subject.kind === "local" && diffNewSide(subject.diffRef).kind === "index") {
+    lines.push(
+      "Judge the staged version of each file, which get_file_diff and get_file_context show. The files on disk may hold edits this commit leaves out, so don't judge a changed file by reading it directly.",
+    );
+  }
+  lines.push(
     "You can't change files, and don't reply to or annotate the review: the dojo posts the combined result itself.",
     "Answer every message with one ```json block and nothing after it. Nobody reads anything else you write.",
-  ].join("\n");
+  );
+  return lines.join("\n");
 }
 
 export function reviewPrompt(): string {
   return [
-    "Round one: review this pull request on your own.",
+    "Round one: review this change on your own.",
     `Report up to ${MAX_FINDINGS} issues a careful reviewer would raise — bugs, security, data loss, missing handling, misleading code. Skip style preferences unless they cause harm. No issues is a fine answer.`,
-    "Each finding is on a line of a file the PR changes: `line` is the line number in the new file, or, for a removed line, in the old file with `side` \"old\".",
+    "Each finding is on a line of a file the change touches: `line` is the line number in the new file, or, for a removed line, in the old file with `side` \"old\".",
     `\`severity\` is one of ${DOJO_SEVERITIES.join(", ")}.`,
     "```json",
     '{"findings": [{"file": "src/a.ts", "line": 12, "side": "new", "severity": "major", "title": "Short name of the issue", "body": "What is wrong, why it matters, what to do."}]}',
@@ -194,7 +219,7 @@ async function play(request: DojoRequest, deps: DojoDeps, progress: AsyncQueue<D
       view: { agent: choice, label: kind.label, stage: "starting", stageStartedAt: deps.now() },
       review: {
         reviewSessionId: request.sessionId,
-        prUrl: request.prUrl,
+        subject: describeSubject(request.subject),
         localRepoPath: request.localRepoPath,
         model: choice.model,
         mcp: deps.mcp,

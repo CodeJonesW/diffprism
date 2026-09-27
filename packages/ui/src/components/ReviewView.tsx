@@ -33,8 +33,9 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
   const hasThreads = annotations.length > 0;
   const threads = useSavedPane("review-threads", 1, hasThreads);
   const threadsSize = parseFloat(String(threads.defaultSize));
-  // The dojo reviews pull requests, so only a PR review has its pane (#231).
-  const dojoPane = useSavedPane("review-dojo", 1, isPrReview);
+  // Every review has the dojo (#231): a PR, or a local change such as the
+  // commit gate's staged diff (#238).
+  const dojoPane = useSavedPane("review-dojo", 1);
 
   // Resolve raw file paths (from annotations) to file keys (which may have stage prefixes)
   const navigateToFile = (filePath: string) => {
@@ -110,20 +111,20 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
           )}
         </Splitter.Pane>
 
-        {/* Main area — the diff, and on a PR review the dojo beside it */}
+        {/* Main area — the diff, and the dojo beside it */}
         <Splitter.Pane defaultSize={1} className="flex overflow-hidden">
           <Splitter
             className="flex-1 min-w-0"
             withHandle={false}
             lineSize={1}
-            classNames={{ handle: isPrReview ? "bg-border" : "hidden" }}
+            classNames={{ handle: "bg-border" }}
             {...dojoPane.splitterProps}
           >
             <Splitter.Pane defaultSize={1} className="flex overflow-hidden">
               <DiffViewer />
             </Splitter.Pane>
             <Splitter.Pane defaultSize={dojoPane.defaultSize} min="280px" max="640px" collapsible className="overflow-hidden">
-              {isPrReview && reviewId && (
+              {reviewId && (
                 <DojoPanel
                   sessionId={reviewId}
                   dojo={dojo}
@@ -132,12 +133,14 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
                     if (finding.annotationId) focusAnnotation(finding.annotationId);
                   }}
                   onHide={() => dojoPane.setCollapsed(true)}
+                  // A local review's findings can go back to the agent that made the change (#238).
+                  sendBack={isPrReview ? undefined : { annotations, agentReadAt }}
                 />
               )}
             </Splitter.Pane>
           </Splitter>
           {/* Hidden, the dojo leaves a rail to bring it back. */}
-          {isPrReview && dojoPane.collapsed && (
+          {dojoPane.collapsed && (
             <div className="w-9 flex-shrink-0 flex flex-col items-center py-3 bg-surface border-l border-border">
               <button
                 onClick={() => dojoPane.setCollapsed(false)}

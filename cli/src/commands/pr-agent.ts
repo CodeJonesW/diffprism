@@ -74,8 +74,9 @@ function shellPath(p: string): string {
 /** What an agent is answering. */
 export interface AgentReview {
   reviewSessionId: string;
-  prUrl: string;
-  /** The checkout of the PR's head the review reads from (#240). */
+  /** What is under review, in words for a prompt: a PR's URL, or a local change (#238). */
+  subject: string;
+  /** The folder the review reads from: the checkout of a PR's head (#240), or the local repo (#238). */
   localRepoPath: string;
   model?: string;
   mcp: McpCommand;
@@ -149,7 +150,7 @@ export function describeToolCall(name: string, input: Record<string, unknown>, r
   const file = text("file") || text("file_path") || text("path");
   switch (name) {
     case "get_pr_context":
-      return "Reading the pull request";
+      return "Reading what's under review";
     case "get_file_diff":
       return file ? `Reading the diff of ${shortPath(file, review)}` : "Reading the diff";
     case "get_file_context":
@@ -166,9 +167,9 @@ export function describeToolCall(name: string, input: Record<string, unknown>, r
   }
 }
 
-export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "prUrl">, label: string): string {
+export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "subject">, label: string): string {
   return [
-    `You are answering a code reviewer's questions about ${review.prUrl}, in DiffPrism review ${review.reviewSessionId}.`,
+    `You are answering a code reviewer's questions about ${review.subject}, in DiffPrism review ${review.reviewSessionId}.`,
     "The reviewer comments on lines in the DiffPrism dashboard and reads your answers there. Nobody reads this terminal.",
     `Answer each thread you are given with the DiffPrism reply tool: its id as annotation_id, session_id "${review.reviewSessionId}", source_agent "${label}", and then_wait: false.`,
     "Every thread is on a file and line. Answer about that code: read it first with the DiffPrism get_file_diff or get_file_context tools, and read the rest of the repository as you need to. Keep answers direct and specific.",
@@ -580,7 +581,7 @@ export function prAgentStarter(deps: Partial<PrAgentDeps> = {}): PrAgentStarter 
 
     const review: AgentReview = {
       reviewSessionId: sessionId,
-      prUrl,
+      subject: prUrl,
       localRepoPath,
       model: agent.model,
       mcp,

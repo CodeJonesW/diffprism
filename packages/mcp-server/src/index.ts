@@ -14,10 +14,12 @@ import {
   REPORT_HINT,
   DEFAULT_DIFF_REF,
   DIFF_REF_DESCRIPTION,
+  diffNewSide,
 } from "@diffprism/core";
 import type {
   Annotation,
   ContextUpdatePayload,
+  DiffNewSide,
   DiffSet,
   GitHubPrMetadata,
   GlobalServerInfo,
@@ -858,13 +860,13 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     "get_file_context",
-    "Get the full content of a file from the review's repository. For a PR review it's read at the PR's head commit, from DiffPrism's own checkout of it.",
+    "Get the full content of a file from the review's repository, as the change under review has it. A PR review is read at the PR's head commit, from DiffPrism's own checkout of it; a local review at the version its diff shows — the staged version for a review of staged changes (the commit gate), the working tree for uncommitted changes.",
     {
       file: z.string().describe("File path relative to repo root (e.g., 'src/index.ts')"),
       ref: z
         .string()
         .optional()
-        .describe("Git ref to read from. For a PR review, the PR's head commit by default; its base commit (the PR's baseSha) can also be read. Otherwise HEAD by default."),
+        .describe("Git ref to read from instead. For a PR review, its base commit (the PR's baseSha) can also be read. By default, the version the review's diff shows."),
       ...targetParams,
     },
     async ({ file, ref, session_id, repo_path }) =>
@@ -878,42 +880,74 @@ export function createMcpServer(): McpServer {
 
         const data = (await response.json()) as {
           projectPath: string;
+          diffRef?: string;
           payload: { metadata: { githubPr?: { headSha: string } } };
         };
 
+        // The version the reviewer is judging: a PR's head commit (#240), or
+        // the new side of a local review's diff (#238). A staged review read
+        // at HEAD would show the code from before the change.
         const pr = data.payload.metadata.githubPr;
-        const gitRef = ref ?? pr?.headSha ?? "HEAD";
+        const side: DiffNewSide = ref
+          ? { kind: "commit", ref }
+          : pr
+            ? { kind: "commit", ref: pr.headSha }
+            : data.diffRef
+              ? diffNewSide(data.diffRef)
+              : { kind: "commit", ref: "HEAD" };
 
         const { execFileSync } = await import("node:child_process");
-
-        let content: string;
-        try {
-          content = execFileSync("git", ["show", `${gitRef}:${file}`], {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const gitShow = (spec: string) =>
+          execFileSync("git", ["show", spec], {
             cwd: data.projectPath,
             encoding: "utf-8",
             stdio: ["pipe", "pipe", "pipe"],
             maxBuffer: 10 * 1024 * 1024,
           });
-        } catch (err) {
-          // A PR's checkout holds exactly the commits it's read at; a file
-          // missing there is missing from the PR, and any other copy of it
-          // would be the wrong code (#240).
-          if (pr) {
-            const stderr = (err as { stderr?: string }).stderr?.trim();
-            return toolError(`File not found: "${file}" at ${gitRef}${stderr ? ` (${stderr})` : ""}`);
-          }
-          const fs = await import("node:fs");
-          const path = await import("node:path");
+        const fromDisk = () => fs.readFileSync(path.join(data.projectPath, file), "utf-8");
+
+        let content: string;
+        let readFrom: string;
+        if (side.kind === "working-tree") {
+          readFrom = "working tree";
           try {
-            content = fs.readFileSync(path.join(data.projectPath, file), "utf-8");
+            content = fromDisk();
           } catch {
-            return toolError(`File not found: "${file}" (tried git show ${gitRef}:${file} and working tree)`);
+            return toolError(`File not found in the working tree: "${file}"`);
+          }
+        } else if (side.kind === "index") {
+          readFrom = "staged";
+          try {
+            content = gitShow(`:${file}`);
+          } catch {
+            return toolError(`File not staged: "${file}" (tried git show :${file})`);
+          }
+        } else {
+          readFrom = side.ref;
+          try {
+            content = gitShow(`${side.ref}:${file}`);
+          } catch (err) {
+            // A PR's checkout holds exactly the commits it's read at; a file
+            // missing there is missing from the PR, and any other copy of it
+            // would be the wrong code (#240).
+            if (pr) {
+              const stderr = (err as { stderr?: string }).stderr?.trim();
+              return toolError(`File not found: "${file}" at ${side.ref}${stderr ? ` (${stderr})` : ""}`);
+            }
+            try {
+              content = fromDisk();
+              readFrom = "working tree";
+            } catch {
+              return toolError(`File not found: "${file}" (tried git show ${side.ref}:${file} and working tree)`);
+            }
           }
         }
 
         return jsonResult({
           file,
-          ref: gitRef,
+          ref: readFrom,
           projectPath: data.projectPath,
           content,
           lineCount: content.split("\n").length,

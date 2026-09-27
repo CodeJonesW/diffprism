@@ -25,6 +25,7 @@ vi.mock("@diffprism/core", async () => {
     recordError: vi.fn(),
     REPORT_HINT: "report hint",
     awaitingAgent: actual.awaitingAgent,
+    diffNewSide: actual.diffNewSide,
   };
 });
 
@@ -475,6 +476,48 @@ describe("diff scope", () => {
     await (await tool("open_review"))({ diff_ref: "staged", wait: false });
 
     expect(mockSubmitReviewToServer).toHaveBeenCalledWith(serverInfo, "staged", expect.anything());
+  });
+});
+
+// ─── #238: get_file_context reads what the review is judging ───
+
+describe("get_file_context", () => {
+  let repo: string;
+
+  beforeEach(() => {
+    // One file in three versions: committed, staged, and edited on disk after staging.
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "file-context-"));
+    const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
+    git("init", "-q");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    fs.writeFileSync(path.join(repo, "a.ts"), "committed\n");
+    git("add", "a.ts");
+    git("commit", "-qm", "one");
+    fs.writeFileSync(path.join(repo, "a.ts"), "staged\n");
+    git("add", "a.ts");
+    fs.writeFileSync(path.join(repo, "a.ts"), "on disk\n");
+  });
+
+  afterEach(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  async function read(diffRef: string | undefined, args: Record<string, unknown> = {}) {
+    stubFetch({ [`${base}/api/reviews/s1/payload`]: () => json({ projectPath: repo, diffRef, payload: { metadata: {} } }) });
+    return parse(await (await tool("get_file_context"))({ session_id: "s1", file: "a.ts", ...args }));
+  }
+
+  it("reads the staged version on a commit-gate review — not HEAD, and not the edits the commit leaves out", async () => {
+    expect(await read("staged")).toMatchObject({ content: "staged\n", ref: "staged" });
+  });
+
+  it("reads the working tree on a review of uncommitted changes", async () => {
+    expect(await read("working-copy")).toMatchObject({ content: "on disk\n", ref: "working tree" });
+  });
+
+  it("reads the ref asked for over the review's own", async () => {
+    expect(await read("staged", { ref: "HEAD" })).toMatchObject({ content: "committed\n", ref: "HEAD" });
   });
 });
 

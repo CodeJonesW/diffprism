@@ -11,7 +11,8 @@ Shared types + server-client utilities + global server. This is the central pack
 - `src/review-manager.ts` — In-memory session tracking (Map of id → state).
 - `src/ui-server.ts` — Vite dev server management for the review UI.
 - `src/diff-poller.ts` — Watches a repo for diff changes. The delay before each poll is asked for anew, so it can change; `wake()` polls immediately.
-- `src/dojo.ts` — Review dojo types and `combineFindings()`, which turns the agents' votes into agreed/disputed/partial/solo. Plain arithmetic, never a model
+- `src/diff-scope.ts` — Which diff a review shows: the default ref, the commit gate's, and `diffNewSide()`, where the new side of a diff lives (#238).
+- `src/dojo.ts` — Review dojo types, `DojoSubject` (a PR, or a local change), and `combineFindings()`, which turns the agents' votes into agreed/disputed/partial/solo. Plain arithmetic, never a model
 - `src/watch-schedule.ts` — `watcherPollDelay()`: how often a session's watcher runs `git diff`.
 
 ## Important Patterns

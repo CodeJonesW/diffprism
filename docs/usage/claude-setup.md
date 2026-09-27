@@ -306,12 +306,12 @@ Hunks for one file, with its triage category.
 
 ### `get_file_context`
 
-Full file content via `git show`. For a PR review it's read from DiffPrism's checkout of the PR, at its head commit by default; a file that isn't there is an error, never a copy from somewhere else.
+Full file content, as the change under review has it. For a PR review it's read from DiffPrism's checkout of the PR, at its head commit by default; a file that isn't there is an error, never a copy from somewhere else. For a local review it's the staged version on a review of staged changes (the commit gate), the working tree on a review of uncommitted changes, or the right end of a ref range.
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `file`    | Yes      | Path relative to the repo root |
-| `ref`     | No       | Git ref to read from |
+| `ref`     | No       | Git ref to read from instead |
 | targeting | No       | See above |
 
 ### ReviewResult (return type)
