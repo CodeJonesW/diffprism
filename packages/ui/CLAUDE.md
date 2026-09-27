@@ -14,6 +14,7 @@ React 19, Vite 6, Tailwind CSS 3, Zustand 5, react-diff-view 3, refractor 4, Luc
 - `src/components/DiffViewer/DiffViewer.tsx` — Uses react-diff-view + refractor for syntax-highlighted unified diffs.
 - `src/components/FileBrowser/FileBrowser.tsx` — File list sidebar with status badges.
 - `src/components/ActionBar/ActionBar.tsx` — Approve/Request Changes buttons + summary textarea.
+- `src/components/ReviewStatus/ReviewStatus.tsx` — Where a local review stands, above the decision buttons (#204, #274, #269): a commit waiting on it (with a countdown), findings with the agent, or what was decided. The wording and priority live in `lib/review-status.ts`, read off the session summary's `caller` and `decision` and the threads.
 - `src/components/SinceBanner/SinceBanner.tsx` — "Changed since you last looked" (#265): the files that moved, **Show only these changes** (`sinceOnly` in the store, which DiffViewer uses to filter hunks by index inside its render prop, keeping tokens aligned), and **Mark as seen**. FileBrowser badges the same files. A Fixed dojo card lists the changed lines in its file.
 - `src/hooks/useSavedPane.ts` — Wires one collapsible pane of a Mantine `Splitter` to its saved layout in the store.
 

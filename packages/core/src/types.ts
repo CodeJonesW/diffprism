@@ -451,6 +451,28 @@ export interface SessionSummary {
    * message newer than this hasn't reached any agent.
    */
   agentReadAt?: number;
+  /** Who is blocked on this review's decision, if anyone has been (#204). */
+  caller?: ReviewCaller;
+  /** When the reviewer last decided on it (ms since epoch); kept into the next round. */
+  decidedAt?: number;
+}
+
+/**
+ * What is waiting on a review's decision (#204): a `git commit` held by the
+ * commit gate, `diffprism review` in a terminal, or an agent's open_review or
+ * reply. It says so as it polls for the decision.
+ */
+export type ReviewCallerKind = "commit" | "review" | "agent";
+
+export interface ReviewCaller {
+  kind: ReviewCallerKind;
+  /**
+   * Still polling. False once it stopped: its wait ran out, or it was
+   * interrupted. The decision is kept, and reaches it when it asks again.
+   */
+  waiting: boolean;
+  /** When its wait runs out (ms since epoch), if it said. */
+  until?: number;
 }
 
 export interface GlobalServerOptions {
@@ -475,6 +497,8 @@ export interface GlobalServerOptions {
   idleSessionTtl?: number;
   /** ms between expiry sweeps; default 60000. */
   cleanupInterval?: number;
+  /** ms without a poll before a caller waiting on a review counts as gone (#204); default 6000. */
+  callerGoneMs?: number;
   openBrowser?: boolean; // default true — set false for daemon auto-start
   /**
    * Starts the agent that answers a PR review's comments, whichever way the

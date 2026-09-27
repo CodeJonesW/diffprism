@@ -169,6 +169,8 @@ diffprism hook install              # Add the gate to this repo's pre-commit hoo
 diffprism hook uninstall            # Remove it
 ```
 
+The review says when a git commit is waiting on it, what Approve and Request Changes do to that commit, and how long it will wait. If the commit stops waiting, the review says your decision is kept for the next `git commit`. While findings you sent are with the agent, it says so, and that there's nothing to decide yet. When they come back, it says it's your turn.
+
 If you ask the agent something while the commit waits, the commit stops and prints each question with the command that answers it (`diffprism reply --session <id> <annotation-id> "…"`). The agent answers, commits again, and the review picks up where it left off — no MCP server needed. If you asked for a fix, the agent makes it and stages it without committing, since the commit is what your review is holding. It then answers with `--fixed`, and the finding shows as **Fixed** in the dashboard, with what it changed. The fix is in the staged diff you're reviewing, and goes into the commit once you approve. Dismiss a finding you're done with from its card in the Review dojo.
 
 When the diff changes after you've looked (the agent stages a fix, or commits again), the review says what changed: a banner names the files and counts, and the file list marks them. Each new hunk is labelled "New since you last looked". **Show only these changes** hides everything else. A **Fixed** finding's card lists the lines that changed in its file, so you can check the fix in one click. **Mark as seen** starts the count again from what's there now.

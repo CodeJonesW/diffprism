@@ -3005,6 +3005,94 @@ describe("agent settings API", () => {
   });
 });
 
+describe("who is waiting on a review (#204, #269)", () => {
+  const open = async (baseUrl: string) => {
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/waiting", diffRef: "staged" }),
+    });
+    return ((await created.json()) as { sessionId: string }).sessionId;
+  };
+  const summaryOf = async (baseUrl: string, sessionId: string) =>
+    (await (await fetch(`${baseUrl}/api/reviews/${sessionId}`)).json()) as SessionSummary;
+
+  it("says a git commit is waiting on the review, and until when", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result?caller=commit&until=1790530000000`);
+
+    expect((await summaryOf(baseUrl, sessionId)).caller).toEqual({ kind: "commit", waiting: true, until: 1790530000000 });
+  });
+
+  it("says it stopped waiting once it stops polling, and keeps what it was", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, callerGoneMs: 40 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result?caller=commit&until=1790530000000`);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect((await summaryOf(baseUrl, sessionId)).caller).toEqual({ kind: "commit", waiting: false, until: 1790530000000 });
+  });
+
+  it("forgets the last round's caller when the review is opened again, until the new one polls", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, callerGoneMs: 40 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result?caller=commit&until=1790530000000`);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect((await summaryOf(baseUrl, sessionId)).caller).toMatchObject({ waiting: false });
+
+    // Opened again, as `open_review` with wait: false would: nothing polls this round.
+    expect(await open(baseUrl)).toBe(sessionId);
+
+    expect((await summaryOf(baseUrl, sessionId)).caller).toBeUndefined();
+  });
+
+  it("records when the reviewer decided", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+    const before = Date.now();
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "changes_requested", comments: [] }),
+    });
+    expect((await summaryOf(baseUrl, sessionId)).decidedAt).toBeGreaterThanOrEqual(before);
+  });
+
+  it("ignores a caller it doesn't know", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result?caller=robot`);
+    expect((await summaryOf(baseUrl, sessionId)).caller).toBeUndefined();
+  });
+
+  it("keeps a decided review decided when someone views it again (#269)", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await open(baseUrl);
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "changes_requested", comments: [] }),
+    });
+
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle.wsPort}?sessionId=${sessionId}`);
+    await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    ws.close();
+
+    expect(await summaryOf(baseUrl, sessionId)).toMatchObject({ status: "submitted", decision: "changes_requested" });
+  });
+});
+
 describe("the review dojo (#231)", () => {
   const send = (baseUrl: string, route: string, body: unknown) =>
     fetch(`${baseUrl}${route}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

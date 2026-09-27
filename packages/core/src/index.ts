@@ -36,6 +36,8 @@ export type {
   GlobalServerInfo,
   GlobalSessionStatus,
   SessionSummary,
+  ReviewCaller,
+  ReviewCallerKind,
   GlobalServerOptions,
   GlobalServerHandle,
   PrAgentRequest,

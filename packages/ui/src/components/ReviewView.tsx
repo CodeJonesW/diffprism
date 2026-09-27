@@ -10,6 +10,7 @@ import { WorkflowTips } from "./WorkflowTips";
 import { AnnotationPanel, annotationPanelTitle } from "./AnnotationPanel";
 import { DojoPanel } from "./DojoPanel";
 import { SinceBanner } from "./SinceBanner";
+import { ReviewStatus } from "./ReviewStatus";
 import { useSavedPane } from "../hooks/useSavedPane";
 import { useReviewStore } from "../store/review";
 import type { ReviewResult } from "../types";
@@ -161,13 +162,17 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
       {isPrReview ? (
         <PrReviewBar onDismiss={onDismiss} />
       ) : (
-        <ActionBar
-          onSubmit={onSubmit}
-          onDismiss={onDismiss}
-          isWatchMode={isWatchMode}
-          watchSubmitted={watchSubmitted}
-          hasUnreviewedChanges={hasUnreviewedChanges}
-        />
+        <>
+          {/* Where it stands: a commit waiting on it, findings with the agent, or decided. */}
+          <ReviewStatus />
+          <ActionBar
+            onSubmit={onSubmit}
+            onDismiss={onDismiss}
+            isWatchMode={isWatchMode}
+            watchSubmitted={watchSubmitted}
+            hasUnreviewedChanges={hasUnreviewedChanges}
+          />
+        </>
       )}
       <HotkeyGuide />
       <WorkflowTips />

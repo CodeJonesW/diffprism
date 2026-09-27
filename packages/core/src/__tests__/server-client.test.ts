@@ -217,10 +217,23 @@ describe("waitForDecision", () => {
     });
   }
 
+  it("says what is waiting, and until when, as it polls (#204)", async () => {
+    mockFetch.mockClear();
+    mockFetch.mockImplementation(async () => ({ ok: true, json: async () => ({ result: { decision: "approved", comments: [] } }) }));
+    const before = Date.now();
+
+    await waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1, caller: "commit" });
+
+    const url = new URL(mockFetch.mock.calls[0][0] as string);
+    expect(url.pathname).toBe("/api/reviews/s-1/result");
+    expect(url.searchParams.get("caller")).toBe("commit");
+    expect(Number(url.searchParams.get("until"))).toBeGreaterThanOrEqual(before + 10_000);
+  });
+
   it("keeps waiting until a decision arrives", async () => {
     serve([null, null, { decision: "changes_requested", comments: [] }], [[]]);
 
-    const result = await waitForDecision(defaultServerInfo, "s-1", 10_000, 1);
+    const result = await waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1 });
 
     expect(result.decision).toBe("changes_requested");
   });
@@ -230,7 +243,7 @@ describe("waitForDecision", () => {
     const question = thread({ id: "q1" });
     serve([null], [[agentFinding], [agentFinding, question]]);
 
-    const err = await waitForDecision(defaultServerInfo, "s-1", 10_000, 1).catch((e: unknown) => e);
+    const err = await waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1 }).catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(ReviewerAskedError);
     expect((err as ReviewerAskedError).sessionId).toBe("s-1");
@@ -241,25 +254,25 @@ describe("waitForDecision", () => {
     const replied = thread({ id: "f1", author: "agent", replies: [{ id: "r", author: "reviewer", body: "Why?", createdAt: 2 }] });
     serve([null], [[replied]]);
 
-    await expect(waitForDecision(defaultServerInfo, "s-1", 10_000, 1)).rejects.toBeInstanceOf(ReviewerAskedError);
+    await expect(waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1 })).rejects.toBeInstanceOf(ReviewerAskedError);
   });
 
   it("prefers a decision over an unanswered question", async () => {
     serve([{ decision: "approved", comments: [] }], [[thread({})]]);
 
-    expect((await waitForDecision(defaultServerInfo, "s-1", 10_000, 1)).decision).toBe("approved");
+    expect((await waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1 })).decision).toBe("approved");
   });
 
   it("times out with the session id when nothing happens", async () => {
     serve([null], [[]]);
 
-    await expect(waitForDecision(defaultServerInfo, "s-1", 20, 1)).rejects.toBeInstanceOf(ReviewTimeoutError);
+    await expect(waitForDecision(defaultServerInfo, "s-1", 20, { pollIntervalMs: 1 })).rejects.toBeInstanceOf(ReviewTimeoutError);
   });
 
   it("fails loudly when the session is gone", async () => {
     mockFetch.mockImplementation(async () => ({ ok: false, status: 404, json: async () => ({}) }));
 
-    await expect(waitForDecision(defaultServerInfo, "s-1", 10_000, 1)).rejects.toThrow("Session not found: s-1");
+    await expect(waitForDecision(defaultServerInfo, "s-1", 10_000, { pollIntervalMs: 1 })).rejects.toThrow("Session not found: s-1");
   });
 });
 

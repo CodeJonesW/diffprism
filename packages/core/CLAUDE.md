@@ -31,6 +31,7 @@ Every session with a diff ref runs `git diff` on a timer, so watchers are budget
 - **Viewed:** every `pollInterval` (2s).
 - **Unviewed:** `unviewedPollInterval` (30s), doubling for each quiet poll up to `unviewedPollMaxInterval` (5 min), back to 30s on a change. The new-changes signal still fires, with bounded latency.
 - **Instant paths don't poll.** A hook or agent opening a review updates the session directly, and `attachViewer()` wakes a backed-off watcher so the viewer never sees a stale diff.
+- **Who's waiting (#204):** a caller blocked on the decision says what it is as it polls (`GET /result?caller=commit|review|agent&until=…`, from `waitForDecision`'s `caller` option). The session's summary carries `caller: { kind, waiting, until }`. A watchdog marks it not waiting after `callerGoneMs` (6s) without a poll. Viewing a review only moves it from pending to in review; a decided review stays decided (#269).
 - **Landed:** a decided local review whose diff goes empty is removed at once, by the watcher: the change it judged has landed (the commit the gate let through) or been dropped. Left alone, it showed "0 files changed" with the decision buttons until its 5-minute expiry.
 - **Idle expiry:** a session nobody is viewing, waiting on (a blocked caller polling `/result` counts), or changing for `idleSessionTtl` (24h) is removed, and its watcher stops. Before this, a UI-opened session was only removed by an explicit close and an `in_review` session matched no expiry rule, so both could poll forever.
 

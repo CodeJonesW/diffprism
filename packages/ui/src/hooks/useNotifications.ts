@@ -30,7 +30,7 @@ interface UseNotificationsReturn {
   enabled: boolean;
   toggle: () => void;
   notifyNewSession: (session: SessionSummary) => void;
-  notifySessionUpdated: (session: SessionSummary) => void;
+  notifySessionUpdated: (session: SessionSummary, before?: SessionSummary) => void;
   notifyDiffUpdated: (fileCount: number) => void;
   notifyAnnotationAdded: (annotation: Annotation) => void;
 }
@@ -135,8 +135,11 @@ export function useNotifications(options?: UseNotificationsOptions): UseNotifica
   );
 
   const notifySessionUpdated = useCallback(
-    async (session: SessionSummary) => {
-      if (session.status !== "submitted") return;
+    async (session: SessionSummary, before?: SessionSummary) => {
+      // Only the moment it's submitted. A decided review is updated again
+      // when someone views it or its caller comes and goes (#269, #204),
+      // and none of those is a new decision.
+      if (session.status !== "submitted" || before?.status === "submitted") return;
 
       await sendNotification(
         "Review Submitted",

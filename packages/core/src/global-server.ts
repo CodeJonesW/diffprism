@@ -34,6 +34,8 @@ import type {
   ThreadAuthor,
   DiffSide,
   PrReviewSubmission,
+  ReviewCaller,
+  ReviewCallerKind,
   SinceLastLook,
 } from "./types.js";
 import { DojoStoppedError, dojoThreadBody } from "./dojo.js";
@@ -114,6 +116,10 @@ interface Session {
   dojo?: DojoState;
   /** Stops the dojo running on this review; set while one is (#252). */
   stopDojoRun?: (reason: string) => void;
+  /** What is blocked on this review's decision, as it last said while polling (#204). */
+  caller?: ReviewCaller;
+  /** When the reviewer last decided on it. Kept into the next round, so fixes can be told from older ones. */
+  decidedAt?: number;
   /** The diff last delivered to someone viewing this review: what the reviewer has seen (#265). */
   seenDiff?: { diffSet: DiffSet; hash: string };
   /**
@@ -296,6 +302,9 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
     existing.status = "pending";
     existing.verdictDiffHash = undefined;
   }
+  // Reopened, it has callers of its own: whatever waited on it before isn't
+  // known to be waiting now (#204). One that is says so on its next poll.
+  forgetCaller(existing);
   // A round still in progress keeps its status — resetting an in_review
   // session would pull it out from under the person reviewing it.
 
@@ -361,7 +370,9 @@ function openSession(request: OpenSessionRequest): { session: Session; reused: b
  */
 function attachViewer(ws: WebSocket, session: Session): void {
   clientSessions.set(ws, session.id);
-  session.status = "in_review";
+  // Looking at a decided review doesn't undecide it (#269): its status says
+  // what the reviewer decided until the change comes back as a new round.
+  if (session.status === "pending") session.status = "in_review";
   session.hasNewChanges = false;
   session.attentionClearedAt = Date.now();
   touch(session);
@@ -656,7 +667,52 @@ function toSummary(session: Session): SessionSummary {
     source: session.source,
     pr: pr ? `${pr.owner}/${pr.repo}#${pr.number}` : undefined,
     agentReadAt: session.agentReadAt,
+    caller: session.caller,
+    decidedAt: session.decidedAt,
   };
+}
+
+// ─── What is waiting on a review (#204) ───
+
+/**
+ * A caller polls for the decision every 2s; one silent this long has stopped
+ * waiting: its wait ran out, or it was interrupted.
+ */
+const CALLER_GONE_MS = 6000;
+/** CALLER_GONE_MS, or GlobalServerOptions.callerGoneMs. */
+let callerGoneMs = CALLER_GONE_MS;
+const callerWatchdogs = new Map<string, ReturnType<typeof setTimeout>>();
+
+/**
+ * A caller just polled this review for its decision. The dashboard hears when
+ * one starts waiting and when it stops, not every poll.
+ */
+function callerPolled(session: Session, kind: ReviewCallerKind, until: number | undefined): void {
+  const before = session.caller;
+  session.caller = { kind, waiting: true, ...(until !== undefined ? { until } : {}) };
+  if (!before?.waiting || before.kind !== kind || before.until !== until) broadcastSessionUpdate(session);
+
+  clearTimeout(callerWatchdogs.get(session.id));
+  const watchdog = setTimeout(() => {
+    callerWatchdogs.delete(session.id);
+    if (sessions.get(session.id) !== session || !session.caller) return;
+    session.caller = { ...session.caller, waiting: false };
+    broadcastSessionUpdate(session);
+  }, callerGoneMs);
+  watchdog.unref();
+  callerWatchdogs.set(session.id, watchdog);
+}
+
+/** Forget what waited on this review, and stop watching for it to leave. */
+function forgetCaller(session: Session): void {
+  clearTimeout(callerWatchdogs.get(session.id));
+  callerWatchdogs.delete(session.id);
+  session.caller = undefined;
+}
+
+const REVIEW_CALLER_KINDS: readonly ReviewCallerKind[] = ["commit", "review", "agent"];
+function isReviewCallerKind(value: string | null): value is ReviewCallerKind {
+  return value !== null && (REVIEW_CALLER_KINDS as readonly string[]).includes(value);
 }
 
 // ─── JSON body parser ───
@@ -866,6 +922,7 @@ function recordVerdict(session: Session, result: ReviewResult): void {
   stopDojo(session, "Stopped: the review was decided.");
   session.result = result;
   session.status = "submitted";
+  session.decidedAt = Date.now();
   session.verdictDiffHash = hashDiff(session.payload.rawDiff);
   touch(session);
   recordReviewHistory(session, result);
@@ -1473,6 +1530,13 @@ async function handleApiRequest(
     }
     // A caller blocked on this review polls here; that keeps it alive.
     touch(session);
+    // And says what it is, so the review can tell the reviewer (#204).
+    const query = new URL(req.url ?? "/", "http://localhost").searchParams;
+    const caller = query.get("caller");
+    if (isReviewCallerKind(caller)) {
+      const until = Number(query.get("until"));
+      callerPolled(session, caller, Number.isFinite(until) && until > 0 ? until : undefined);
+    }
 
     if (session.result) {
       jsonResponse(res, 200, { result: session.result, status: "submitted" });
@@ -1972,12 +2036,14 @@ export async function startGlobalServer(
     unviewedPollMaxInterval = DEFAULT_WATCH_SCHEDULE.unviewedMaxMs,
     idleSessionTtl = IDLE_SESSION_TTL_MS,
     cleanupInterval = CLEANUP_INTERVAL_MS,
+    callerGoneMs: callerGone = CALLER_GONE_MS,
     openBrowser = true,
     prAgent,
     dojo,
   } = options;
   prAgentStarter = prAgent ?? null;
   dojoRunner = dojo ?? null;
+  callerGoneMs = callerGone;
 
   watchSchedule = {
     viewedMs: pollInterval,
@@ -2254,6 +2320,8 @@ export async function startGlobalServer(
       wss = null;
     }
     clientSessions.clear();
+    for (const watchdog of callerWatchdogs.values()) clearTimeout(watchdog);
+    callerWatchdogs.clear();
     sessions.clear();
     // A stopped server must not open a tab later — least of all for whichever
     // server starts next in this process.

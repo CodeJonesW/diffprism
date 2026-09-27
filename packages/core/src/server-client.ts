@@ -9,6 +9,7 @@ import { awaitingAgent } from "./threads.js";
 import type {
   Annotation,
   GlobalServerInfo,
+  ReviewCallerKind,
   ReviewInitPayload,
   ReviewResult,
 } from "./types.js";
@@ -293,18 +294,23 @@ export class ReviewerAskedError extends Error {
  *
  * Returns the decision. Throws ReviewerAskedError as soon as a thread is
  * waiting on the agent, and ReviewTimeoutError when maxWaitMs runs out.
+ *
+ * `caller` says what is waiting, so the review can tell the reviewer: "a git
+ * commit is waiting on this review", and until when (#204).
  */
 export async function waitForDecision(
   serverInfo: GlobalServerInfo,
   sessionId: string,
   maxWaitMs: number,
-  pollIntervalMs = 2000,
+  options: { pollIntervalMs?: number; caller?: ReviewCallerKind } = {},
 ): Promise<ReviewResult> {
+  const { pollIntervalMs = 2000, caller } = options;
   const base = `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}`;
   const start = Date.now();
+  const resultUrl = caller ? `${base}/result?caller=${caller}&until=${start + maxWaitMs}` : `${base}/result`;
 
   while (Date.now() - start < maxWaitMs) {
-    const resultResponse = await fetch(`${base}/result`);
+    const resultResponse = await fetch(resultUrl);
     if (!resultResponse.ok) {
       throw new Error(`Session not found: ${sessionId}`);
     }
@@ -351,6 +357,8 @@ export interface SubmitReviewOptions {
   diffRef?: string;
   /** Maximum time to wait for review submission (ms). Default: 600000 (10 min). */
   timeoutMs?: number;
+  /** What is waiting on the decision, so the review can say so (#204). */
+  caller?: ReviewCallerKind;
 }
 
 /**
@@ -476,5 +484,5 @@ export async function submitReviewToServer(
     return { result: null, sessionId };
   }
 
-  return { result: await waitForDecision(serverInfo, sessionId, maxWaitMs), sessionId };
+  return { result: await waitForDecision(serverInfo, sessionId, maxWaitMs, { caller: options.caller }), sessionId };
 }

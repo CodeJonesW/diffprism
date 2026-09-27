@@ -67,6 +67,7 @@ async function reviewLocalFlow(
       reasoning: flags.reasoning,
       cwd: process.cwd(),
       diffRef,
+      caller: "review",
     }));
   } catch (err) {
     if (err instanceof ReviewerAskedError) {
