@@ -63,7 +63,7 @@ An agent then answers your comments — Claude Code unless you choose otherwise 
 
 Claude Code answers by default. Choose Cursor, or a model for either, in three places:
 
-- **The dashboard:** **Review agent** at the bottom of the sessions list.
+- **The dashboard:** **Review agent** at the bottom of the sessions list. The model is picked from what the agent itself offers: Cursor lists every model your account can use (`cursor-agent models`), grouped by family, and Claude Code offers the models its `--model` help names. **Other…** takes any other name.
 - **The CLI:** `diffprism config`, which changes the same saved setting:
 
   ```bash

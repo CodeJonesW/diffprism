@@ -290,6 +290,9 @@ function SeatRow({ seat, now, stageText }: { seat: DojoSeat; now: number; stageT
       <p className="mt-1 text-xs text-text-secondary">
         {stageText}
         {seat.raised !== undefined && ` · raised ${seat.raised}`}
+        {/* Its own times, fixed once each is in, whatever the others take (#272). */}
+        {seat.reviewedInMs !== undefined && ` · reviewed in ${formatElapsed(seat.reviewedInMs)}`}
+        {seat.votedInMs !== undefined && ` · voted in ${formatElapsed(seat.votedInMs)}`}
       </p>
       {active && seat.activity && <p className="mt-0.5 text-xs text-text-primary font-mono truncate">{seat.activity}</p>}
       {seat.error && <p className="mt-0.5 text-xs text-danger">{seat.error}</p>}
@@ -355,6 +358,21 @@ function Results({
           Run again
         </button>
       </div>
+      {/* How each agent did, and on which model: the dojo is also a comparison (#272). */}
+      <ul className="space-y-0.5 text-xs text-text-secondary" aria-label="Agent times">
+        {dojo.agents.map((a) =>
+          a.reviewedInMs === undefined ? null : (
+            <li key={a.agent.name}>
+              <span className="text-text-primary">{a.label}</span> · {a.agent.model ?? "default model"} — reviewed in{" "}
+              <span className="font-mono">{formatElapsed(a.reviewedInMs)}</span>
+              {a.votedInMs !== undefined && (
+                <>
+                  , voted in <span className="font-mono">{formatElapsed(a.votedInMs)}</span>
+                </>
+              )}
+            </li>
+          ))}
+      </ul>
       {dropped.map((a) => (
         <p key={a.agent.name} className="flex gap-1.5 text-xs text-warning">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />

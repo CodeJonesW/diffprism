@@ -320,10 +320,12 @@ async function play(
       }
       try {
         update(seat, { stage: "reviewing" });
+        const reviewStart = deps.now();
         const findings = parseFindings(await turn(seat, true, reviewPrompt()));
         roundOne.push({ agent: seat.choice.name, findings });
         // Its votes are on the others' findings, so it waits for theirs (#251).
-        update(seat, { stage: "waiting", raised: findings.length });
+        // Its own time is fixed now, whatever the others take (#272).
+        update(seat, { stage: "waiting", raised: findings.length, reviewedInMs: deps.now() - reviewStart });
       } catch (err) {
         drop(seat, "couldn't review", err);
       }
@@ -349,8 +351,9 @@ async function play(
         if (others.length === 0) return update(seat, { stage: "done" });
         try {
           update(seat, { stage: "voting" });
+          const voteStart = deps.now();
           roundTwo.push({ agent: seat.choice.name, votes: parseVotes(await turn(seat, false, votePrompt(others))) });
-          update(seat, { stage: "done" });
+          update(seat, { stage: "done", votedInMs: deps.now() - voteStart });
         } catch (err) {
           drop(seat, "couldn't vote", err);
         }

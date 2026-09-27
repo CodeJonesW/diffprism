@@ -432,6 +432,9 @@ export interface DojoSeat {
   stageStartedAt: number;
   activity?: string;
   raised?: number;
+  /** Its own review time, and vote time, once each is in (#272). */
+  reviewedInMs?: number;
+  votedInMs?: number;
   error?: string;
 }
 
@@ -443,6 +446,12 @@ export interface DojoState {
   startedAt: number;
   finishedAt?: number;
   error?: string;
+}
+
+/** A model an agent can use, as its own CLI names it (#244) — mirrors core. */
+export interface AgentModel {
+  id: string;
+  label: string;
 }
 
 export interface DojoAvailableAgent {

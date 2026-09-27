@@ -6,6 +6,7 @@ import { startGlobalServer, readServerFile, isServerAlive, getBuildInfo } from "
 import { setup, isGlobalSetupDone } from "./setup.js";
 import { prAgentStarter } from "./pr-agent.js";
 import { dojoRunner } from "./dojo.js";
+import { agentModelLister } from "./agent-models.js";
 
 interface ServerFlags {
   port?: string;
@@ -62,6 +63,7 @@ export async function server(flags: ServerFlags): Promise<void> {
       prAgent: prAgentStarter(),
       // Several agents review a PR together and vote on each other's findings (#231).
       dojo: dojoRunner(),
+      agentModels: agentModelLister(),
     });
 
     // Graceful shutdown on SIGINT/SIGTERM

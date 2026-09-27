@@ -125,6 +125,36 @@ describe("DojoPanel (#231)", () => {
     expect(screen.getByText("Starting the agents…")).toBeTruthy();
   });
 
+  describe("each agent's own times (#272)", () => {
+    it("fixes a finished agent's review time while it waits for the others", () => {
+      const running: DojoState = {
+        status: "running",
+        startedAt: Date.now(),
+        findings: [],
+        agents: [
+          { agent: { name: "claude" }, label: "Claude Code", stage: "waiting", stageStartedAt: Date.now(), raised: 2, reviewedInMs: 51_000 },
+          { agent: { name: "cursor" }, label: "Cursor", stage: "reviewing", stageStartedAt: Date.now() },
+        ],
+      };
+      render(<DojoPanel sessionId="s1" dojo={running} onNavigate={() => {}} onHide={() => {}} />);
+      expect(screen.getByLabelText("Claude Code").textContent).toContain("Waiting for Cursor · raised 2 · reviewed in 0:51");
+    });
+
+    it("lists each agent's times, with the model it ran on", () => {
+      const timed: DojoState = {
+        ...done,
+        agents: [
+          { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 1, raised: 1, reviewedInMs: 51_000, votedInMs: 20_000 },
+          { agent: { name: "cursor", model: "gpt-5.3-codex" }, label: "Cursor", stage: "done", stageStartedAt: 1, raised: 1, reviewedInMs: 372_000, votedInMs: 65_000 },
+        ],
+      };
+      render(<DojoPanel sessionId="s1" dojo={timed} onNavigate={() => {}} onHide={() => {}} />);
+      const times = screen.getByRole("list", { name: "Agent times" });
+      expect(times.textContent).toContain("Claude Code · default model — reviewed in 0:51, voted in 0:20");
+      expect(times.textContent).toContain("Cursor · gpt-5.3-codex — reviewed in 6:12, voted in 1:05");
+    });
+  });
+
   describe("while it runs (#251, #252)", () => {
     const running = (agents: DojoState["agents"]): DojoState => ({ status: "running", startedAt: Date.now(), agents, findings: [] });
 

@@ -36,6 +36,7 @@ import type {
   PrReviewSubmission,
   ReviewCaller,
   ReviewCallerKind,
+  AgentModelLister,
   SinceLastLook,
 } from "./types.js";
 import { DojoStoppedError, dojoThreadBody } from "./dojo.js";
@@ -459,6 +460,8 @@ let serverUiUrl: string | null = null;
 
 /** Runs review dojos; set from GlobalServerOptions.dojo. */
 let dojoRunner: DojoRunner | null = null;
+/** Lists agents' models; set from GlobalServerOptions.agentModels (#244). */
+let agentModelLister: AgentModelLister | null = null;
 
 /**
  * What a dojo on this session reviews: its pull request, or its local change
@@ -1337,6 +1340,27 @@ async function handleApiRequest(
     return true;
   }
 
+  // GET /api/settings/agent/models?agent=<name> — the models that agent can
+  // use, from its own CLI (#244), so the settings offer a list, not a text box.
+  if (method === "GET" && url === "/api/settings/agent/models") {
+    if (!agentModelLister) {
+      jsonResponse(res, 404, { error: "This server can't list agents' models." });
+      return true;
+    }
+    const agent = new URL(req.url ?? "/", "http://localhost").searchParams.get("agent");
+    if (!isReviewAgent(agent)) {
+      jsonResponse(res, 400, { error: `agent must be one of ${REVIEW_AGENTS.join(", ")}.` });
+      return true;
+    }
+    try {
+      jsonResponse(res, 200, { models: await agentModelLister(agent) });
+    } catch (err) {
+      // The agent's own reason: not installed, not logged in.
+      jsonResponse(res, 502, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   // PUT /api/settings/agent — save the default agent and models. Applies to
   // the next agent started; ones already answering keep going as they are.
   if (method === "PUT" && url === "/api/settings/agent") {
@@ -2040,9 +2064,11 @@ export async function startGlobalServer(
     openBrowser = true,
     prAgent,
     dojo,
+    agentModels,
   } = options;
   prAgentStarter = prAgent ?? null;
   dojoRunner = dojo ?? null;
+  agentModelLister = agentModels ?? null;
   callerGoneMs = callerGone;
 
   watchSchedule = {
@@ -2330,6 +2356,7 @@ export async function startGlobalServer(
     reopenBrowserIfNeeded = null;
     prAgentStarter = null;
     dojoRunner = null;
+    agentModelLister = null;
     runningServer = null;
     prAgents.clear();
     serverUiUrl = null;

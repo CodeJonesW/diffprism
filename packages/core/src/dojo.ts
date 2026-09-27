@@ -67,6 +67,10 @@ export interface DojoSeat {
   activity?: string;
   /** How many findings it raised in its own review, once it has. */
   raised?: number;
+  /** How long its own review took, once it's in: this agent's time alone, whatever the others take (#272). */
+  reviewedInMs?: number;
+  /** How long its votes took, once they're in (#272). */
+  votedInMs?: number;
   /** Why it dropped out, if it did. Its findings and votes are then missing. */
   error?: string;
 }

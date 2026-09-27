@@ -1,1 +1,1 @@
-export { AgentSettingsControl } from "./AgentSettings";
+export { AgentSettingsControl, modelFamily } from "./AgentSettings";

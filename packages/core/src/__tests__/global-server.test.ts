@@ -2969,6 +2969,42 @@ describe("reusing an open dashboard tab (#188)", () => {
 });
 
 // #226: the dashboard's Review agent settings.
+describe("agents' models (#244)", () => {
+  const modelsUrl = (agent: string) => `http://localhost:${handle!.httpPort}/api/settings/agent/models?agent=${agent}`;
+
+  it("lists an agent's models, from the lister the CLI gives", async () => {
+    const agentModels = vi.fn(async (agent: string) => [{ id: `${agent}-model`, label: "A model" }]);
+    handle = await startGlobalServer({ silent: true, openBrowser: false, agentModels });
+
+    const res = await fetch(modelsUrl("cursor"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ models: [{ id: "cursor-model", label: "A model" }] });
+    expect(agentModels).toHaveBeenCalledWith("cursor");
+  });
+
+  it("says why when the agent can't list them", async () => {
+    const agentModels = vi.fn(async () => {
+      throw new Error("Couldn't ask `cursor-agent` for its models: not logged in");
+    });
+    handle = await startGlobalServer({ silent: true, openBrowser: false, agentModels });
+
+    const res = await fetch(modelsUrl("cursor"));
+
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Couldn't ask `cursor-agent` for its models: not logged in" });
+  });
+
+  it("refuses an agent it doesn't know, and has no list without a lister", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, agentModels: async () => [] });
+    expect((await fetch(modelsUrl("copilot"))).status).toBe(400);
+    await handle.stop();
+
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    expect((await fetch(modelsUrl("cursor"))).status).toBe(404);
+  });
+});
+
 describe("agent settings API", () => {
   const settingsUrl = () => `http://localhost:${handle!.httpPort}/api/settings/agent`;
   const put = (body: unknown) =>

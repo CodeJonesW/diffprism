@@ -84,8 +84,8 @@ describe("runDojo (#231)", () => {
     const result = (await finish(runDojo(request, d))).result;
 
     expect(result.agents).toEqual([
-      { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 100, raised: 1 },
-      { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor", stage: "done", stageStartedAt: 100, raised: 1 },
+      { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 100, raised: 1, reviewedInMs: 0, votedInMs: 0 },
+      { agent: { name: "cursor", model: "gpt-5" }, label: "Cursor", stage: "done", stageStartedAt: 100, raised: 1, reviewedInMs: 0, votedInMs: 0 },
     ]);
     expect(result.findings.map((f) => [f.id, f.consensus])).toEqual([
       ["claude-1", "agreed"],
@@ -195,6 +195,40 @@ describe("runDojo (#231)", () => {
       ["done", undefined, 1],
     ]);
     expect(seats.filter((s) => s.agent.name === "cursor").at(-1)).toMatchObject({ stage: "done", raised: 2 });
+  });
+
+  it("times each agent on its own, so a fast one's time isn't the slow one's (#272)", async () => {
+    // Claude answers at once; Cursor finishes each turn 5s later on the clock.
+    let clock = 0;
+    const slowFor = (command: string, output: string): AgentProcess => ({
+      events: (async function* () {})(),
+      done:
+        command === "cursor"
+          ? new Promise((resolve) =>
+              setTimeout(() => {
+                clock += 5000;
+                resolve({ code: 0, output });
+              }, 5),
+            )
+          : Promise.resolve({ code: 0, output }),
+      kill: () => {},
+    });
+    const d = deps(
+      {},
+      {
+        now: () => clock,
+        run: vi.fn((command: string, { args }: AgentInvocation) =>
+          slowFor(command, json(args[0] === "review" ? { findings: [finding(`${command} found`)] } : { votes: [] })),
+        ),
+      },
+    );
+
+    const { agents } = (await finish(runDojo(request, d))).result;
+
+    expect(agents.map((a) => [a.label, a.reviewedInMs, a.votedInMs])).toEqual([
+      ["Claude Code", 0, 0],
+      ["Cursor", 5000, 5000],
+    ]);
   });
 
   it("reports an agent dropping out, with why", async () => {
