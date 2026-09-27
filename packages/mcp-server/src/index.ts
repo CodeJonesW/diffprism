@@ -381,6 +381,7 @@ export function createMcpServer(): McpServer {
             annotations: annotations?.map((a) => ({ ...a, line: a.line ?? 1 })),
             diffRef: diff_ref,
             timeoutMs: shouldWait ? (timeout_ms ?? DEFAULT_WAIT_MS) : 0,
+            caller: "agent",
           });
 
           if (result) {
@@ -438,7 +439,7 @@ export function createMcpServer(): McpServer {
         }
 
         try {
-          return jsonResult(await waitForDecision(serverInfo, sessionId, Math.min(timeout ?? 300, 600) * 1000));
+          return jsonResult(await waitForDecision(serverInfo, sessionId, Math.min(timeout ?? 300, 600) * 1000, { caller: "agent" }));
         } catch (err) {
           if (err instanceof ReviewerAskedError) {
             return await reviewerAskedResult(serverInfo, err, "call get_review_result with wait: true again");
@@ -684,7 +685,7 @@ export function createMcpServer(): McpServer {
         // another thread is waiting, so a batch of questions still answers one
         // by one, and a local review's decision is not missed while listening.
         try {
-          const result = await waitForDecision(serverInfo, sessionId, DEFAULT_WAIT_MS);
+          const result = await waitForDecision(serverInfo, sessionId, DEFAULT_WAIT_MS, { caller: "agent" });
           return jsonResult({ ...posted, next: { status: "decided", result } });
         } catch (err) {
           if (err instanceof ReviewerAskedError) {

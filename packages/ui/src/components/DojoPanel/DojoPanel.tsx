@@ -15,6 +15,7 @@ import { useHttpApi } from "../../hooks/useHttpApi";
 import { useAgentPickup } from "../../hooks/useAgentPickup";
 import { useReviewStore } from "../../store/review";
 import { ASK_AGENT, findingSent } from "../../lib/dojo-send";
+import { formatElapsed, useNow } from "../../lib/time";
 import type { FindingSent } from "../../lib/dojo-send";
 
 const GROUPS: Array<{ consensus: DojoConsensus; title: string; hint: string }> = [
@@ -197,24 +198,6 @@ function AgentPicker({
   );
 }
 
-/** The current time, ticking every second while mounted — for the timers. */
-function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  return now;
-}
-
-/** 0:07, 2:13, 1:02:30. */
-export function formatElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = String(total % 60).padStart(2, "0");
-  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
-}
 
 const STAGE_TEXT: Record<Exclude<DojoSeat["stage"], "waiting">, string> = {
   starting: "Starting",
@@ -476,7 +459,7 @@ function SendBar({
         ? { ok: false, text: `${results.filter((r) => !r.ok).length} didn't send: ${failed.error}` }
         : {
             ok: true,
-            text: `Sent ${count(toSend.length)} to the agent. Each card shows when it has them, and when each is fixed.`,
+            text: `Sent ${count(toSend.length)} to the agent. No need to press Request Changes: it fixes them and marks each one Fixed, and each card shows its progress. Decide once they are back.`,
           },
     );
   }

@@ -165,6 +165,28 @@ describe("useNotifications", () => {
     });
   });
 
+  describe("a review submitted", () => {
+    it("notifies when it becomes submitted, not again when a decided review is updated (#269, #204)", async () => {
+      setupNotificationMock("granted");
+      setDocumentFocus(false);
+      const { result } = renderHook(() => useNotifications());
+      const inReview = makeSession({ status: "in_review" });
+      const submitted = makeSession({ status: "submitted", decision: "changes_requested" });
+
+      await act(async () => {
+        result.current.notifySessionUpdated(submitted, inReview);
+      });
+      expect(notificationInstances).toHaveLength(1);
+      expect(notificationInstances[0].title).toBe("Review Submitted");
+
+      // Viewed again, or its caller came and went: still the same decision.
+      await act(async () => {
+        result.current.notifySessionUpdated(submitted, submitted);
+      });
+      expect(notificationInstances).toHaveLength(1);
+    });
+  });
+
   describe("permission denied", () => {
     it("does not create notification", async () => {
       setupNotificationMock("denied");

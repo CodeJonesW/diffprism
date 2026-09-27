@@ -90,6 +90,8 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
       cwd,
       diffRef: COMMIT_GATE_DIFF_REF,
       title: "Pre-commit review",
+      // So the review says a git commit is waiting on it (#204).
+      caller: "commit",
     });
     review = result;
   } catch (err) {

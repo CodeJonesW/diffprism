@@ -315,6 +315,15 @@ export type GlobalSessionStatus = "pending" | "in_review" | "submitted";
 
 export type SessionSource = "manual" | "agent";
 
+/** What is waiting on a review's decision (#204) — mirrors core. */
+export interface ReviewCaller {
+  kind: "commit" | "review" | "agent";
+  /** Still polling; false once its wait ran out or it was interrupted. */
+  waiting: boolean;
+  /** When its wait runs out (ms since epoch), if it said. */
+  until?: number;
+}
+
 export interface SessionSummary {
   id: string;
   projectPath: string;
@@ -336,6 +345,10 @@ export interface SessionSummary {
   pr?: string;
   /** Last time an agent read this session's threads. See @diffprism/core. */
   agentReadAt?: number;
+  /** Who is blocked on this review's decision, if anyone has been (#204). See @diffprism/core. */
+  caller?: ReviewCaller;
+  /** When the reviewer last decided on it; kept into the next round. See @diffprism/core. */
+  decidedAt?: number;
 }
 
 export interface DiffErrorPayload {

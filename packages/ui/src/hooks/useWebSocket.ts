@@ -4,7 +4,8 @@ import type { ServerMessage, ClientMessage, SessionSummary, DiffUpdatePayload, A
 
 interface UseWebSocketOptions {
   onSessionAdded?: (session: SessionSummary) => void;
-  onSessionUpdated?: (session: SessionSummary) => void;
+  /** A session changed; `before` is how it was, when the dashboard knew it. */
+  onSessionUpdated?: (session: SessionSummary, before?: SessionSummary) => void;
   onDiffUpdated?: (fileCount: number) => void;
   onAnnotationAdded?: (annotation: Annotation) => void;
 }
@@ -84,8 +85,10 @@ export function useWebSocket(options?: UseWebSocketOptions) {
           window.focus();
           onSessionAddedRef.current?.(message.payload);
         } else if (message.type === "session:updated") {
+          // Handed over with what it was, so a listener can tell a change from a repeat.
+          const before = useReviewStore.getState().sessions.find((s) => s.id === message.payload.id);
           updateSession(message.payload);
-          onSessionUpdatedRef.current?.(message.payload);
+          onSessionUpdatedRef.current?.(message.payload, before);
         } else if (message.type === "session:removed") {
           removeSession(message.payload.sessionId);
         } else if (message.type === "annotation:added") {
