@@ -128,15 +128,12 @@ describe("Claude Code", () => {
     expect(args(true)).not.toContain("--model");
   });
 
-  it("runs in the clone, and names how to resume it from anywhere", async () => {
+  it("runs in the PR's checkout, and names how to resume it from anywhere", async () => {
     const started = await CLAUDE.begin(review({ localRepoPath: "/clones/my widget" }));
     expect(started.cwd).toBe("/clones/my widget");
     expect(started.resumeCommand).toBe(`cd '/clones/my widget' && claude --resume ${started.id}`);
   });
 
-  it("runs in its own folder when there's no clone", async () => {
-    expect((await CLAUDE.begin(review({ localRepoPath: null }))).cwd).toBe("/tmp/diffprism-agent/session-1");
-  });
 });
 
 describe("Cursor (#226)", () => {
@@ -156,10 +153,9 @@ describe("Cursor (#226)", () => {
     expect(args(true)).not.toContain("--yolo");
   });
 
-  it("works in its own folder and reads the clone from there", () => {
+  it("works in its own folder and reads the PR's checkout from there", () => {
     expect(argAfter(args(true), "--workspace")).toBe("/tmp/diffprism-agent/session-1");
     expect(argAfter(args(true), "--add-dir")).toBe("/clones/widget");
-    expect(args(true, review({ localRepoPath: null }))).not.toContain("--add-dir");
   });
 
   it("uses the model chosen, and otherwise leaves it to Cursor", () => {
@@ -448,7 +444,7 @@ describe("prAgentStarter", () => {
       label: name === "claude" ? "Claude Code" : "Cursor",
       command: name,
       installHint: "install it",
-      begin: begin ?? (async (r) => ({ id: `${name}-conv`, cwd: r.localRepoPath ?? r.folder(), resumeCommand: `resume ${name}` })),
+      begin: begin ?? (async (r) => ({ id: `${name}-conv`, cwd: r.localRepoPath, resumeCommand: `resume ${name}` })),
       turn: () => ({ args: [] }),
       describe: () => null,
     };
@@ -500,12 +496,6 @@ describe("prAgentStarter", () => {
     );
   });
 
-  it("gives the agent a folder of its own for the review", async () => {
-    const listen = vi.fn(async () => ({ result: approved, turns: 0 }));
-    const { start } = starter(listen);
-
-    expect((await start({ ...request, localRepoPath: null }))!.cwd).toBe("/tmp/diffprism-agent/session-1");
-  });
 
   // Cursor has to be logged in to start a chat.
   it("starts nothing, and says why, when the agent can't start a conversation", async () => {

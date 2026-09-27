@@ -75,16 +75,16 @@ If the repo has the DiffPrism pre-commit gate installed (\`diffprism hook instal
 
 Pull requests are opened by the user — \`diffprism review <PR URL>\` or "Review PR" in the dashboard — not by \`open_review\`. You then work inside that review:
 
-1. \`mcp__diffprism__get_pr_context\` — title, author, branches, file list, briefing summary, and whether a local clone is connected.
+1. \`mcp__diffprism__get_pr_context\` — title, author, branches, file list, and briefing summary.
 2. \`mcp__diffprism__get_file_diff\` — one file's hunks and triage category (critical/notable/mechanical).
-3. \`mcp__diffprism__get_file_context\` — the full file from the local clone, so you see surrounding code rather than just the hunks.
+3. \`mcp__diffprism__get_file_context\` — the full file at the PR's head, so you see surrounding code rather than just the hunks.
 4. \`mcp__diffprism__get_user_focus\` — what the user is looking at right now. Offer context about it.
 5. \`mcp__diffprism__get_review_comments\` — what has already been said, before you add to it.
 6. \`mcp__diffprism__annotate\` — post findings inline on the diff.
 
 The reviewer can also ask you questions on lines of the PR. Hold that conversation in the dashboard, not the terminal:
 
-1. \`mcp__diffprism__wait_for_comments\` — blocks until the reviewer writes something you haven't answered, then returns those threads. Each carries \`hunk\`, the code it's on, and the response carries \`review\`: the checkout on disk (\`projectPath\`), the branch, and the PR. That's enough to start answering — you don't need to look the review up first. If \`localRepoConnected\` is false there's no clone here; answer from the hunk and the PR.
+1. \`mcp__diffprism__wait_for_comments\` — blocks until the reviewer writes something you haven't answered, then returns those threads. Each carries \`hunk\`, the code it's on, and the response carries \`review\`: the checkout on disk (\`projectPath\`), the branch, and the PR. That's enough to start answering — you don't need to look the review up first. For a PR, \`projectPath\` is DiffPrism's checkout of the PR's head, so the files there are the PR's.
 2. \`mcp__diffprism__reply\` — answer a thread, passing its \`annotation_id\`. It goes back to listening by itself and returns what happened next as \`next\`: more questions to answer the same way, or \`timed_out\` — then call \`wait_for_comments\` again.
 3. Keep going until the user tells you to stop. Answering is not the end of the conversation; the reviewer's next question only reaches you if you're still listening.
 
@@ -116,9 +116,9 @@ A PR review and a working-copy review can be open for the same clone at once. If
 | \`wait_for_comments\` | Block until the reviewer writes something you haven't answered; returns it with the code and where the review is. |
 | \`get_review_state\` | Session status, attention and new-changes flags, and annotations. |
 | \`get_user_focus\` | What the user is currently looking at. |
-| \`get_pr_context\` | PR overview: metadata, briefing, file list, local clone status. |
+| \`get_pr_context\` | PR overview: metadata, briefing, file list. |
 | \`get_file_diff\` | Hunks for one file, with triage category. |
-| \`get_file_context\` | Full file content from the local clone. |
+| \`get_file_context\` | Full file content, at the PR's head for a PR review. |
 
 ## Rules
 

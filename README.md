@@ -1,12 +1,12 @@
 # DiffPrism™
 
-Review GitHub PRs with AI superpowers. Paste a PR URL, see the diff in your browser, and use Claude Code or Cursor to interrogate every line, file, and change. Your AI gets full codebase context from your local clone — not just the diff hunks.
+Review GitHub PRs with AI superpowers. Paste a PR URL, see the diff in your browser, and use Claude Code or Cursor to interrogate every line, file, and change. Your AI gets the full codebase at the PR's head — not just the diff hunks — without you checking the branch out.
 
 ## How It Works
 
 1. **Open a PR** — `diffprism review https://github.com/owner/repo/pull/123`
 2. **See the diff** — Browser opens with syntax-highlighted diffs, file browser, and analysis briefing
-3. **Ask about any line** — Comment on a line and Claude Code answers in the thread. `diffprism review` starts it for you, reading your local clone. You can also ask from your own Claude Code or Cursor session, where your AI calls MCP tools to get context and posts findings inline on the diff.
+3. **Ask about any line** — Comment on a line and Claude Code answers in the thread. `diffprism review` starts it for you, reading the PR's own code. You can also ask from your own Claude Code or Cursor session, where your AI calls MCP tools to get context and posts findings inline on the diff.
 
 ```
 $ cd ~/dev/my-project
@@ -27,7 +27,7 @@ Then in Claude Code:
   → calls get_pr_context → high-level overview
 
 > Is the retry logic in client.ts correct?
-  → calls get_file_diff + get_file_context → full file from your local clone
+  → calls get_file_diff + get_file_context → full file at the PR's head
 
 > Flag line 47 as a concern
   → calls annotate → annotation appears on the diff in your browser
@@ -51,7 +51,7 @@ diffprism review owner/repo#123                            # Shorthand format
 
 An agent then answers your comments — Claude Code unless you choose otherwise (see [Choosing the agent](#choosing-the-agent)): comment on any line and the answer appears in the thread. You don't need to open a Claude Code session or paste anything, and the command gives your terminal back straight away. A PR you open from the dashboard's **Review PR** form gets the same agent. The DiffPrism server runs it, for as long as the review is open.
 
-- The agent is **read-only**. It can read the PR, your clone and the review, and reply, but it can't edit files or run commands.
+- The agent is **read-only**. It can read the PR, its code and the review, and reply, but it can't edit files or run commands.
 - One conversation lasts the whole review, so a follow-up question can build on an earlier answer.
 - The command prints the command that continues that conversation in your terminal (`claude --resume …` or `cursor-agent --resume …`) once the agent has answered something.
 - It waits without using the agent: DiffPrism watches for comments and runs the agent only when there's something to answer.
@@ -76,7 +76,7 @@ Claude Code answers by default. Choose Cursor, or a model for either, in three p
 
 - **One review:** `diffprism review <PR URL> --agent cursor --model gpt-5`.
 
-Each agent keeps its own model, so switching agents and back doesn't lose either. Settings live in `~/.diffprism/config.json`. Cursor works from a folder of its own that holds its DiffPrism tool settings and a permissions file. The permissions let it read, and use DiffPrism's tools, replying included; they refuse every file write and shell command, in that folder and in your clone. It can read your clone, but nothing is written into it. Run `cursor-agent login` once before choosing it.
+Each agent keeps its own model, so switching agents and back doesn't lose either. Settings live in `~/.diffprism/config.json`. Cursor works from a folder of its own that holds its DiffPrism tool settings and a permissions file. The permissions let it read, and use DiffPrism's tools, replying included; they refuse every file write and shell command, in that folder and in the PR's checkout. It can read the checkout, but nothing is written into it. Run `cursor-agent login` once before choosing it.
 
 Reviews opened by the [commit gate](#commit-gate) don't start an agent: the agent that made the commit is the one that answers.
 
@@ -90,7 +90,7 @@ Have several agents review a PR and argue it out. Open the **Review dojo** panel
 
 Who agrees with what is counted from the votes, not summarised by a model. An agent that can't start, review or vote drops out with the reason shown, and the rest carry on. Each agent uses the model chosen for it under [Choosing the agent](#choosing-the-agent).
 
-Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
+Run it from any folder. DiffPrism fetches the PR's head commit, and its base, into a copy of the repo of its own under `~/.diffprism/repos/`, and checks the head out in a folder for that PR, using the same GitHub token it reads the PR with. The review, the agent and `get_file_context` all read from there, so they see exactly the PR's code, whatever branch your own clone is on. Your clone isn't touched. Opening the PR again moves its checkout to the PR's latest commit. If the PR can't be fetched, the review doesn't open, and says why.
 
 ## MCP Tools
 
@@ -206,7 +206,7 @@ skill tells them so.
 
 - **AI-powered PR review** — Your AI gets full codebase context via 14 MCP tools
 - **Live annotations** — AI findings appear inline on the diff in real-time
-- **Local repo context** — Full file content from your clone, not just diff hunks
+- **Full repo context** — Full file content at the PR's head, not just diff hunks, with no checkout of your own
 - **No vendor lock-in** — Works with Claude Code, Cursor, or any MCP client
 - **Syntax-highlighted diffs** — Unified or split view with refractor
 - **Multi-session dashboard** — Review multiple agents from one browser tab

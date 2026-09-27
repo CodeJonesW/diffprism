@@ -161,9 +161,8 @@ async function readThreads(
  */
 interface ReviewBriefing {
   sessionId: string;
-  /** The directory on disk, or `github:owner/repo#n` for a PR with no clone here. */
+  /** The directory on disk: the reviewer's checkout, or DiffPrism's checkout of a PR's head (#240). */
   projectPath: string;
-  localRepoConnected: boolean;
   branch?: string;
   pr: GitHubPrMetadata | null;
   title?: string;
@@ -206,7 +205,6 @@ async function readReview(
     review: {
       sessionId,
       projectPath,
-      localRepoConnected: !projectPath.startsWith("github:"),
       branch: payload.metadata.currentBranch,
       pr: payload.metadata.githubPr ?? null,
       title: payload.metadata.title,
@@ -794,7 +792,6 @@ export function createMcpServer(): McpServer {
         return jsonResult({
           sessionId,
           projectPath,
-          localRepoConnected: !projectPath.startsWith("github:"),
           pr: payload.metadata.githubPr ?? null,
           title: payload.metadata.title,
           description: payload.metadata.description,
@@ -861,13 +858,13 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     "get_file_context",
-    "Get the full content of a file from the review's local repository, read with `git show` at the PR's head branch without switching branches. Needs the review to be connected to a local clone.",
+    "Get the full content of a file from the review's repository. For a PR review it's read at the PR's head commit, from DiffPrism's own checkout of it.",
     {
       file: z.string().describe("File path relative to repo root (e.g., 'src/index.ts')"),
       ref: z
         .string()
         .optional()
-        .describe("Git ref to read from (e.g., 'origin/main', 'HEAD'). Defaults to the PR's head branch if available, otherwise HEAD."),
+        .describe("Git ref to read from. For a PR review, the PR's head commit by default; its base commit (the PR's baseSha) can also be read. Otherwise HEAD by default."),
       ...targetParams,
     },
     async ({ file, ref, session_id, repo_path }) =>
@@ -881,32 +878,30 @@ export function createMcpServer(): McpServer {
 
         const data = (await response.json()) as {
           projectPath: string;
-          payload: { metadata: { githubPr?: { headBranch: string } } };
+          payload: { metadata: { githubPr?: { headSha: string } } };
         };
 
-        if (data.projectPath.startsWith("github:")) {
-          return toolError(
-            "No local repo connected. Run the server from within a local clone of the repository to enable file context.",
-          );
-        }
+        const pr = data.payload.metadata.githubPr;
+        const gitRef = ref ?? pr?.headSha ?? "HEAD";
 
-        const gitRef =
-          ref ??
-          (data.payload.metadata.githubPr?.headBranch
-            ? `origin/${data.payload.metadata.githubPr.headBranch}`
-            : "HEAD");
-
-        const { execSync } = await import("node:child_process");
+        const { execFileSync } = await import("node:child_process");
 
         let content: string;
         try {
-          content = execSync(`git show ${gitRef}:${file}`, {
+          content = execFileSync("git", ["show", `${gitRef}:${file}`], {
             cwd: data.projectPath,
             encoding: "utf-8",
             stdio: ["pipe", "pipe", "pipe"],
             maxBuffer: 10 * 1024 * 1024,
           });
-        } catch {
+        } catch (err) {
+          // A PR's checkout holds exactly the commits it's read at; a file
+          // missing there is missing from the PR, and any other copy of it
+          // would be the wrong code (#240).
+          if (pr) {
+            const stderr = (err as { stderr?: string }).stderr?.trim();
+            return toolError(`File not found: "${file}" at ${gitRef}${stderr ? ` (${stderr})` : ""}`);
+          }
           const fs = await import("node:fs");
           const path = await import("node:path");
           try {
