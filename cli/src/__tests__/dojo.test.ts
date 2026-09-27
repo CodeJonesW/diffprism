@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { AsyncQueue } from "@diffprism/core";
+import { AsyncQueue, DojoStoppedError } from "@diffprism/core";
 import type { DojoRequest, DojoRun, DojoSeat, GlobalServerInfo, ReviewAgentName } from "@diffprism/core";
 import { runDojo, dojoRunner, parseFindings, parseVotes, lastJsonBlock, describeSubject, dojoInstructions } from "../commands/dojo.js";
 import type { DojoDeps } from "../commands/dojo.js";
@@ -25,6 +25,7 @@ function kind(name: ReviewAgentName, label: string): AgentKind {
     begin: vi.fn(async () => ({ id: `${name}-conv`, cwd: `/agents/${name}`, resumeCommand: "" })),
     turn: vi.fn((_review, _conversation, t): AgentInvocation => ({ args: [t.first ? "review" : "vote", t.prompt] })),
     describe: (event) => (event as { doing?: string }).doing ?? null,
+    toolCalls: (event) => (event as { tool?: number }).tool ?? 0,
   };
 }
 
@@ -33,7 +34,7 @@ function turnOf(output: string, events: unknown[] = []): AgentProcess {
   const queue = new AsyncQueue<unknown>();
   events.forEach((e) => queue.push(e));
   queue.end();
-  return { events: queue, done: Promise.resolve({ code: 0, output }) };
+  return { events: queue, done: Promise.resolve({ code: 0, output }), kill: () => {} };
 }
 
 /** The dojo's result, once its progress has been read to the end. */
@@ -67,6 +68,8 @@ function deps(answers: Partial<Record<ReviewAgentName, { review: unknown; vote?:
     folder: () => "/tmp/x",
     log: () => {},
     now: () => 100,
+    quietLimitMs: 60_000,
+    toolQuietLimitMs: 60_000,
     ...extra,
   };
 }
@@ -185,7 +188,8 @@ describe("runDojo (#231)", () => {
       ["starting", undefined, undefined],
       ["reviewing", undefined, undefined],
       ["reviewing", "reviewing", undefined],
-      ["reviewing", undefined, 1],
+      // Its review is in; it waits for the others' before it can vote (#251).
+      ["waiting", undefined, 1],
       ["voting", undefined, 1],
       ["voting", "voting", 1],
       ["done", undefined, 1],
@@ -197,6 +201,97 @@ describe("runDojo (#231)", () => {
     const d = deps({ cursor: { review: { findings: [] } } }, { installed: async (k) => k.name === "cursor" });
     const { seats } = await finish(runDojo(request, d));
     expect(seats.filter((s) => s.agent.name === "claude").map((s) => s.stage)).toEqual(["starting", "dropped"]);
+  });
+
+  describe("stopping (#252)", () => {
+    /** A turn that runs until it's killed, then ends as a killed process does. */
+    function endless(): AgentProcess {
+      const queue = new AsyncQueue<unknown>();
+      let end = (_run: { code: number; output: string }) => {};
+      const done = new Promise<{ code: number; output: string }>((resolve) => (end = resolve));
+      return {
+        events: queue,
+        done,
+        kill: vi.fn(() => {
+          queue.end();
+          end({ code: 143, output: "" });
+        }),
+      };
+    }
+
+    it("stops every agent still working, and says why", async () => {
+      const turns: AgentProcess[] = [];
+      const d = deps({}, { run: vi.fn(() => turns[turns.push(endless()) - 1]) });
+      const run = runDojo(request, d);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(turns).toHaveLength(2);
+
+      run.stop("Stopped by the reviewer.");
+
+      await expect(run.result).rejects.toThrow(DojoStoppedError);
+      await expect(run.result).rejects.toThrow("Stopped by the reviewer.");
+      for (const turn of turns) expect(turn.kill).toHaveBeenCalled();
+    });
+
+    it("doesn't start voting once stopped", async () => {
+      const d = deps({
+        claude: { review: { findings: [finding("a")] }, vote: { votes: [] } },
+        cursor: { review: { findings: [finding("b")] }, vote: { votes: [] } },
+      });
+      const run = runDojo(request, d);
+      run.stop("The review was decided.");
+      await expect(run.result).rejects.toThrow("The review was decided.");
+      expect(vi.mocked(d.run).mock.calls.filter(([, inv]) => inv.args[0] === "vote")).toEqual([]);
+    });
+
+    it("gives a tool call under way longer before counting it as silence", async () => {
+      // A tool call starts, runs longer than the quiet limit, then returns.
+      const slowTool = (output: string): AgentProcess => {
+        const queue = new AsyncQueue<unknown>();
+        queue.push({ tool: 1 });
+        const done = new Promise<{ code: number; output: string }>((resolve) =>
+          setTimeout(() => {
+            queue.push({ tool: -1 });
+            queue.end();
+            resolve({ code: 0, output });
+          }, 120),
+        );
+        return { events: queue, done, kill: vi.fn() };
+      };
+      const d = deps(
+        {},
+        {
+          quietLimitMs: 30,
+          toolQuietLimitMs: 1000,
+          run: vi.fn((_command: string, { args }: AgentInvocation) =>
+            slowTool(json(args[0] === "review" ? { findings: [finding("slow but fine")] } : { votes: [] })),
+          ),
+        },
+      );
+
+      const result = await runDojo(request, d).result;
+
+      expect(result.agents.map((a) => a.stage)).toEqual(["done", "done"]);
+    });
+
+    it("drops an agent that goes quiet too long, and the rest carry on", async () => {
+      const quiet = endless();
+      const d = deps(
+        { cursor: { review: { findings: [finding("b")] } } },
+        {
+          quietLimitMs: 30,
+          run: vi.fn((command: string, { args }: AgentInvocation) =>
+            command === "claude" ? quiet : turnOf(json(args[0] === "review" ? { findings: [finding("b")] } : { votes: [] })),
+          ),
+        },
+      );
+
+      const result = await runDojo(request, d).result;
+
+      expect(quiet.kill).toHaveBeenCalled();
+      expect(result.agents[0]).toMatchObject({ stage: "dropped", error: "couldn't review: went quiet: nothing for 0s, so it was stopped." });
+      expect(result.findings.map((f) => [f.id, f.consensus])).toEqual([["cursor-1", "solo"]]);
+    });
   });
 
   it("fails when no agent could review at all", async () => {

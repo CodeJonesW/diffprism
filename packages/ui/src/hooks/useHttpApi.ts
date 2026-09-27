@@ -213,6 +213,12 @@ export function useHttpApi() {
     [postJson],
   );
 
+  /** Stop the dojo running on a review; it arrives back as a stopped dojo:update (#252). */
+  const stopDojo = useCallback(
+    (sessionId: string) => postJson(`/api/reviews/${sessionId}/dojo/stop`, {}),
+    [postJson],
+  );
+
   /** Start a review dojo. Its progress and result arrive as dojo:update. */
   const startDojo = useCallback(
     (sessionId: string, agents: ReviewAgentName[]) => postJson(`/api/reviews/${sessionId}/dojo`, { agents }),
@@ -232,6 +238,7 @@ export function useHttpApi() {
     saveAgentSettings,
     getDojoAgents,
     startDojo,
+    stopDojo,
     markSeen,
   };
 }

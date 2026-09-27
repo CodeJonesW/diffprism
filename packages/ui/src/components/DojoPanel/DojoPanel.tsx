@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, Send } from "lucide-react";
+import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, Send, Square, Hourglass } from "lucide-react";
 import type {
   Annotation,
   DojoAvailableAgent,
@@ -59,8 +59,10 @@ interface DojoPanelProps {
  */
 export function DojoPanel({ sessionId, dojo, onNavigate, onHide, sendBack }: DojoPanelProps) {
   const [choosing, setChoosing] = useState(false);
-  // A failed dojo offers to run again, with why the last one failed.
-  const showPicker = !dojo || choosing || dojo.status === "failed";
+  // A failed or stopped dojo offers to run again, with why the last one ended.
+  const showPicker = !dojo || choosing || dojo.status === "failed" || dojo.status === "stopped";
+  const lastEnded =
+    dojo?.status === "failed" ? `The last dojo failed: ${dojo.error}` : dojo?.status === "stopped" ? `The last dojo was stopped. ${dojo.error ?? ""}`.trim() : undefined;
 
   return (
     <div className="h-full flex flex-col bg-surface">
@@ -79,12 +81,12 @@ export function DojoPanel({ sessionId, dojo, onNavigate, onHide, sendBack }: Doj
         {showPicker ? (
           <AgentPicker
             sessionId={sessionId}
-            error={dojo?.status === "failed" ? dojo.error : undefined}
+            lastEnded={lastEnded}
             onStarted={() => setChoosing(false)}
             onCancel={dojo ? () => setChoosing(false) : undefined}
           />
         ) : dojo.status === "running" ? (
-          <Running dojo={dojo} />
+          <Running sessionId={sessionId} dojo={dojo} />
         ) : (
           <Results
             sessionId={sessionId}
@@ -101,12 +103,13 @@ export function DojoPanel({ sessionId, dojo, onNavigate, onHide, sendBack }: Doj
 
 function AgentPicker({
   sessionId,
-  error,
+  lastEnded,
   onStarted,
   onCancel,
 }: {
   sessionId: string;
-  error?: string;
+  /** How the last dojo ended, when it failed or was stopped. */
+  lastEnded?: string;
   onStarted: () => void;
   onCancel?: () => void;
 }) {
@@ -150,7 +153,7 @@ function AgentPicker({
         Each agent reviews this change on its own, then votes on what the others found. You get one list, with who agrees
         and who doesn't.
       </p>
-      {error && <p className="text-xs text-danger">The last dojo failed: {error}</p>}
+      {lastEnded && <p className="text-xs text-danger">{lastEnded}</p>}
       {agents === null && !problem && <p className="text-xs text-text-secondary">Finding your agents…</p>}
       {agents?.length === 0 && (
         <p className="text-xs text-text-secondary">
@@ -213,7 +216,7 @@ export function formatElapsed(ms: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
 }
 
-const STAGE_TEXT: Record<DojoSeat["stage"], string> = {
+const STAGE_TEXT: Record<Exclude<DojoSeat["stage"], "waiting">, string> = {
   starting: "Starting",
   reviewing: "Reviewing",
   voting: "Voting on the others' findings",
@@ -221,14 +224,49 @@ const STAGE_TEXT: Record<DojoSeat["stage"], string> = {
   dropped: "Dropped out",
 };
 
-function Running({ dojo }: { dojo: DojoState }) {
+/**
+ * What a waiting agent is waiting for (#251): the agents still reviewing, by
+ * name, so the reviewer can see which one the dojo is on.
+ */
+function waitingText(seat: DojoSeat, seats: DojoSeat[]): string {
+  const busy = seats.filter((s) => s !== seat && (s.stage === "starting" || s.stage === "reviewing")).map((s) => s.label);
+  return busy.length === 0 ? "Waiting to vote" : `Waiting for ${busy.join(" and ")}`;
+}
+
+function Running({ sessionId, dojo }: { sessionId: string; dojo: DojoState }) {
   const now = useNow();
+  const { stopDojo } = useHttpApi();
+  const [stopping, setStopping] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  async function stop() {
+    setStopping(true);
+    setProblem(null);
+    const result = await stopDojo(sessionId);
+    // On success the dojo:update that follows replaces this view.
+    if (!result.ok) {
+      setStopping(false);
+      setProblem(result.error ?? "The dojo didn't stop.");
+    }
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-text-secondary">
-        Each agent reviews on its own, then votes on the others' findings. Running for{" "}
-        <span className="font-mono text-text-primary">{formatElapsed(now - dojo.startedAt)}</span>.
-      </p>
+      <div className="flex items-start gap-3">
+        <p className="flex-1 text-xs text-text-secondary">
+          Each agent reviews on its own, then votes on the others' findings. Running for{" "}
+          <span className="font-mono text-text-primary">{formatElapsed(now - dojo.startedAt)}</span>.
+        </p>
+        <button
+          onClick={stop}
+          disabled={stopping}
+          className="flex items-center gap-1.5 text-xs text-text-secondary hover:text-danger disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Square className="w-3 h-3" />
+          {stopping ? "Stopping…" : "Stop"}
+        </button>
+      </div>
+      {problem && <p className="text-xs text-danger">{problem}</p>}
       {dojo.agents.length === 0 ? (
         <p className="flex items-center gap-2 text-xs text-text-secondary">
           <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
@@ -238,7 +276,7 @@ function Running({ dojo }: { dojo: DojoState }) {
         <ul className="space-y-2">
           {dojo.agents.map((seat) => (
             <li key={seat.agent.name}>
-              <SeatRow seat={seat} now={now} />
+              <SeatRow seat={seat} now={now} stageText={seat.stage === "waiting" ? waitingText(seat, dojo.agents) : STAGE_TEXT[seat.stage]} />
             </li>
           ))}
         </ul>
@@ -247,23 +285,27 @@ function Running({ dojo }: { dojo: DojoState }) {
   );
 }
 
-function SeatRow({ seat, now }: { seat: DojoSeat; now: number }) {
+function SeatRow({ seat, now, stageText }: { seat: DojoSeat; now: number; stageText: string }) {
   const active = seat.stage === "starting" || seat.stage === "reviewing" || seat.stage === "voting";
+  const waiting = seat.stage === "waiting";
   return (
     <div className="rounded-md border border-border bg-background px-3 py-2" aria-label={seat.label}>
       <div className="flex items-center gap-2">
         {active ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin text-accent flex-shrink-0" />
+        ) : waiting ? (
+          // Idle, not working: no spinner.
+          <Hourglass className="w-3.5 h-3.5 text-text-secondary flex-shrink-0" aria-label="waiting" />
         ) : seat.stage === "done" ? (
           <CircleCheck className="w-3.5 h-3.5 text-success flex-shrink-0" />
         ) : (
           <CircleX className="w-3.5 h-3.5 text-danger flex-shrink-0" />
         )}
         <span className="text-sm text-text-primary font-medium flex-1">{seat.label}</span>
-        {active && <span className="text-xs font-mono text-text-secondary">{formatElapsed(now - seat.stageStartedAt)}</span>}
+        {(active || waiting) && <span className="text-xs font-mono text-text-secondary">{formatElapsed(now - seat.stageStartedAt)}</span>}
       </div>
       <p className="mt-1 text-xs text-text-secondary">
-        {STAGE_TEXT[seat.stage]}
+        {stageText}
         {seat.raised !== undefined && ` · raised ${seat.raised}`}
       </p>
       {active && seat.activity && <p className="mt-0.5 text-xs text-text-primary font-mono truncate">{seat.activity}</p>}
