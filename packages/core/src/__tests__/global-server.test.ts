@@ -92,7 +92,11 @@ vi.mock("@diffprism/github", () => ({
   fetchPullRequestDiff: vi.fn(async () => ""),
   // A fresh payload per call: opening a session mutates it.
   normalizePr: vi.fn(() => {
-    const diffSet = { baseRef: "main", headRef: "feature", files: [] };
+    const diffSet = {
+      baseRef: "main",
+      headRef: "feature",
+      files: [{ path: "src/widget.ts", status: "modified", hunks: [], language: "typescript", binary: false, additions: 3, deletions: 1 }],
+    };
     return {
       diffSet,
       payload: {
@@ -2904,7 +2908,7 @@ describe("the review dojo (#231)", () => {
     expect(((await res.json()) as { dojo: DojoState }).dojo.status).toBe("running");
     expect(run).toHaveBeenCalledWith({
       sessionId,
-      prUrl: "https://github.com/acme/widget/pull/7",
+      subject: { kind: "pr", url: "https://github.com/acme/widget/pull/7" },
       localRepoPath: null,
       server: expect.objectContaining({ httpPort: handle.httpPort }),
       agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
@@ -2988,17 +2992,71 @@ describe("the review dojo (#231)", () => {
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("runs only on a pull request review", async () => {
+  async function openLocal(baseUrl: string, payload = makePayload()): Promise<string> {
+    const created = await send(baseUrl, "/api/reviews", { payload, projectPath: "/repo", diffRef: "staged" });
+    return ((await created.json()) as { sessionId: string }).sessionId;
+  }
+
+  it("runs on a commit-gate review too, on its staged changes in the repo (#238)", async () => {
+    const { dojo, run, finish } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openLocal(baseUrl);
+
+    const res = await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+    expect(res.status).toBe(202);
+    expect(run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subject: { kind: "local", repoPath: path.resolve("/repo"), diffRef: "staged" },
+        localRepoPath: path.resolve("/repo"),
+      }),
+    );
+    finish({ agents, findings: [finding] });
+    await settle();
+    const { annotations } = await viewerSees(sessionId);
+    expect(annotations[0]).toMatchObject({ file: "src/widget.ts", line: 12, source: { agent: "Review dojo" } });
+  });
+
+  it("refuses a review with no changes to look at", async () => {
     const { dojo, run } = runner();
     handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
     const baseUrl = `http://localhost:${handle.httpPort}`;
-    const created = await send(baseUrl, "/api/reviews", { payload: makePayload(), projectPath: "/repo" });
-    const { sessionId } = (await created.json()) as { sessionId: string };
+    const empty = makePayload();
+    empty.diffSet.files = [];
+    const sessionId = await openLocal(baseUrl, empty);
 
     const res = await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
 
     expect(res.status).toBe(409);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("keeps the dojo on screen when the agent commits again (#238)", async () => {
+    const { dojo, finish } = runner();
+    handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openLocal(baseUrl);
+    await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+    finish({ agents, findings: [finding] });
+    await settle();
+
+    const { WebSocket } = await import("ws");
+    const ws = new WebSocket(`ws://localhost:${handle.wsPort}?sessionId=${sessionId}`);
+    const messages: ServerMessage[] = [];
+    ws.on("message", (data) => messages.push(JSON.parse(data.toString()) as ServerMessage));
+    await new Promise<void>((resolve) => ws.on("open", () => resolve()));
+    await settle();
+    messages.length = 0;
+
+    // The fix, committed again: the same review, reopened with a new diff.
+    await openLocal(baseUrl, makePayload({ rawDiff: "diff after the fix" }));
+    await settle();
+    ws.close();
+
+    const types = messages.map((m) => m.type);
+    expect(types.indexOf("dojo:update")).toBeGreaterThan(types.indexOf("review:init"));
+    expect(messages.find((m) => m.type === "dojo:update")!.payload).toMatchObject({ status: "done", findings: [{ id: "claude-1" }] });
   });
 
   it("has no dojo on a server given no runner", async () => {

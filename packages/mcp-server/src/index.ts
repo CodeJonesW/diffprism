@@ -14,10 +14,12 @@ import {
   REPORT_HINT,
   DEFAULT_DIFF_REF,
   DIFF_REF_DESCRIPTION,
+  diffNewSide,
 } from "@diffprism/core";
 import type {
   Annotation,
   ContextUpdatePayload,
+  DiffNewSide,
   DiffSet,
   GitHubPrMetadata,
   GlobalServerInfo,
@@ -861,13 +863,13 @@ export function createMcpServer(): McpServer {
 
   server.tool(
     "get_file_context",
-    "Get the full content of a file from the review's local repository, read with `git show` at the PR's head branch without switching branches. Needs the review to be connected to a local clone.",
+    "Get the full content of a file from the review's local repository, as the change under review has it, without switching branches: at a PR's head branch, the staged version for a review of staged changes, the working tree for one of uncommitted changes. Needs the review to be connected to a local clone.",
     {
       file: z.string().describe("File path relative to repo root (e.g., 'src/index.ts')"),
       ref: z
         .string()
         .optional()
-        .describe("Git ref to read from (e.g., 'origin/main', 'HEAD'). Defaults to the PR's head branch if available, otherwise HEAD."),
+        .describe("Git ref to read from instead (e.g., 'origin/main', 'HEAD'). Defaults to the version the review's diff shows."),
       ...targetParams,
     },
     async ({ file, ref, session_id, repo_path }) =>
@@ -881,6 +883,7 @@ export function createMcpServer(): McpServer {
 
         const data = (await response.json()) as {
           projectPath: string;
+          diffRef?: string;
           payload: { metadata: { githubPr?: { headBranch: string } } };
         };
 
@@ -890,35 +893,62 @@ export function createMcpServer(): McpServer {
           );
         }
 
-        const gitRef =
-          ref ??
-          (data.payload.metadata.githubPr?.headBranch
-            ? `origin/${data.payload.metadata.githubPr.headBranch}`
-            : "HEAD");
+        // The version the reviewer is judging (#238). A staged review read at
+        // HEAD would show the code from before the change.
+        const prHead = data.payload.metadata.githubPr?.headBranch;
+        const side: DiffNewSide = ref
+          ? { kind: "commit", ref }
+          : prHead
+            ? { kind: "commit", ref: `origin/${prHead}` }
+            : data.diffRef
+              ? diffNewSide(data.diffRef)
+              : { kind: "commit", ref: "HEAD" };
 
-        const { execSync } = await import("node:child_process");
-
-        let content: string;
-        try {
-          content = execSync(`git show ${gitRef}:${file}`, {
+        const { execFileSync } = await import("node:child_process");
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const gitShow = (spec: string) =>
+          execFileSync("git", ["show", spec], {
             cwd: data.projectPath,
             encoding: "utf-8",
             stdio: ["pipe", "pipe", "pipe"],
             maxBuffer: 10 * 1024 * 1024,
           });
-        } catch {
-          const fs = await import("node:fs");
-          const path = await import("node:path");
+        const fromDisk = () => fs.readFileSync(path.join(data.projectPath, file), "utf-8");
+
+        let content: string;
+        let readFrom: string;
+        if (side.kind === "working-tree") {
+          readFrom = "working tree";
           try {
-            content = fs.readFileSync(path.join(data.projectPath, file), "utf-8");
+            content = fromDisk();
           } catch {
-            return toolError(`File not found: "${file}" (tried git show ${gitRef}:${file} and working tree)`);
+            return toolError(`File not found in the working tree: "${file}"`);
+          }
+        } else if (side.kind === "index") {
+          readFrom = "staged";
+          try {
+            content = gitShow(`:${file}`);
+          } catch {
+            return toolError(`File not staged: "${file}" (tried git show :${file})`);
+          }
+        } else {
+          readFrom = side.ref;
+          try {
+            content = gitShow(`${side.ref}:${file}`);
+          } catch {
+            try {
+              content = fromDisk();
+              readFrom = "working tree";
+            } catch {
+              return toolError(`File not found: "${file}" (tried git show ${side.ref}:${file} and working tree)`);
+            }
           }
         }
 
         return jsonResult({
           file,
-          ref: gitRef,
+          ref: readFrom,
           projectPath: data.projectPath,
           content,
           lineCount: content.split("\n").length,

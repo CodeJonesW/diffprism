@@ -60,7 +60,7 @@ function thread(id: string, overrides: Partial<Annotation> = {}): Annotation {
 function review(overrides: Partial<AgentReview> = {}): AgentReview {
   return {
     reviewSessionId: "session-1",
-    prUrl: "acme/widget#7",
+    subject: "acme/widget#7",
     localRepoPath: "/clones/widget",
     mcp,
     folder: () => "/tmp/diffprism-agent/session-1",
@@ -267,7 +267,7 @@ describe("what an agent is doing", () => {
   it("reads Cursor's tool calls, when they start", () => {
     const call = (subtype: string, tool_call: Record<string, unknown>) => ({ type: "tool_call", subtype, tool_call });
     const mcp = { mcpToolCall: { args: { name: "diffprism-get_pr_context", toolName: "get_pr_context", args: { session_id: "s" } } } };
-    expect(CURSOR.describe(call("started", mcp), r)).toBe("Reading the pull request");
+    expect(CURSOR.describe(call("started", mcp), r)).toBe("Reading what's under review");
     expect(CURSOR.describe(call("completed", mcp), r)).toBeNull();
     expect(CURSOR.describe(call("started", { readToolCall: { args: { path: "/tmp/elsewhere/notes.md" } } }), r)).toBe("Reading notes.md");
     expect(CURSOR.describe(call("started", { globToolCall: { args: { globPattern: "**/*.ts" } } }), r)).toBe("Looking for **/*.ts");

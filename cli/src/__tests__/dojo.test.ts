@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { AsyncQueue } from "@diffprism/core";
 import type { DojoRequest, DojoRun, DojoSeat, GlobalServerInfo, ReviewAgentName } from "@diffprism/core";
-import { runDojo, dojoRunner, parseFindings, parseVotes, lastJsonBlock } from "../commands/dojo.js";
+import { runDojo, dojoRunner, parseFindings, parseVotes, lastJsonBlock, describeSubject, dojoInstructions } from "../commands/dojo.js";
 import type { DojoDeps } from "../commands/dojo.js";
 import type { AgentKind, AgentInvocation, AgentProcess } from "../commands/pr-agent.js";
 
@@ -45,7 +45,7 @@ async function finish(run: DojoRun): Promise<{ seats: DojoSeat[]; result: Awaite
 
 const request: DojoRequest = {
   sessionId: "s1",
-  prUrl: "https://github.com/acme/widget/pull/7",
+  subject: { kind: "pr", url: "https://github.com/acme/widget/pull/7" },
   localRepoPath: null,
   server: { httpPort: 1, wsPort: 2, pid: 3, startedAt: 0 } as GlobalServerInfo,
   agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
@@ -108,6 +108,33 @@ describe("runDojo (#231)", () => {
     expect(vi.mocked(d.kinds.cursor.turn).mock.calls[0][0].model).toBe("gpt-5");
     // Cursor had nobody else's findings to vote on.
     expect(vi.mocked(d.kinds.cursor.turn).mock.calls).toHaveLength(1);
+  });
+
+  it("reviews a commit-gate review's staged changes, in the repo they're in (#238)", async () => {
+    const d = deps({ claude: { review: { findings: [] } } });
+    const local: DojoRequest = {
+      ...request,
+      subject: { kind: "local", repoPath: "/work/app", diffRef: "staged" },
+      localRepoPath: "/work/app",
+      agents: [{ name: "claude" }],
+    };
+    (await finish(runDojo(local, d))).result;
+
+    const [review, , turn] = vi.mocked(d.kinds.claude.turn).mock.calls[0];
+    expect(review.localRepoPath).toBe("/work/app");
+    expect(review.subject).toBe("the staged changes — what the next commit will contain — in /work/app");
+    expect(turn.instructions).toContain("review dojo on the staged changes");
+    // The files on disk aren't the commit.
+    expect(turn.instructions).toContain("Judge the staged version of each file");
+    expect(turn.prompt).toContain("review this change on your own");
+  });
+
+  it("names any other local diff by its ref, and doesn't warn off the working tree for it", () => {
+    expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "working-copy" })).toBe("the uncommitted changes in /work/app");
+    expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "main..feature" })).toBe("the diff main..feature in /work/app");
+    expect(describeSubject({ kind: "pr", url: "https://github.com/acme/widget/pull/7" })).toBe("https://github.com/acme/widget/pull/7");
+    const instructions = dojoInstructions({ sessionId: "s1", subject: { kind: "local", repoPath: "/work/app", diffRef: "working-copy" } }, "Cursor");
+    expect(instructions).not.toContain("staged version");
   });
 
   it("drops an agent that can't review, says why, and goes on without it", async () => {

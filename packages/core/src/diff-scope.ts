@@ -30,3 +30,23 @@ export const COMMIT_GATE_DIFF_REF = "staged";
 /** The one description of the scopes, used wherever a `diff_ref` is accepted. */
 export const DIFF_REF_DESCRIPTION =
   'Which changes to review. "working-copy" (the default): everything not yet committed, staged and unstaged shown as separate groups. "staged": only what the next commit would contain. "unstaged": only edits not yet staged. Or a ref range such as "HEAD~3..HEAD" or "main..feature".';
+
+/**
+ * Where the new side of a diff lives: the version of each file someone
+ * reviewing that diff is judging. Reading any other version misjudges the
+ * change. For a staged review, HEAD is the code from before it, and the
+ * working tree may hold edits the commit leaves out.
+ *
+ * - `index`: what is staged ("staged").
+ * - `commit`: a revision, the right end of a range such as "main..feature".
+ * - `working-tree`: the files on disk ("working-copy", "unstaged", or a single
+ *   ref, which git diffs against the working tree).
+ */
+export type DiffNewSide = { kind: "index" } | { kind: "commit"; ref: string } | { kind: "working-tree" };
+
+export function diffNewSide(diffRef: string): DiffNewSide {
+  if (diffRef === COMMIT_GATE_DIFF_REF) return { kind: "index" };
+  const range = diffRef.match(/^.*?\.\.\.?(.*)$/);
+  if (range) return { kind: "commit", ref: range[1] || "HEAD" };
+  return { kind: "working-tree" };
+}

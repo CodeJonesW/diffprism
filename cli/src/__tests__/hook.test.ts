@@ -438,6 +438,35 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     expect(last).toContain("run git commit again");
   });
 
+  it("gives a reply on an agent's finding together with the finding (#238)", async () => {
+    const finding = {
+      id: "f1", sessionId: "s1", file: "src/cache.ts", line: 12, side: "new" as const,
+      body: "[major] Cache never expires\nRaised by Claude Code in the review dojo. Every agent agrees.\n\nEntries are written with no TTL.",
+      type: "finding" as const, confidence: 1, category: "other" as const, source: { agent: "Review dojo", tool: "dojo" },
+      createdAt: 1, author: "agent" as const,
+      replies: [{ id: "r1", author: "reviewer" as const, body: "Please fix this.", createdAt: 2 }],
+    };
+    vi.mocked(submitReviewToServer).mockRejectedValue(new ReviewerAskedError("s1", [finding]));
+
+    expect(await run()).toBe(1);
+    const output = errors.join("\n");
+    expect(output).toContain("    Review dojo:\n      [major] Cache never expires");
+    expect(output).toContain("      Entries are written with no TTL.");
+    expect(output).toContain("    Reviewer:\n      Please fix this.");
+    expect(output.indexOf("Cache never expires")).toBeLessThan(output.indexOf("Please fix this."));
+  });
+
+  it("prints a question nobody has replied to as it is", async () => {
+    const question = {
+      id: "q1", sessionId: "s1", file: "src/a.ts", line: 3, side: "new" as const, body: "Why a Map?", type: "question" as const,
+      confidence: 1, category: "other" as const, source: { agent: "reviewer" }, createdAt: 1, author: "reviewer" as const,
+    };
+    vi.mocked(submitReviewToServer).mockRejectedValue(new ReviewerAskedError("s1", [question]));
+
+    expect(await run()).toBe(1);
+    expect(errors.join("\n")).toContain("  src/a.ts:3\n    Why a Map?");
+  });
+
   it("repeats the advice if it is interrupted mid-review", async () => {
     vi.mocked(submitReviewToServer).mockImplementation(() => new Promise(() => {}));
 

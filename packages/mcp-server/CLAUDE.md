@@ -90,7 +90,7 @@ There is no module-level "last session" and no "most recent session across all r
 
 #### `get_file_context`
 - **Params:** `file` (required), `ref`, targeting
-- **Behavior:** Full file content from the local clone via `git show`, at the PR's head branch by default, falling back to the working tree.
+- **Behavior:** Full file content from the local clone, in the version the review's diff shows (#238): the PR's head branch, the index (`git show :<file>`) for a `staged` review such as the commit gate's, the working tree for `working-copy`/`unstaged`, the right end of a ref range. The choice is core's `diffNewSide()`, fed the session's `diffRef` from `/payload`. An explicit `ref` wins. A ref that `git show` can't read falls back to the working tree, and `ref` in the result then says `working tree`.
 
 ## Server Interaction
 

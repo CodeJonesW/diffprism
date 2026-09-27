@@ -82,15 +82,17 @@ Reviews opened by the [commit gate](#commit-gate) don't start an agent: the agen
 
 ### Review dojo
 
-Have several agents review a PR and argue it out. Open the **Review dojo** panel on the right of a PR review, tick the agents you want (the ones installed on your machine — Claude Code and Cursor today), and start it:
+Have several agents review a change and argue it out. Open the **Review dojo** panel on the right of any review, a PR or a local one like the [commit gate](#commit-gate)'s, tick the agents you want (the ones installed on your machine — Claude Code and Cursor today), and start it:
 
-1. Each agent reviews the PR on its own, read-only, and lists what it would raise.
+1. Each agent reviews the change on its own, read-only, and lists what it would raise.
 2. Each one then votes on the others' findings: agree or disagree, how much it matters, and why.
 3. You get one list, grouped into **agreed**, **disputed**, **not every agent voted** and **one reviewer**, with every agent's vote under each finding. Each finding is also a thread on its line, so you can reply there.
 
 Who agrees with what is counted from the votes, not summarised by a model. An agent that can't start, review or vote drops out with the reason shown, and the rest carry on. Each agent uses the model chosen for it under [Choosing the agent](#choosing-the-agent).
 
-Run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
+On a local review, the findings can go back to the agent that made the change: the one blocked on `git commit`, or on `open_review`. Tick the ones worth acting on (agreed findings start ticked), then either **Ask the agent**, which puts your question on each finding's thread for its next wait to return, or **Add to request for changes**, which makes them inline comments on your Request Changes. Each card says whether the agent has the finding yet, and when it has answered. On a commit-gate review the agents judge the staged version of each file, which is what the commit will contain.
+
+For a PR, run it from inside your local clone of the repo, and the review reads from that clone. It's recognized by matching `git remote -v` against the PR's repo. Your AI can then read full files via `git show`, not just diff hunks. A PR opened from the dashboard's Review PR form has no folder to go by, so it uses the clone the server was started in, if any.
 
 ## MCP Tools
 
@@ -122,7 +124,7 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 | `get_user_focus` | What file/line the user is currently viewing in the browser |
 | `get_pr_context` | High-level PR overview: metadata, briefing, file list, local repo status |
 | `get_file_diff` | Diff hunks for a specific file with triage category |
-| `get_file_context` | Full file content from local repo via `git show` |
+| `get_file_context` | Full file content from the local repo, as the review's diff has it (a PR's head, the staged version, or the working tree) |
 
 In a local review, **Ask agent now** in a line's comment form asks the agent while you're still reviewing: the agent's wait for your decision ends with your question, it answers in the thread, and goes back to waiting.
 
