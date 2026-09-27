@@ -2315,6 +2315,46 @@ describe("watcher cost", () => {
     expect((update?.payload as { rawDiff?: string } | undefined)?.rawDiff).toBe(rawDiff);
   });
 
+  it("removes a decided review once its change has landed, instead of showing it empty", async () => {
+    // The commit gate: the reviewer approves, the commit goes in, and the
+    // staged diff is empty. The session used to sit in the list for minutes,
+    // showing "0 files changed" with the decision buttons.
+    handle = await startGlobalServer({ silent: true, pollInterval: 20 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openWatched(baseUrl, "/gate");
+    const { ws, messages } = await connect(handle.wsPort);
+    ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+    await sleep(50);
+
+    await fetch(`${baseUrl}/api/reviews/${sessionId}/result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: "approved", comments: [] }),
+    });
+    rawDiff = ""; // committed: nothing staged any more
+    await sleep(200);
+    ws.close();
+
+    expect((await fetch(`${baseUrl}/api/reviews/${sessionId}`)).status).toBe(404);
+    expect(messages.some((m) => m.type === "session:removed" && (m.payload as { sessionId: string }).sessionId === sessionId)).toBe(true);
+    expect(messages.some((m) => m.type === "diff:update" && (m.payload as { rawDiff: string }).rawDiff === "")).toBe(false);
+  });
+
+  it("keeps an undecided review whose diff empties: the reviewer hasn't finished with it", async () => {
+    handle = await startGlobalServer({ silent: true, pollInterval: 20 });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const sessionId = await openWatched(baseUrl, "/undecided");
+    const { ws } = await connect(handle.wsPort);
+    ws.send(JSON.stringify({ type: "session:select", payload: { sessionId } }));
+    await sleep(50);
+
+    rawDiff = "";
+    await sleep(200);
+    ws.close();
+
+    expect((await fetch(`${baseUrl}/api/reviews/${sessionId}`)).status).toBe(200);
+  });
+
   describe("idle expiry", () => {
     const quick = { silent: true, idleSessionTtl: 150, cleanupInterval: 50 } as const;
 
