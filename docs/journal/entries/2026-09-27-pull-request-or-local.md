@@ -2,6 +2,7 @@
 title: Every review says whether it's a pull request or a local change, and who gets your decision
 date: 2026-09-27
 kind: feature
+pr: 280
 ---
 
 ## What changed
