@@ -5,6 +5,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 ## Key Files
 
 - `src/index.ts` — `createMcpServer()` builds an McpServer with its 14 tools registered; `startMcpServer()` connects it to StdioServerTransport. `resolveTarget()` decides which session a tool acts on.
+- `src/file-context.ts` — `readFileContext()`: how `get_file_context` reads a file, treating the agent's `file` and `ref` as untrusted (#263).
 
 ## Session targeting
 
@@ -91,7 +92,14 @@ There is no module-level "last session" and no "most recent session across all r
 
 #### `get_file_context`
 - **Params:** `file` (required), `ref`, targeting
-- **Behavior:** Full file content, in the version the review's diff shows. A PR review reads DiffPrism's checkout of the PR at its `headSha` (#240); a file missing there is an error, never a copy from elsewhere. A local review reads the new side of its diff (#238): the index (`git show :<file>`) for a `staged` review such as the commit gate's, the working tree for `working-copy`/`unstaged`, the right end of a ref range. That choice is core's `diffNewSide()`, fed the session's `diffRef` from `/payload`. An explicit `ref` wins, and a file missing at it is an error, never another version's copy. `file` comes from an agent reading untrusted code, so only a path inside the repo is read: an absolute path, one that climbs out with `..`, or a working-tree symlink leading outside the repo is refused.
+- **Behavior:** Full file content, in the version the review's diff shows. A PR review reads DiffPrism's checkout of the PR at its `headSha` (#240); a file missing there is an error, never a copy from elsewhere. A local review reads the new side of its diff (#238): the index (`git show :<file>`) for a `staged` review such as the commit gate's, the working tree for `working-copy`/`unstaged`, the right end of a ref range. That choice is core's `diffNewSide()`, fed the session's `diffRef` from `/payload`. An explicit `ref` wins, and a file missing at it is an error, never another version's copy. A local review with no `diffRef` is an error unless `ref` is given, not a guess at HEAD.
+- **Untrusted input (#260, #263):** `file` and `ref` come from an agent reading code under review, so a prompt injection can choose them. `readFileContext()` in `src/file-context.ts`:
+  - `file` must resolve inside the repo, which rules out absolute paths, `..` and Windows drive-relative paths. Every read uses that checked path, and nothing under `.git` is read.
+  - `ref` can't start with `-` or contain `:`, and git always gets `--end-of-options`. Without it, `ref: "--output=…"` made `git show` write a file.
+  - A staged read names the stage (`:0:<path>`): a bare `:<path>` would let a file called `0:b.ts` be read as stage 0 of `b.ts`.
+  - A working-tree read opens the file once. It must be a regular file, inside the repo after resolving symlinks, and at most 10 MB; it reads at most one byte past the limit, so a growing file can't slip through. A missing target and one outside the repo get the same answer, so the error doesn't reveal whether an outside file exists. Two guarantees are Unix-only, because Windows lacks the open flags: no symlink swap between the check and the open, and a pipe open that doesn't wait.
+  - "File not found" is reserved for what git says is missing. A bad revision, a file over the size limit, and other git failures each say what they are.
+  - Gitignored files inside the repo (a `.env`, say) can still be read: the review may be judging an untracked file. See #263.
 
 ## Server Interaction
 
