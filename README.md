@@ -90,7 +90,7 @@ Have several agents review a change and argue it out. Open the **Review dojo** p
 
 Who agrees with what is counted from the votes, not summarised by a model. An agent that can't start, review or vote drops out with the reason shown, and the rest carry on. Each agent uses the model chosen for it under [Choosing the agent](#choosing-the-agent).
 
-On a local review, the findings can go back to the agent that made the change: the one blocked on `git commit`, or on `open_review`. Tick the ones worth acting on (agreed findings start ticked), then either **Ask the agent**, which puts your question on each finding's thread for its next wait to return, or **Add to request for changes**, which makes them inline comments on your Request Changes. Each card says whether the agent has the finding yet, and when it has answered. On a commit-gate review the agents judge the staged version of each file, which is what the commit will contain.
+On a local review, the findings can go back to the agent that made the change: the one blocked on `git commit`, or on `open_review`. Tick the ones worth acting on (agreed findings start ticked), then **Send to the agent to fix**. Each goes to its finding's thread, and the agent's next wait hands them over. The agent fixes each one without committing and marks it fixed, or replies with why not. Each card follows its finding: sent, picked up, **Fixed by the agent** (with what it changed) or answered. **Dismiss** a finding you're done with. Request Changes at the bottom is for your own summary and comments; findings don't go into it, because a request for changes ends the round and can't be followed finding by finding. On a commit-gate review the agents judge the staged version of each file, which is what the commit will contain.
 
 A PR review runs from any folder. DiffPrism fetches the PR's head commit, and its base, into a copy of the repo of its own under `~/.diffprism/repos/`, and checks the head out in a folder for that PR, using the same GitHub token it reads the PR with. The review, the agent and `get_file_context` all read from there, so they see exactly the PR's code, whatever branch your own clone is on. Your clone isn't touched. Opening the PR again moves its checkout to the PR's latest commit. If the PR can't be fetched, the review doesn't open, and says why.
 
@@ -169,7 +169,7 @@ diffprism hook install              # Add the gate to this repo's pre-commit hoo
 diffprism hook uninstall            # Remove it
 ```
 
-If you ask the agent something while the commit waits, the commit stops and prints each question with the command that answers it (`diffprism reply --session <id> <annotation-id> "…"`). The agent answers, commits again, and the review picks up where it left off — no MCP server needed.
+If you ask the agent something while the commit waits, the commit stops and prints each question with the command that answers it (`diffprism reply --session <id> <annotation-id> "…"`). The agent answers, commits again, and the review picks up where it left off — no MCP server needed. If you asked for a fix, the agent makes it and stages it without committing, since the commit is what your review is holding. It then answers with `--fixed`, and the finding shows as **Fixed** in the dashboard, with what it changed. The fix is in the staged diff you're reviewing, and goes into the commit once you approve. Dismiss a finding you're done with from its card in the Review dojo.
 
 It reviews **staged** changes only, where every other entry point defaults to the whole
 working copy: a commit contains exactly the index, so unstaged edits aren't part of what
@@ -230,7 +230,7 @@ diffprism server stop               # Stop the server
 diffprism hook install              # Gate commits on a review
 diffprism hook uninstall            # Remove the gate
 diffprism hook pre-commit           # Run the gate (what the installed hook calls)
-diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent
+diffprism reply --session <id> <annotation-id> "…"  # Answer a reviewer's question, as the agent (--fixed: you fixed it)
 diffprism config get [key]          # Show settings: which agent answers PR reviews, and its model
 diffprism config set <key> <value>  # Change one (agent, claude.model, cursor.model)
 diffprism config unset <key>        # Put one back to its default

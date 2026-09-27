@@ -96,6 +96,12 @@ export interface AnnotationReply {
   agent?: string;
   body: string;
   createdAt: number; // Unix timestamp ms
+  /**
+   * The agent says it fixed what the thread raised, and `body` says how
+   * (#256). During a review the fix is made in place, not committed. Only an
+   * agent's reply can say this.
+   */
+  fixed?: boolean;
 }
 
 /**

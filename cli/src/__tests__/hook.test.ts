@@ -433,8 +433,11 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     expect(output).toContain("src/a.ts:3");
     expect(output).toContain("And why not a Set?");
     // An agent with only a shell can act on this: the exact command, not an MCP tool it may not have (#179).
-    expect(output).toContain('Answer: diffprism reply --session s1 q1 "<your answer>"');
+    expect(output).toContain('Answer:   diffprism reply --session s1 q1 "<your answer>"');
+    // A fix is made in place and staged, then reported as fixed (#256).
+    expect(output).toContain('Fixed it: diffprism reply --session s1 q1 --fixed "<what you changed>"');
     const last = errors.at(-1) ?? "";
+    expect(last).toContain("stage it with git add, without committing");
     expect(last).toContain("run git commit again");
   });
 

@@ -6,7 +6,7 @@ vi.mock("@diffprism/core", async () => {
 });
 
 import { isServerAlive } from "@diffprism/core";
-import { reply, replyCommandFor } from "../commands/reply.js";
+import { fixedCommandFor, reply, replyCommandFor } from "../commands/reply.js";
 
 class Exit extends Error {
   constructor(readonly code: number | undefined) {
@@ -85,5 +85,23 @@ describe("diffprism reply (#179)", () => {
 
   it("prints a command that parses back to the same session and thread", () => {
     expect(replyCommandFor("s1", "q1")).toBe('diffprism reply --session s1 q1 "<your answer>"');
+    expect(fixedCommandFor("s1", "q1")).toBe('diffprism reply --session s1 q1 --fixed "<what you changed>"');
+  });
+
+  it("with --fixed, says the thread's issue is fixed, and how (#256)", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ replyId: "r1", annotation: { file: "src/cache.ts", line: 12 } }), { status: 200 }),
+    );
+
+    expect(await run("q1", ["Added", "a", "5", "minute", "TTL."], { session: "s1", agent: "claude-code", fixed: true })).toBeUndefined();
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      author: "agent",
+      agent: "claude-code",
+      body: "Added a 5 minute TTL.",
+      fixed: true,
+    });
+    expect(out.join("\n")).toContain("Marked fixed on src/cache.ts:12");
+    expect(out.join("\n")).toContain("Go back to waiting for the decision now");
   });
 });

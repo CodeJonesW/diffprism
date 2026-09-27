@@ -12,7 +12,7 @@ import {
 } from "@diffprism/core";
 import type { Annotation, DiffSide, ReviewComment, ReviewResult } from "@diffprism/core";
 import { getDiff } from "@diffprism/git";
-import { replyCommandFor } from "./reply.js";
+import { fixedCommandFor, replyCommandFor } from "./reply.js";
 
 /**
  * Default size at which a staged change is worth a browser review.
@@ -97,7 +97,7 @@ export async function preCommitHook(flags: HookFlags = {}): Promise<void> {
     if (err instanceof ReviewerAskedError) {
       printQuestions(err.sessionId, err.threads);
       fail(
-        "Commit blocked: the reviewer asked you something before deciding. Answer each question with the command under it — change the code too if that's what they asked for — then run git commit again straight away to keep waiting. The review stays open, the reviewer may ask more, and the decision still comes. Don't stop to ask them in the terminal.",
+        "Commit blocked: the reviewer asked you something before deciding. Answer each question with a command under it. If it asks for a fix, make the fix and stage it with git add, without committing — the review shows what's staged, and the fix goes into this commit once it's approved — then say so with the \"Fixed it\" command. Then run git commit again straight away to keep waiting. The review stays open, the reviewer may ask more, and the decision still comes. Don't stop to ask them in the terminal.",
       );
       return;
     }
@@ -173,7 +173,8 @@ export function printQuestions(sessionId: string, threads: Annotation[]): void {
     } else {
       printMessage(null, t.body);
     }
-    console.error(`  Answer: ${replyCommandFor(sessionId, t.id)}`);
+    console.error(`  Answer:   ${replyCommandFor(sessionId, t.id)}`);
+    console.error(`  Fixed it: ${fixedCommandFor(sessionId, t.id)}`);
     console.error("");
   }
 }

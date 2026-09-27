@@ -106,6 +106,7 @@ export function createProgram(): Command {
     .description("Answer a reviewer's question on an open review, as the agent")
     .requiredOption("--session <id>", "The review the question is on")
     .option("--agent <name>", "Name shown on the reply", "agent")
+    .option("--fixed", "Say you fixed what the thread raised, and describe the change (make and stage the fix first; don't commit)")
     .action((annotationId: string, message: string[], flags) => reply(annotationId, message, flags));
 
   program

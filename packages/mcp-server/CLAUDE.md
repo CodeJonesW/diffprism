@@ -67,7 +67,8 @@ There is no module-level "last session" and no "most recent session across all r
 - **Behavior:** Every thread on the review, each with `awaitingReply` (from core's `awaitingAgent`). `awaiting_reply: true` keeps only those.
 
 #### `reply`
-- **Params:** targeting, `annotation_id`, `body`, `source_agent`, `then_wait` (default `true`)
+- **Params:** targeting, `annotation_id`, `body`, `source_agent`, `fixed`, `then_wait` (default `true`)
+- **`fixed` (#256):** the agent says it fixed what the thread raised, and `body` says how. The reply carries `fixed: true` (only an agent's can), and the dashboard shows the finding as fixed. During a review the fix is made in place, never committed: the review is what the commit waits on.
 - **Behavior:** POSTs `{ author: "agent" }` to `/api/reviews/:id/annotations/:annotationId/replies`. The server broadcasts `annotation:updated`. Then, unless `then_wait: false`, goes back to listening with core's `waitForDecision` and returns what happened next as `next`: `{ status: "reviewer_asked", review, threads }`, `{ status: "decided", result }`, or `{ status: "timed_out" }`.
 - **Why it waits (#193):** posting an answer used to end the call, and with it the conversation — the reviewer's next question reached nobody. Answering and listening are now one act. `waitForDecision` covers both kinds of review: it returns as soon as another thread is waiting, so a batch of questions still answers one at a time, and a local review's decision isn't missed while listening.
 

@@ -2539,6 +2539,23 @@ describe("threads", () => {
     expect((await post(`/annotations/${annotationId}/replies`, { author: "someone", body: "hi" })).status).toBe(400);
   });
 
+  it("keeps an agent's word that it fixed the thread, and refuses it from anyone else (#256)", async () => {
+    const { post } = await setup();
+    const opened = await post("/annotations", { file: "a.ts", line: 1, body: "x", type: "finding", source: { agent: "bot" } });
+    const { annotationId } = (await opened.json()) as { annotationId: string };
+
+    const fixed = await post(`/annotations/${annotationId}/replies`, { author: "agent", body: "Added a TTL", fixed: true });
+    expect(fixed.status).toBe(200);
+    const { annotation } = (await fixed.json()) as { annotation: Annotation };
+    expect(annotation.replies?.at(-1)).toMatchObject({ author: "agent", body: "Added a TTL", fixed: true });
+
+    expect((await post(`/annotations/${annotationId}/replies`, { author: "reviewer", body: "done", fixed: true })).status).toBe(400);
+    expect((await post(`/annotations/${annotationId}/replies`, { author: "agent", body: "done", fixed: "yes" })).status).toBe(400);
+    // A plain reply says nothing about a fix.
+    const plain = await post(`/annotations/${annotationId}/replies`, { author: "agent", body: "because" });
+    expect(((await plain.json()) as { annotation: Annotation }).annotation.replies?.at(-1)).not.toHaveProperty("fixed");
+  });
+
   it("404s a reply to a thread that doesn't exist", async () => {
     const { post } = await setup();
     expect((await post("/annotations/nope/replies", { author: "agent", body: "hi" })).status).toBe(404);
