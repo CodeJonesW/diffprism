@@ -31,6 +31,7 @@ import type {
 import { getDiff } from "@diffprism/git";
 import { analyze } from "@diffprism/analysis";
 import { isPrRef } from "@diffprism/github";
+import { readFileContext } from "./file-context.js";
 
 /**
  * How long open_review waits for a decision unless told otherwise.
@@ -894,80 +895,29 @@ export function createMcpServer(): McpServer {
         // the new side of a local review's diff (#238). A staged review read
         // at HEAD would show the code from before the change.
         const pr = data.payload.metadata.githubPr;
-        const side: DiffNewSide = ref
+        const side: DiffNewSide | null = ref
           ? { kind: "commit", ref }
           : pr
             ? { kind: "commit", ref: pr.headSha }
             : data.diffRef
               ? diffNewSide(data.diffRef)
-              : { kind: "commit", ref: "HEAD" };
-
-        const { execFileSync } = await import("node:child_process");
-        const fs = await import("node:fs");
-        const path = await import("node:path");
-
-        // `file` comes from an agent reading code under review, so it's
-        // untrusted: only a path inside the repo is read, never one that
-        // climbs out of it or is absolute.
-        const inRepo = path.normalize(file);
-        if (path.isAbsolute(file) || inRepo === ".." || inRepo.startsWith(`..${path.sep}`)) {
-          return toolError(`"${file}" isn't a path inside the repository.`);
+              : null;
+        if (!side) {
+          // Guessing HEAD here would miss every uncommitted file in the diff (#263).
+          return toolError(
+            "This review doesn't say which diff it shows, so there's no telling which version of the file to read. Pass `ref` to read the file at a revision.",
+          );
         }
 
-        const gitShow = (spec: string) =>
-          execFileSync("git", ["show", spec], {
-            cwd: data.projectPath,
-            encoding: "utf-8",
-            stdio: ["pipe", "pipe", "pipe"],
-            maxBuffer: 10 * 1024 * 1024,
-          });
-
-        let content: string;
-        let readFrom: string;
-        if (side.kind === "working-tree") {
-          readFrom = "working tree";
-          let real: string;
-          try {
-            real = fs.realpathSync(path.join(data.projectPath, inRepo));
-          } catch {
-            return toolError(`File not found in the working tree: "${file}"`);
-          }
-          // A symlink in the repo can still point outside it.
-          const fromRoot = path.relative(fs.realpathSync(data.projectPath), real);
-          if (fromRoot === ".." || fromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(fromRoot)) {
-            return toolError(`"${file}" leads outside the repository.`);
-          }
-          try {
-            content = fs.readFileSync(real, "utf-8");
-          } catch {
-            return toolError(`File not found in the working tree: "${file}"`);
-          }
-        } else if (side.kind === "index") {
-          readFrom = "staged";
-          try {
-            content = gitShow(`:${file}`);
-          } catch {
-            return toolError(`File not staged: "${file}" (tried git show :${file})`);
-          }
-        } else {
-          readFrom = side.ref;
-          try {
-            content = gitShow(`${side.ref}:${file}`);
-          } catch (err) {
-            // A file missing at the ref asked for is missing there. Any other
-            // copy of it, such as the working tree's, would be the wrong code
-            // (#240).
-            const stderr = (err as { stderr?: string }).stderr?.trim();
-            return toolError(`File not found: "${file}" at ${side.ref}${stderr ? ` (${stderr})` : ""}`);
-          }
-        }
+        const read = readFileContext(data.projectPath, file, side);
+        if (!read.ok) return toolError(read.error);
 
         return jsonResult({
           file,
-          ref: readFrom,
+          ref: read.readFrom,
           projectPath: data.projectPath,
-          content,
-          lineCount: content.split("\n").length,
+          content: read.content,
+          lineCount: read.content.split("\n").length,
         });
       }),
   );
