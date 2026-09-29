@@ -386,7 +386,7 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     // so the advice has to be on screen before the wait — not only after it.
     let adviceBeforeWait = false;
     vi.mocked(submitReviewToServer).mockImplementation(async () => {
-      adviceBeforeWait = errors.some((line) => line.includes("run git commit again"));
+      adviceBeforeWait = errors.some((line) => line.includes("Run git commit again straight away"));
       return { result: { decision: "approved", comments: [] }, sessionId: "s1" };
     });
 
@@ -416,7 +416,10 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     expect(await run()).toBe(1);
     const last = errors.at(-1) ?? "";
     expect(last).toContain("no decision after 600s");
-    expect(last).toContain("run git commit again");
+    // Wait again now, not "once the reviewer decides": an agent can't know when that is,
+    // and told to wait for it, it stopped listening (#282).
+    expect(last).toContain("Run git commit again straight away to keep waiting");
+    expect(last).not.toContain("once the reviewer decides");
   });
 
   it("blocks with the reviewer's questions and how to answer them (#177)", async () => {
@@ -486,7 +489,7 @@ describe("preCommitHook while waiting for a decision (#161)", () => {
     void pending;
 
     expect(code).toBe(1);
-    expect(errors.some((line) => line.includes("Interrupted (SIGTERM)") && line.includes("run git commit again"))).toBe(true);
+    expect(errors.some((line) => line.includes("Interrupted (SIGTERM)") && line.includes("Run git commit again straight away"))).toBe(true);
   });
 
   it("stops listening for interrupts once a decision arrives", async () => {

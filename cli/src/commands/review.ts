@@ -1,4 +1,4 @@
-import { ensureServer, submitReviewToServer, ReviewerAskedError, DEFAULT_DIFF_REF, recordError, REPORT_HINT } from "@diffprism/core";
+import { ensureServer, submitReviewToServer, ReviewerAskedError, ReviewTimeoutError, DEFAULT_DIFF_REF, recordError, REPORT_HINT } from "@diffprism/core";
 import type { ReviewResult } from "@diffprism/core";
 import { printQuestions } from "./hook.js";
 import { isPrRef, parsePrRef } from "@diffprism/github";
@@ -76,6 +76,14 @@ async function reviewLocalFlow(
         "The reviewer asked something before deciding. Answer each question with a command under it. If it asks for a fix, make it without committing and say so with the \"Fixed it\" command — the review shows the change as the files change. Then run diffprism review again straight away to keep waiting — the review stays open, and the reviewer may ask more. Don't stop to ask them in the terminal.",
       );
       process.exit(1);
+    }
+    // Waiting again is the next step, not stopping (#282): see the commit gate's RETRY_ADVICE.
+    if (err instanceof ReviewTimeoutError) {
+      console.error(
+        `No decision after ${Math.round(err.waitedMs / 1000)}s. The review stays open in DiffPrism, and the reviewer may still be reading. Run diffprism review again straight away to keep waiting: it returns their decision, or what they send you. Don't stop to ask them in the terminal.`,
+      );
+      process.exit(1);
+      return;
     }
     throw err;
   }

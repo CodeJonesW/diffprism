@@ -24,12 +24,16 @@ import { fixedCommandFor, replyCommandFor } from "./reply.js";
 const DEFAULT_MIN_LINES = 120;
 
 /**
- * What to do when the wait ends without a decision. Safe advice because the
- * server keeps a verdict for as long as the staged diff it answered is
- * unchanged — re-running the commit picks it up instead of asking again.
+ * What to do when the wait ends without a decision: wait again, straight
+ * away. It used to say to run the commit again "once the reviewer decides" —
+ * which an agent can't know, so it stopped and asked, and from then on
+ * nothing was listening: findings the reviewer sent, with a dojo easily
+ * outlasting one wait, reached nobody (#282). Safe advice because the server
+ * keeps a verdict for as long as the staged diff it answered is unchanged —
+ * re-running the commit picks it up instead of asking again.
  */
 const RETRY_ADVICE =
-  "The review stays open in DiffPrism — once the reviewer decides, run git commit again to pick up the decision. Don't open another review or change the staged files meanwhile.";
+  "The review stays open in DiffPrism, and the reviewer may still be reading — a review dojo can take several minutes. Run git commit again straight away to keep waiting: it returns their decision, or what they send you. Don't stop to ask them in the terminal, and don't open another review or change the staged files meanwhile.";
 
 const MARKER_START = "# >>> diffprism >>>";
 const MARKER_END = "# <<< diffprism <<<";
