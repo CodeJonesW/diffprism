@@ -65,6 +65,7 @@ function review(overrides: Partial<AgentReview> = {}): AgentReview {
     localRepoPath: "/clones/widget",
     mcp,
     folder: () => "/tmp/diffprism-agent/session-1",
+    canEdit: false,
     ...overrides,
   };
 }
@@ -376,7 +377,7 @@ describe("listenWithAgent", () => {
   }
 
   const listen = (run: AgentRunner, kind: AgentKind = CLAUDE) =>
-    listenWithAgent({ serverInfo, kind, review: review(), conversation, run });
+    listenWithAgent({ serverInfo, kind, review: review(), conversation, run, instructions: agentSystemPrompt(review(), kind.label) });
 
   it("returns the decision without running the agent when nobody asks anything", async () => {
     mockWait.mockResolvedValueOnce(approved);

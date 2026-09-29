@@ -455,6 +455,23 @@ export interface SessionSummary {
   caller?: ReviewCaller;
   /** When the reviewer last decided on it (ms since epoch); kept into the next round. */
   decidedAt?: number;
+  /** The agent the reviewer started from the dashboard to fix what they sent (#279), if they did. */
+  fixer?: ReviewFixer;
+}
+
+/**
+ * An agent started from the dashboard to fix a local review's findings when
+ * nothing was waiting to take them (#279). It waits on the review like any
+ * caller, fixes each finding it's handed without committing, and stops when
+ * the reviewer decides.
+ */
+export interface ReviewFixer {
+  /** How it signs its replies, e.g. "Claude Code". */
+  label: string;
+  /** `running` until the reviewer decides (`finished`), or it can't go on (`failed`). */
+  state: "running" | "finished" | "failed";
+  /** Why it failed. */
+  error?: string;
 }
 
 /**
@@ -506,6 +523,12 @@ export interface GlobalServerOptions {
    * Claude Code. Without one, PR reviews get no agent.
    */
   prAgent?: PrAgentStarter;
+  /**
+   * Starts an agent to fix a local review's findings when nothing is waiting
+   * to take them (#279). The CLI supplies it. Without one, the dashboard
+   * can't start a fixer.
+   */
+  fixAgent?: FixAgentStarter;
   /**
    * Runs review dojos: several agents review a PR and vote on each other's
    * findings (#231). The CLI supplies it. Without one, a PR review has no dojo.
@@ -567,6 +590,39 @@ export interface PrAgentHandle {
  * does.
  */
 export type PrAgentStarter = (request: PrAgentRequest) => Promise<PrAgentHandle>;
+
+/** What an agent needs to fix a local review's findings (#279). */
+export interface FixAgentRequest {
+  sessionId: string;
+  /** The repository the review is of; the agent edits files here. */
+  repoRoot: string;
+  /**
+   * What the review shows: "staged", "unstaged" or "working-copy". On a
+   * staged review what the agent changes is staged, so the review shows it.
+   */
+  diffRef: FixableDiffRef;
+  server: GlobalServerInfo;
+  agent: ReviewAgentChoice;
+}
+
+/** The reviews a fix to the files shows up in: those of uncommitted changes. */
+export type FixableDiffRef = "staged" | "unstaged" | "working-copy";
+
+/** How a fixer ended: the reviewer decided, or it couldn't go on and why. */
+export type FixAgentOutcome = { ok: true } | { ok: false; error: string };
+
+/** A fixer that has started. */
+export interface FixAgentHandle {
+  label: string;
+  /** Settles when it stops. */
+  done: Promise<FixAgentOutcome>;
+}
+
+/**
+ * Starts an agent that fixes what a local review sent it (#279). Rejects with
+ * the reason when none can start — not installed, not logged in.
+ */
+export type FixAgentStarter = (request: FixAgentRequest) => Promise<FixAgentHandle>;
 
 export interface GlobalServerHandle {
   httpPort: number;

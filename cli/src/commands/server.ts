@@ -5,6 +5,7 @@ import os from "node:os";
 import { startGlobalServer, readServerFile, isServerAlive, getBuildInfo } from "@diffprism/core";
 import { setup, isGlobalSetupDone } from "./setup.js";
 import { prAgentStarter } from "./pr-agent.js";
+import { fixAgentStarter } from "./fix-agent.js";
 import { dojoRunner } from "./dojo.js";
 import { agentModelLister } from "./agent-models.js";
 
@@ -61,6 +62,9 @@ export async function server(flags: ServerFlags): Promise<void> {
       // Every PR review gets an agent answering its comments, whichever way
       // it was opened (#224).
       prAgent: prAgentStarter(),
+      // An agent the reviewer starts to fix a local review's findings when
+      // nothing is waiting to take them (#279).
+      fixAgent: fixAgentStarter(),
       // Several agents review a PR together and vote on each other's findings (#231).
       dojo: dojoRunner(),
       agentModels: agentModelLister(),

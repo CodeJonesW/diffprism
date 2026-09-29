@@ -16,7 +16,16 @@ describe("reviewKind", () => {
       kind: "pr",
       label: "Pull request #239",
       destination: "Your decision goes to GitHub, as a review on CodeJonesW/diffprism#239.",
+      fixable: false,
     });
+  });
+
+  it("can have an agent fix its findings only when it's of uncommitted changes (#279)", () => {
+    expect(reviewKind({ diffRef: "staged" }).fixable).toBe(true);
+    expect(reviewKind({ diffRef: "unstaged" }).fixable).toBe(true);
+    expect(reviewKind({ diffRef: "working-copy" }).fixable).toBe(true);
+    expect(reviewKind({ diffRef: "main..feature" }).fixable).toBe(false);
+    expect(reviewKind({ pr: "a/b#1", diffRef: "staged" }).fixable).toBe(false);
   });
 
   it("names a local review by what it reviews and where it came from", () => {

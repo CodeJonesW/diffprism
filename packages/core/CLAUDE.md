@@ -32,6 +32,12 @@ Every session with a diff ref runs `git diff` on a timer, so watchers are budget
 - **Unviewed:** `unviewedPollInterval` (30s), doubling for each quiet poll up to `unviewedPollMaxInterval` (5 min), back to 30s on a change. The new-changes signal still fires, with bounded latency.
 - **Instant paths don't poll.** A hook or agent opening a review updates the session directly, and `attachViewer()` wakes a backed-off watcher so the viewer never sees a stale diff.
 - **Who's waiting (#204):** a caller blocked on the decision says what it is as it polls (`GET /result?caller=commit|review|agent&until=…`, from `waitForDecision`'s `caller` option). The session's summary carries `caller: { kind, waiting, until }`. A watchdog marks it not waiting after `callerGoneMs` (6s) without a poll. Viewing a review only moves it from pending to in review; a decided review stays decided (#269).
+- **Fixer (#279):** `POST /api/reviews/:id/fixer` starts the saved Review agent (through `GlobalServerOptions.fixAgent`) to fix a local review's findings when nothing is waiting to take them. It refuses:
+  - a PR review;
+  - a review of a commit range (only `staged`, `unstaged` and `working-copy` show a fix);
+  - a second fixer, including while one is still starting;
+  - any start while a caller is waiting (it gets the findings itself);
+  - a request from a web page other than the dashboard (the API allows any origin, so a request whose `Origin` isn't the dashboard's gets 403). The session summary's `fixer: { label, state, error? }` says it's `running`, then `finished` when the reviewer decides or `failed` with why. It waits on the review without a `caller`, so what was waiting before stays on record.
 - **Landed:** a decided local review whose diff goes empty is removed at once, by the watcher: the change it judged has landed (the commit the gate let through) or been dropped. Left alone, it showed "0 files changed" with the decision buttons until its 5-minute expiry.
 - **Idle expiry:** a session nobody is viewing, waiting on (a blocked caller polling `/result` counts), or changing for `idleSessionTtl` (24h) is removed, and its watcher stops. Before this, a UI-opened session was only removed by an explicit close and an `in_review` session matched no expiry rule, so both could poll forever.
 

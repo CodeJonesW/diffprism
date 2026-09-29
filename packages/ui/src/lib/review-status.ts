@@ -1,4 +1,4 @@
-import type { Annotation, ReviewCaller, ReviewDecision } from "../types";
+import type { Annotation, ReviewCaller, ReviewDecision, ReviewFixer } from "../types";
 import { awaitingAgent } from "./threads";
 
 // ─── Where a local review stands (#204, #274, #269) ───
@@ -6,6 +6,8 @@ import { awaitingAgent } from "./threads";
 // One line above the decision buttons says who the review is waiting on:
 // the reviewer (a commit is blocked until they decide), the agent (it has
 // findings to fix, so there's nothing to decide yet), or nobody (decided).
+// Findings sent with no agent listening say what stopped and how to get them
+// to one, including starting an agent here (#279).
 // Everything here is read off state the page already has: the session's
 // caller and decision, and the threads.
 
@@ -16,7 +18,20 @@ export interface ReviewStatusLine {
   text: string;
   /** A countdown to show after the text, when something waits until a time. */
   until?: number;
+  /** A button to offer with it: start an agent to fix the findings nothing is listening for (#279). */
+  action?: "start-fixer";
 }
+
+/**
+ * Findings with nothing listening for them (#279): what stopped waiting, and
+ * the step that gets them to an agent again.
+ */
+const NOBODY_LISTENING: Record<ReviewCaller["kind"] | "none", { why: string; ask: string }> = {
+  commit: { why: "the git commit that was waiting on this review stopped", ask: "ask yours to run git commit again" },
+  review: { why: "`diffprism review` stopped waiting", ask: "run diffprism review again" },
+  agent: { why: "the agent that opened this review stopped waiting", ask: "ask it to check the review again" },
+  none: { why: "no agent is listening", ask: "ask the agent that made the change to answer your DiffPrism comments" },
+};
 
 /** What each caller is, in words. */
 const CALLER_NAME: Record<ReviewCaller["kind"], string> = {
@@ -55,8 +70,14 @@ export function reviewStatus(input: {
   /** When the reviewer last decided; fixes before it belong to an earlier round. */
   decidedAt?: number;
   annotations: Annotation[];
+  /** Whether an agent has, or is about to have, what's waiting on one: false once nothing is listening. */
+  listening: boolean;
+  /** The agent the reviewer started to fix what they sent, if they did (#279). */
+  fixer?: ReviewFixer;
+  /** Whether an agent started here could fix this review's findings (#279). */
+  fixable: boolean;
 }): ReviewStatusLine[] {
-  const { caller, decision, decidedAt, annotations } = input;
+  const { caller, decision, decidedAt, annotations, listening, fixer, fixable } = input;
   const lines: ReviewStatusLine[] = [];
 
   // A decision stands until the change comes back as a new round (#269).
@@ -68,9 +89,30 @@ export function reviewStatus(input: {
   // fixed, and questions to be answered alike.
   const outstanding = annotations.filter(awaitingAgent).length;
   const fixed = annotations.filter((t) => fixedByAgent(t, decidedAt)).length;
-  if (outstanding > 0) {
+  const soFar = fixed > 0 ? `, ${fixed} fixed so far` : "";
+  const them = outstanding === 1 ? "it" : "them";
+  // Only when nothing has them: an agent beside a listening one would fix them twice.
+  const restart = outstanding > 0 && fixable && !listening ? ("start-fixer" as const) : undefined;
+  // A failure matters while there's still something it was meant to fix.
+  if (fixer?.state === "failed" && outstanding > 0) {
+    lines.push({ tone: "stale", text: `${fixer.label} stopped fixing: ${fixer.error ?? "it didn't say why."}`, action: restart });
+  }
+  if (outstanding > 0 && fixer?.state === "running") {
+    lines.push({
+      tone: "waiting-on-agent",
+      text: `${fixer.label} is fixing ${outstanding === 1 ? "1 finding" : `${outstanding} findings`}${soFar}. It fixes each without committing and marks it Fixed, or answers. Wait for it, then decide.`,
+    });
+  } else if (outstanding > 0 && !listening) {
+    // Sent, with nothing to take them (#279): say what stopped, and the step
+    // that gets them to an agent. A failed fixer's line already offers it.
+    if (fixer?.state !== "failed") {
+      const { why, ask } = NOBODY_LISTENING[caller?.kind ?? "none"];
+      const waiting = `${outstanding} ${outstanding === 1 ? "is" : "are"} waiting for an agent, but ${why}.`;
+      const step = fixable ? `Start an agent here to fix ${them}, or ${ask}.` : `To get ${them} answered, ${ask}.`;
+      lines.push({ tone: "stale", text: `${waiting} ${step}`, action: restart });
+    }
+  } else if (outstanding > 0) {
     const sent = `${outstanding} ${outstanding === 1 ? "is" : "are"} with the agent`;
-    const soFar = fixed > 0 ? `, ${fixed} fixed so far` : "";
     lines.push({
       tone: "waiting-on-agent",
       text: `${sent}${soFar}. It fixes each finding without committing and marks it Fixed, or answers. No need to request changes for that — wait for it, then decide.`,

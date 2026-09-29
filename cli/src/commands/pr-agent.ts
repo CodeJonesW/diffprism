@@ -45,6 +45,17 @@ export const AGENT_ALLOWED_TOOLS = [
  */
 export const AGENT_DISALLOWED_TOOLS = ["Edit", "Write", "NotebookEdit", "Bash"];
 
+/**
+ * What a fixer may do on top (#279): change files in the repository it runs
+ * in — its working directory — but nothing under .git, where a hook would run
+ * on the next commit. Still no shell, so it can't commit or run a command;
+ * DiffPrism stages what it changes. Its edits are in the review, for the
+ * reviewer to judge like any other.
+ */
+const FIXER_EDIT_TOOLS = ["Edit", "Write", "MultiEdit"];
+export const FIXER_ALLOWED_TOOLS = [...AGENT_ALLOWED_TOOLS, ...FIXER_EDIT_TOOLS.map((tool) => `${tool}(./**)`)];
+export const FIXER_DISALLOWED_TOOLS = ["NotebookEdit", "Bash", ...FIXER_EDIT_TOOLS.map((tool) => `${tool}(./.git/**)`)];
+
 /** How to start an MCP server: a command and its arguments. */
 export interface McpCommand {
   command: string;
@@ -82,6 +93,11 @@ export interface AgentReview {
   mcp: McpCommand;
   /** A folder of the agent's own for this review, created on demand. */
   folder: () => string;
+  /**
+   * Whether it may change files in `localRepoPath`: only a fixer (#279).
+   * Every other agent reads and replies, and nothing more.
+   */
+  canEdit: boolean;
 }
 
 /** A conversation an agent has started about a review. */
@@ -164,6 +180,10 @@ export function describeToolCall(name: string, input: Record<string, unknown>, r
       return file ? `Reading ${shortPath(file, review)}` : "Reading a file";
     case "get_review_comments":
       return "Reading the review's threads";
+    case "Edit":
+    case "MultiEdit":
+    case "Write":
+      return file ? `Editing ${shortPath(file, review)}` : "Editing a file";
     case "Grep":
       return `Searching for “${text("pattern")}”`;
     case "Glob":
@@ -238,9 +258,9 @@ export const CLAUDE: AgentKind = {
         "--permission-mode",
         "default",
         "--allowedTools",
-        AGENT_ALLOWED_TOOLS.join(","),
+        (review.canEdit ? FIXER_ALLOWED_TOOLS : AGENT_ALLOWED_TOOLS).join(","),
         "--disallowedTools",
-        AGENT_DISALLOWED_TOOLS.join(","),
+        (review.canEdit ? FIXER_DISALLOWED_TOOLS : AGENT_DISALLOWED_TOOLS).join(","),
       ],
       stdin: prompt,
     };
@@ -281,6 +301,20 @@ export const CURSOR_PERMISSIONS = {
   },
 };
 
+/**
+ * A fixer's (#279): it may write files in the repository too, but nothing
+ * under .git, and still run nothing. Its workspace is its own folder, so the
+ * repository is named by its path.
+ */
+export function cursorFixerPermissions(repoRoot: string) {
+  return {
+    permissions: {
+      allow: ["Read(**)", `Write(${repoRoot}/**)`, "Mcp(diffprism:*)"],
+      deny: ["Shell(*)", `Write(${repoRoot}/.git/**)`],
+    },
+  };
+}
+
 export const CURSOR: AgentKind = {
   name: "cursor",
   label: "Cursor",
@@ -307,7 +341,8 @@ export const CURSOR: AgentKind = {
       path.join(cwd, ".cursor", "mcp.json"),
       JSON.stringify({ mcpServers: { diffprism: review.mcp } }, null, 2) + "\n",
     );
-    fs.writeFileSync(path.join(cwd, ".cursor", "cli.json"), JSON.stringify(CURSOR_PERMISSIONS, null, 2) + "\n");
+    const permissions = review.canEdit ? cursorFixerPermissions(review.localRepoPath) : CURSOR_PERMISSIONS;
+    fs.writeFileSync(path.join(cwd, ".cursor", "cli.json"), JSON.stringify(permissions, null, 2) + "\n");
     const id = await firstLine("cursor-agent", ["create-chat"], cwd, /^[\w-]{8,}$/);
     return { id, cwd, resumeCommand: `cd ${shellPath(cwd)} && cursor-agent --resume ${id}` };
   },
@@ -523,6 +558,8 @@ export interface ListenOptions {
   kind: AgentKind;
   review: AgentReview;
   conversation: AgentConversation;
+  /** What the agent is for, told on its first turn: answering questions, or fixing findings (#279). */
+  instructions: string;
   run?: AgentRunner;
   /** How long one wait for a decision lasts before waiting again. */
   waitMs?: number;
@@ -576,7 +613,7 @@ export async function listenWithAgent(options: ListenOptions): Promise<ListenOut
     const invocation = kind.turn(review, conversation, {
       first: turns === 0,
       prompt: agentPrompt(threads),
-      instructions: agentSystemPrompt(review, kind.label),
+      instructions: options.instructions,
     });
     const { code, output } = await run(kind.command, invocation, conversation.cwd).done;
     if (code !== 0) {
@@ -596,7 +633,7 @@ export async function listenWithAgent(options: ListenOptions): Promise<ListenOut
  * read tools would otherwise browse whatever folder the server happened to
  * start in. One per review, because Cursor keeps its settings there.
  */
-function agentFolder(reviewSessionId: string): string {
+export function agentFolder(reviewSessionId: string): string {
   const dir = path.join(os.tmpdir(), "diffprism-agent", reviewSessionId);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
@@ -643,6 +680,7 @@ export function prAgentStarter(deps: Partial<PrAgentDeps> = {}): PrAgentStarter 
       model: agent.model,
       mcp,
       folder: () => folder(sessionId),
+      canEdit: false,
     };
     // Starting can fail on its own — Cursor has to be logged in to start a chat.
     let conversation: AgentConversation;
@@ -663,6 +701,7 @@ export function prAgentStarter(deps: Partial<PrAgentDeps> = {}): PrAgentStarter 
       kind,
       review,
       conversation,
+      instructions: agentSystemPrompt(review, kind.label),
       log: (line) => log(`${sessionId}: ${line}`),
     }).then(
       ({ result }) => log(`${sessionId}: review ${result.decision.replace(/_/g, " ")}; agent stopped.`),

@@ -5,7 +5,7 @@ import os from "node:os";
 import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
-import type { PrAgentRequest } from "../types.js";
+import type { FixAgentOutcome, FixAgentStarter, PrAgentRequest } from "../types.js";
 import { DojoStoppedError } from "../dojo.js";
 import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoSeat, DojoState } from "../dojo.js";
 import { AsyncQueue } from "../async-queue.js";
@@ -3002,6 +3002,131 @@ describe("agents' models (#244)", () => {
 
     handle = await startGlobalServer({ silent: true, openBrowser: false });
     expect((await fetch(modelsUrl("cursor"))).status).toBe(404);
+  });
+});
+
+describe("an agent to fix what the reviewer sent (#279)", () => {
+  async function open(fixAgent: FixAgentStarter | undefined, body: Record<string, unknown>) {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, fixAgent });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/repo", ...body }),
+    });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    const start = () => fetch(`${baseUrl}/api/reviews/${sessionId}/fixer`, { method: "POST" });
+    const summary = async () =>
+      ((await (await fetch(`${baseUrl}/api/reviews`)).json()) as { sessions: SessionSummary[] }).sessions.find((s) => s.id === sessionId)!;
+    return { sessionId, start, summary };
+  }
+
+  it("starts the saved agent on the review's ref, says it's running, and then how it ended", async () => {
+    let finish: (outcome: FixAgentOutcome) => void = () => {};
+    const fixAgent = vi.fn<FixAgentStarter>(async () => ({
+      label: "Claude Code",
+      done: new Promise<FixAgentOutcome>((resolve) => (finish = resolve)),
+    }));
+    const { sessionId, start, summary } = await open(fixAgent, { diffRef: "staged" });
+
+    const res = await start();
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ fixer: { label: "Claude Code", state: "running" } });
+    expect(fixAgent).toHaveBeenCalledWith(expect.objectContaining({ sessionId, diffRef: "staged", agent: { name: "claude" } }));
+    expect((await summary()).fixer).toEqual({ label: "Claude Code", state: "running" });
+
+    // A second would fix the same findings twice.
+    const again = await start();
+    expect(again.status).toBe(409);
+    expect(((await again.json()) as { error: string }).error).toBe("Claude Code is already fixing this review's findings.");
+
+    finish({ ok: false, error: "Claude Code finished without replying to 1 thread." });
+    await vi.waitFor(async () =>
+      expect((await summary()).fixer).toEqual({ label: "Claude Code", state: "failed", error: "Claude Code finished without replying to 1 thread." }),
+    );
+  });
+
+  it("refuses a review a fix wouldn't show up in: a pull request, or a commit range", async () => {
+    const fixAgent = vi.fn<FixAgentStarter>();
+    const pr = await open(fixAgent, {
+      payload: makePayload({ metadata: { githubPr: { owner: "acme", repo: "widget", number: 7, title: "t", author: "a", url: "u", baseBranch: "main", headBranch: "f", headSha: "h", baseSha: "b", viewer: null } } }),
+      projectPath: "github:acme/widget#7",
+    });
+    const refused = await pr.start();
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { error: string }).error).toContain("Fixing is for local reviews.");
+    await handle!.stop();
+
+    const range = await open(fixAgent, { diffRef: "HEAD~1..HEAD" });
+    const rangeRes = await range.start();
+    expect(rangeRes.status).toBe(409);
+    expect(((await rangeRes.json()) as { error: string }).error).toContain("This review is of HEAD~1..HEAD.");
+    expect(fixAgent).not.toHaveBeenCalled();
+  });
+
+  it("starts one fixer, however fast the second request comes: starting counts", async () => {
+    let started: (handle: Awaited<ReturnType<FixAgentStarter>>) => void = () => {};
+    const fixAgent = vi.fn<FixAgentStarter>(() => new Promise((resolve) => (started = resolve)));
+    const { start } = await open(fixAgent, { diffRef: "staged" });
+
+    const first = start();
+    await vi.waitFor(() => expect(fixAgent).toHaveBeenCalledTimes(1));
+    const second = await start();
+    expect(second.status).toBe(409);
+    expect(((await second.json()) as { error: string }).error).toBe("An agent is already starting to fix this review's findings.");
+
+    started({ label: "Claude Code", done: new Promise(() => {}) });
+    expect((await first).status).toBe(202);
+    expect(fixAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses while something waiting on the review would get the findings itself", async () => {
+    const fixAgent = vi.fn<FixAgentStarter>();
+    const { sessionId, start } = await open(fixAgent, { diffRef: "staged" });
+    // The commit gate polls, saying what it is.
+    await fetch(`http://localhost:${handle!.httpPort}/api/reviews/${sessionId}/result?caller=commit&until=${Date.now() + 60_000}`);
+
+    const res = await start();
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "A git commit is waiting on this review and gets these findings, so there's no need to start an agent.",
+    );
+    expect(fixAgent).not.toHaveBeenCalled();
+  });
+
+  it("starts one only for the dashboard or a local process, not another web page", async () => {
+    const fixAgent = vi.fn<FixAgentStarter>();
+    const { sessionId } = await open(fixAgent, { diffRef: "staged" });
+    const res = await fetch(`http://localhost:${handle!.httpPort}/api/reviews/${sessionId}/fixer`, {
+      method: "POST",
+      headers: { Origin: "https://evil.example" },
+    });
+    expect(res.status).toBe(403);
+    expect(fixAgent).not.toHaveBeenCalled();
+  });
+
+  it("marks a fixer failed even if its done rejects", async () => {
+    const fixAgent = vi.fn<FixAgentStarter>(async () => ({ label: "Cursor", done: Promise.reject(new Error("crashed")) }));
+    const { start, summary } = await open(fixAgent, { diffRef: "staged" });
+    expect((await start()).status).toBe(202);
+    await vi.waitFor(async () => expect((await summary()).fixer).toEqual({ label: "Cursor", state: "failed", error: "crashed" }));
+  });
+
+  it("says why when the agent can't start, and has none to start without a starter", async () => {
+    const { start, summary } = await open(
+      async () => {
+        throw new Error("Cursor isn't logged in. Run `cursor-agent login` once, then open the review again.");
+      },
+      { diffRef: "working-copy" },
+    );
+    const res = await start();
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "Cursor isn't logged in. Run `cursor-agent login` once, then open the review again." });
+    expect((await summary()).fixer).toBeUndefined();
+    await handle!.stop();
+
+    const bare = await open(undefined, { diffRef: "staged" });
+    expect((await bare.start()).status).toBe(404);
   });
 });
 

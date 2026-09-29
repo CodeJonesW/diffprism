@@ -512,7 +512,8 @@ function SendBar({
 const ASKED_TEXT: Record<Exclude<NonNullable<FindingSent["asked"]>, "fixed">, string> = {
   pending: "Sent to the agent",
   picked_up: "Sent to the agent — it has it",
-  unheard: "Sent — no agent is waiting on this review yet. It gets this the next time one does.",
+  // Where to go from here is in the status under the diff, with a button to start an agent (#279).
+  unheard: "Sent, but no agent is listening, so nothing has it yet. Under the diff: start an agent to fix it, or how to get it to yours.",
   answered: "The agent answered — see the thread",
 };
 
