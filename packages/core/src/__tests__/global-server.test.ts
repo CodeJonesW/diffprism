@@ -3469,6 +3469,27 @@ describe("the review dojo (#231)", () => {
       expect(stop).toHaveBeenCalledWith("Stopped: the review was decided.");
     });
 
+    it("keeps running when the reviewer comments while a commit waits, and when the commit comes back (#282)", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+
+      // The gate waits; the reviewer asks something, which is what ends that wait.
+      await fetch(`${baseUrl}/api/reviews/${sessionId}/result?caller=commit&until=${Date.now() + 60_000}`);
+      await send(baseUrl, `/api/reviews/${sessionId}/annotations`, {
+        file: "src/index.ts", line: 1, type: "question", author: "reviewer", body: "Why?",
+        source: { agent: "reviewer", tool: "dashboard" },
+      });
+      // The agent answers and commits again: the same review reopens.
+      expect(await openLocal(baseUrl)).toBe(sessionId);
+      await settle();
+
+      expect(stop).not.toHaveBeenCalled();
+      expect((await viewerSees(sessionId)).dojo).toMatchObject({ status: "running" });
+    });
+
     it("stops the dojo when the review is closed", async () => {
       const { dojo, stop } = runner();
       handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });

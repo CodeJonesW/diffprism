@@ -15,6 +15,8 @@ vi.mock("@diffprism/core", async () => {
     DEFAULT_DIFF_REF: actual.DEFAULT_DIFF_REF,
     recordError: (...args: unknown[]) => mockRecordError(...args),
     REPORT_HINT: actual.REPORT_HINT,
+    ReviewerAskedError: actual.ReviewerAskedError,
+    ReviewTimeoutError: actual.ReviewTimeoutError,
   };
 });
 
@@ -177,6 +179,18 @@ describe("review command", () => {
       await review(undefined, { staged: true });
 
       expect(console.error).toHaveBeenCalledWith("Error: git not found");
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it("says to wait again straight away when the wait runs out, not to stop (#282)", async () => {
+      const { ReviewTimeoutError } = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
+      mockSubmitReviewToServer.mockRejectedValue(new ReviewTimeoutError("session-1", 600_000));
+
+      await review(undefined, { staged: true });
+
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("No decision after 600s."));
+      expect(console.error).toHaveBeenCalledWith(expect.stringContaining("Run diffprism review again straight away to keep waiting"));
+      expect(mockRecordError).not.toHaveBeenCalled();
       expect(process.exit).toHaveBeenCalledWith(1);
     });
 

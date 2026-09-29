@@ -23,9 +23,11 @@ interface ReviewViewProps {
   isWatchMode?: boolean;
   watchSubmitted?: boolean;
   hasUnreviewedChanges?: boolean;
+  /** False while it's hidden under a form (#281): its keyboard shortcuts stay off. */
+  active?: boolean;
 }
 
-export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges }: ReviewViewProps) {
+export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, hasUnreviewedChanges, active = true }: ReviewViewProps) {
   const { annotations, dismissAnnotation, selectFile, focusAnnotation, diffSet, metadata, reviewId, dojo } = useReviewStore();
   const agentReadAt = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.agentReadAt);
   const isPrReview = useReviewKind().kind === "pr";
@@ -86,7 +88,7 @@ export function ReviewView({ onSubmit, onDismiss, isWatchMode, watchSubmitted, h
             {...threads.splitterProps}
           >
             <Splitter.Pane defaultSize={100 - threadsSize} min={20} className="overflow-hidden">
-              <FileBrowser onSubmit={onSubmit} />
+              <FileBrowser onSubmit={onSubmit} shortcuts={active} />
             </Splitter.Pane>
             <Splitter.Pane defaultSize={threadsSize} min={10} collapsible className="overflow-hidden">
               <AnnotationPanel

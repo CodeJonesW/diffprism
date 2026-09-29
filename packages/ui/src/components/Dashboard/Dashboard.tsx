@@ -79,7 +79,8 @@ function useDirListing(initialPath?: string) {
 }
 
 interface OpenProjectFormProps {
-  onSuccess?: () => void;
+  /** Called with the review it opened, so the dashboard can show it (#281). */
+  onSuccess?: (sessionId: string) => void;
 }
 
 export function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
@@ -124,10 +125,10 @@ export function OpenProjectForm({ onSuccess }: OpenProjectFormProps) {
       });
       const data = await res.json() as { error?: string; sessionId?: string };
 
-      if (!res.ok) {
+      if (!res.ok || !data.sessionId) {
         setError(data.error ?? "Failed to open project");
       } else {
-        onSuccess?.();
+        onSuccess?.(data.sessionId);
       }
     } catch {
       setError("Could not connect to server");
@@ -241,6 +242,18 @@ export function Dashboard({
 }: DashboardProps) {
   const [detailView, setDetailView] = useState<DetailPaneView>("none");
   const sessionsPane = useSavedPane("dashboard-sessions", 0);
+  // Review PR and Open project show over an open review, not only in the
+  // empty state: with a review open they used to do nothing you could see
+  // (#281). The review stays mounted underneath, so nothing in it is lost.
+  const showingForm = detailView !== "none";
+  // Picking a session goes to it. Picking the one already open just closes
+  // the form: selecting it again would re-send it, and a fresh review:init
+  // resets its draft comments and file marks.
+  const selectSession = (sessionId: string) => {
+    setDetailView("none");
+    if (sessionId === activeSessionId && hasDiffLoaded) return;
+    onSelectSession(sessionId);
+  };
 
   return (
     <div className="h-screen flex bg-background">
@@ -273,8 +286,9 @@ export function Dashboard({
         >
           <SessionSidebar
             sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelect={onSelectSession}
+            // While a form shows, no session is the one on screen.
+            activeSessionId={showingForm ? null : activeSessionId}
+            onSelect={selectSession}
             onClose={onCloseSession}
             onOpenProject={() => setDetailView("open-project")}
             onReviewPr={() => setDetailView("review-pr")}
@@ -296,15 +310,19 @@ export function Dashboard({
 
         {/* Detail pane — review or empty state */}
         <Splitter.Pane defaultSize={1} className="min-w-0 overflow-hidden">
-          {hasDiffLoaded ? (
-            <ReviewView
-              onSubmit={onSubmit}
-              onDismiss={onDismiss}
-              isWatchMode={true}
-              watchSubmitted={false}
-              hasUnreviewedChanges={true}
-            />
-          ) : detailView === "open-project" ? (
+          {hasDiffLoaded && (
+            <div className={showingForm ? "hidden" : "h-full"}>
+              <ReviewView
+                active={!showingForm}
+                onSubmit={onSubmit}
+                onDismiss={onDismiss}
+                isWatchMode={true}
+                watchSubmitted={false}
+                hasUnreviewedChanges={true}
+              />
+            </div>
+          )}
+          {detailView === "open-project" ? (
             <div className="flex flex-col items-center justify-center h-full px-8">
               <div className="max-w-sm w-full">
                 <div className="flex items-center gap-2 mb-4">
@@ -312,7 +330,7 @@ export function Dashboard({
                   <h2 className="text-text-primary text-lg font-semibold">Open Project</h2>
                 </div>
                 <div className="bg-surface border border-border rounded-lg p-5">
-                  <OpenProjectForm onSuccess={() => setDetailView("none")} />
+                  <OpenProjectForm onSuccess={selectSession} />
                 </div>
                 <button
                   onClick={() => setDetailView("none")}
@@ -330,13 +348,8 @@ export function Dashboard({
                   <h2 className="text-text-primary text-lg font-semibold">Review PR</h2>
                 </div>
                 <div className="bg-surface border border-border rounded-lg p-5">
-                  <PrInput
-                    onSuccess={(sessionId) => {
-                      setDetailView("none");
-                      // Open the review whether or not the sidebar is showing (#228).
-                      onSelectSession(sessionId);
-                    }}
-                  />
+                  {/* Open the review whether or not the sidebar is showing (#228). */}
+                  <PrInput onSuccess={selectSession} />
                 </div>
                 <button
                   onClick={() => setDetailView("none")}
@@ -346,7 +359,7 @@ export function Dashboard({
                 </button>
               </div>
             </div>
-          ) : (
+          ) : hasDiffLoaded ? null : (
             <EmptyDetailPane
               hasAnySessions={sessions.length > 0}
               onOpenProject={() => setDetailView("open-project")}

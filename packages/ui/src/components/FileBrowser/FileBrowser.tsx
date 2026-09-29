@@ -69,9 +69,15 @@ function dirname(path: string): string {
 
 interface FileBrowserProps {
   onSubmit: (result: ReviewResult) => void;
+  /**
+   * Whether its keyboard shortcuts act. Off while the review is hidden under
+   * a form (#281): keys pressed there would move through, and mark, files
+   * nobody can see.
+   */
+  shortcuts?: boolean;
 }
 
-export function FileBrowser({ onSubmit }: FileBrowserProps) {
+export function FileBrowser({ onSubmit, shortcuts = true }: FileBrowserProps) {
   const { diffSet, selectedFile, selectFile, fileStatuses, cycleFileStatus, toggleHotkeyGuide, comments, navigateHunk, setFileStatus, briefing } =
     useReviewStore();
   // Files that moved since the reviewer last looked (#265), by key.
@@ -170,6 +176,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
   );
 
   useEffect(() => {
+    if (!shortcuts) return;
     function handleKeyDown(e: KeyboardEvent) {
       // Don't capture when user is typing in an input/textarea
       const tag = (e.target as HTMLElement).tagName;
@@ -203,7 +210,7 @@ export function FileBrowser({ onSubmit }: FileBrowserProps) {
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide, navigateHunk]);
+  }, [shortcuts, navigateFiles, selectedFile, cycleFileStatus, toggleHotkeyGuide, navigateHunk]);
 
   // Close menu on click outside
   useEffect(() => {
