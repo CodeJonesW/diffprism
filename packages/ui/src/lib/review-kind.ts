@@ -13,7 +13,16 @@ export interface ReviewKind {
   label: string;
   /** Who gets the decision, in a sentence. */
   destination: string;
+  /**
+   * Whether an agent started here could fix its findings (#279): a local
+   * review of uncommitted changes, where a fix to the files shows up. The
+   * server holds the same rule.
+   */
+  fixable: boolean;
 }
+
+/** The refs a fix to the files shows up in — mirrors the server's. */
+const FIXABLE_DIFF_REFS = ["staged", "unstaged", "working-copy"];
 
 /** A diff ref as a reviewer reads it: "staged", "working copy", or the range itself. */
 export function refLabel(diffRef: string | undefined): string {
@@ -41,6 +50,7 @@ export function reviewKind(session: Pick<SessionSummary, "pr" | "diffRef" | "cal
       kind: "pr",
       label: `Pull request ${number}`,
       destination: `Your decision goes to GitHub, as a review on ${session.pr}.`,
+      fixable: false,
     };
   }
   const origin = session.caller ? ORIGIN[session.caller.kind] : session.source === "manual" ? "opened here" : undefined;
@@ -50,5 +60,6 @@ export function reviewKind(session: Pick<SessionSummary, "pr" | "diffRef" | "cal
     destination: session.caller
       ? LOCAL_DESTINATION[session.caller.kind]
       : "Your decision stays in DiffPrism, for whatever asks for this review. Nothing goes to GitHub.",
+    fixable: FIXABLE_DIFF_REFS.includes(session.diffRef ?? ""),
   };
 }

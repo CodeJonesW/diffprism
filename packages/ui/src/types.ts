@@ -349,6 +349,15 @@ export interface SessionSummary {
   caller?: ReviewCaller;
   /** When the reviewer last decided on it; kept into the next round. See @diffprism/core. */
   decidedAt?: number;
+  /** The agent the reviewer started to fix what they sent (#279). See @diffprism/core. */
+  fixer?: ReviewFixer;
+}
+
+/** An agent started from the dashboard to fix a local review's findings (#279) — mirrors core. */
+export interface ReviewFixer {
+  label: string;
+  state: "running" | "finished" | "failed";
+  error?: string;
 }
 
 export interface DiffErrorPayload {

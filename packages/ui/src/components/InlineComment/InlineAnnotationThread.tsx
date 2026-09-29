@@ -15,6 +15,8 @@ import type { Annotation, AnnotationReply } from "../../types";
 import { CATEGORY_COLORS, CATEGORY_BADGE_STYLES } from "../../lib/semantic-colors";
 import { awaitingAgent } from "../../lib/threads";
 import { useAgentPickup } from "../../hooks/useAgentPickup";
+import { useReviewKind } from "../../hooks/useReviewKind";
+import { useReviewStore } from "../../store/review";
 import { ThreadForm } from "./ThreadForm";
 
 const TYPE_ICONS: Record<string, typeof AlertTriangle> = {
@@ -75,12 +77,22 @@ function Reply({ reply }: { reply: AnnotationReply }) {
  * Copy puts it on the clipboard — rather than words inside a sentence.
  */
 function UnheardNotice({ sessionId }: { sessionId?: string }) {
-  const prompt = `Answer my DiffPrism comments${sessionId ? ` on ${sessionId}` : ""}`;
+  // A commit that stopped waiting picks this up when it runs again (#279);
+  // otherwise, ask an agent to answer.
+  const caller = useReviewStore((s) => s.sessions.find((session) => session.id === s.reviewId)?.caller);
+  const { fixable } = useReviewKind();
+  const prompt =
+    caller?.kind === "commit"
+      ? "Run git commit again and answer the DiffPrism review"
+      : `Answer my DiffPrism comments${sessionId ? ` on ${sessionId}` : ""}`;
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
 
   return (
     <div className="mt-1.5 text-xs">
-      <p className="text-warning">No agent is listening, so nothing will answer this. Ask Claude Code:</p>
+      <p className="text-warning">
+        No agent is listening, so nothing will answer this yet.{" "}
+        {fixable ? "Start one with the button under the diff, or ask yours:" : "Ask your agent:"}
+      </p>
       <div className="mt-1 flex items-center gap-2">
         <code className="select-all px-1.5 py-0.5 rounded border border-border bg-background text-text-primary">
           {prompt}

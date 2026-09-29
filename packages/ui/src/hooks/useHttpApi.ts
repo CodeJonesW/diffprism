@@ -241,8 +241,18 @@ export function useHttpApi() {
     [postJson],
   );
 
+  /**
+   * Start an agent to fix what a local review sent it, with nothing else
+   * listening (#279). Its state arrives on the session summary.
+   */
+  const startFixer = useCallback(
+    (sessionId: string) => postJson(`/api/reviews/${sessionId}/fixer`, {}),
+    [postJson],
+  );
+
   return {
     isAvailable,
+    startFixer,
     fetchRefs,
     compareAgainst,
     resetCompare,

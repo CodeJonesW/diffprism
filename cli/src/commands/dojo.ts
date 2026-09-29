@@ -303,6 +303,7 @@ async function play(
         model: choice.model,
         mcp: deps.mcp,
         folder: () => deps.folder(request.sessionId, choice.name),
+        canEdit: false,
       },
     };
   });

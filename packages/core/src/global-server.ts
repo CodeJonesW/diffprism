@@ -17,6 +17,11 @@ import type {
   GlobalServerInfo,
   PrAgentHandle,
   PrAgentStarter,
+  FixAgentStarter,
+  FixAgentHandle,
+  FixAgentOutcome,
+  FixableDiffRef,
+  ReviewFixer,
   SessionSummary,
   GlobalSessionStatus,
   SessionSource,
@@ -121,6 +126,8 @@ interface Session {
   caller?: ReviewCaller;
   /** When the reviewer last decided on it. Kept into the next round, so fixes can be told from older ones. */
   decidedAt?: number;
+  /** The agent the reviewer started to fix its findings, once they have (#279). */
+  fixer?: ReviewFixer;
   /** The diff last delivered to someone viewing this review: what the reviewer has seen (#265). */
   seenDiff?: { diffSet: DiffSet; hash: string };
   /**
@@ -603,6 +610,102 @@ function ensurePrAgent(
   return starting;
 }
 
+/** Starts an agent to fix a local review's findings; set from GlobalServerOptions.fixAgent (#279). */
+let fixAgentStarter: FixAgentStarter | null = null;
+
+/** The refs a fix to the files shows up in: a review of uncommitted changes. */
+const FIXABLE_DIFF_REFS: readonly FixableDiffRef[] = ["staged", "unstaged", "working-copy"];
+
+function isFixableDiffRef(ref: string | undefined): ref is FixableDiffRef {
+  return (FIXABLE_DIFF_REFS as readonly string[]).includes(ref ?? "");
+}
+
+/** Why this review can't have a fixer started, or null when it can. */
+function fixerRefusal(session: Session): string | null {
+  if (session.payload.metadata.githubPr) {
+    return "A pull request review's decision goes to GitHub, and its agent only answers questions. Fixing is for local reviews.";
+  }
+  if (!isFixableDiffRef(session.diffRef)) {
+    return `This review is of ${session.diffRef ?? "a ref it doesn't name"}. A fix to your files only shows up in a review of uncommitted changes: staged, unstaged or the working copy.`;
+  }
+  if (session.fixer?.state === "running") return `${session.fixer.label} is already fixing this review's findings.`;
+  // Starting takes a while (an install check, Cursor's login and chat): one
+  // that's still starting counts, or a second request would start another.
+  if (fixersStarting.has(session.id)) return "An agent is already starting to fix this review's findings.";
+  // Whatever is waiting gets the findings itself; a fixer beside it would fix them twice.
+  if (session.caller?.waiting) {
+    return `${CALLER_WORDS[session.caller.kind]} is waiting on this review and gets these findings, so there's no need to start an agent.`;
+  }
+  return null;
+}
+
+const CALLER_WORDS: Record<ReviewCallerKind, string> = {
+  commit: "A git commit",
+  review: "`diffprism review`",
+  agent: "An agent",
+};
+
+/** Reviews a fixer is starting on, until it's running or has failed to start. */
+const fixersStarting = new Set<string>();
+
+function setFixer(session: Session, fixer: ReviewFixer): void {
+  session.fixer = fixer;
+  broadcastSessionUpdate(session);
+}
+
+/**
+ * Start an agent to fix what the reviewer sent, with nothing else waiting to
+ * take it (#279). It waits on the review like any caller, so it gets every
+ * finding sent from now on too, and stops when the reviewer decides. Its
+ * state is on the session, for the dashboard to show.
+ */
+async function startFixer(session: Session, diffRef: FixableDiffRef, starter: FixAgentStarter, server: GlobalServerInfo): Promise<ReviewFixer> {
+  const agent = chooseReviewAgent(readAgentSettings());
+  // Held from before the first await, so a second request can't slip past fixerRefusal.
+  fixersStarting.add(session.id);
+  let handle: FixAgentHandle;
+  try {
+    handle = await starter({ sessionId: session.id, repoRoot: session.repoRoot, diffRef, server, agent });
+  } catch (err) {
+    recordError("fix agent", err);
+    throw err;
+  } finally {
+    fixersStarting.delete(session.id);
+  }
+  const running: ReviewFixer = { label: handle.label, state: "running" };
+  setFixer(session, running);
+  const ended = (outcome: FixAgentOutcome): void => {
+    // A later fixer owns the session's state now.
+    if (session.fixer !== running) return;
+    setFixer(session, outcome.ok ? { label: handle.label, state: "finished" } : { label: handle.label, state: "failed", error: outcome.error });
+  };
+  // `done` is meant never to reject; one that does still ends the fixer, as failed.
+  handle.done.then(ended, (err: unknown) => {
+    recordError("fix agent", err);
+    ended({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  });
+  return running;
+}
+
+/**
+ * The origins of the dashboard this server serves. A browser names the page a
+ * request comes from; anything else (the CLI, an agent's MCP server) names
+ * none. Set when the server starts.
+ */
+let dashboardOrigins = new Set<string>();
+
+/**
+ * Whether a request may do something with effects beyond the review, such as
+ * starting an agent that edits files (#279). The API answers any origin
+ * (`Access-Control-Allow-Origin: *`), so without this any web page open in the
+ * reviewer's browser could start one. A request from a page must come from
+ * the dashboard; one from no page (no Origin) is a local process.
+ */
+function fromDashboardOrLocal(req: http.IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  return origin === undefined || dashboardOrigins.has(origin);
+}
+
 /** Open a thread on a session and tell whoever needs to know. */
 function addAnnotation(
   session: Session,
@@ -672,6 +775,7 @@ function toSummary(session: Session): SessionSummary {
     agentReadAt: session.agentReadAt,
     caller: session.caller,
     decidedAt: session.decidedAt,
+    fixer: session.fixer,
   };
 }
 
@@ -1397,6 +1501,38 @@ async function handleApiRequest(
     return true;
   }
 
+  // POST /api/reviews/:id/fixer — start an agent to fix what the reviewer sent (#279).
+  // The agent and model come from the saved settings.
+  const fixerParams = matchRoute(method, url, "POST", "/api/reviews/:id/fixer");
+  if (fixerParams) {
+    const session = sessions.get(fixerParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    if (!fromDashboardOrLocal(req)) {
+      jsonResponse(res, 403, { error: "Only the DiffPrism dashboard can start an agent." });
+      return true;
+    }
+    if (!fixAgentStarter || !runningServer) {
+      jsonResponse(res, 404, { error: "This server can't start an agent to fix findings." });
+      return true;
+    }
+    const refusal = fixerRefusal(session);
+    if (refusal) {
+      jsonResponse(res, 409, { error: refusal });
+      return true;
+    }
+    try {
+      // fixerRefusal checked the ref.
+      const fixer = await startFixer(session, session.diffRef as FixableDiffRef, fixAgentStarter, runningServer);
+      jsonResponse(res, 202, { fixer });
+    } catch (err) {
+      jsonResponse(res, 502, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   // POST /api/reviews/:id/dojo/stop — stop the dojo running on this review (#252).
   const stopDojoParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo/stop");
   if (stopDojoParams) {
@@ -2063,10 +2199,12 @@ export async function startGlobalServer(
     callerGoneMs: callerGone = CALLER_GONE_MS,
     openBrowser = true,
     prAgent,
+    fixAgent,
     dojo,
     agentModels,
   } = options;
   prAgentStarter = prAgent ?? null;
+  fixAgentStarter = fixAgent ?? null;
   dojoRunner = dojo ?? null;
   agentModelLister = agentModels ?? null;
   callerGoneMs = callerGone;
@@ -2298,6 +2436,7 @@ export async function startGlobalServer(
   // Open browser to UI
   const uiUrl = `http://localhost:${uiPort}?wsPort=${wsPort}&httpPort=${httpPort}&serverMode=true`;
   serverUiUrl = uiUrl;
+  dashboardOrigins = new Set([`http://localhost:${uiPort}`, `http://127.0.0.1:${uiPort}`]);
   if (openBrowser) {
     await open(uiUrl);
   }
@@ -2355,11 +2494,14 @@ export async function startGlobalServer(
     pendingOpens.clear();
     reopenBrowserIfNeeded = null;
     prAgentStarter = null;
+    fixAgentStarter = null;
     dojoRunner = null;
     agentModelLister = null;
     runningServer = null;
     prAgents.clear();
     serverUiUrl = null;
+    dashboardOrigins = new Set();
+    fixersStarting.clear();
 
     // Close HTTP server
     await new Promise<void>((resolve) => {
