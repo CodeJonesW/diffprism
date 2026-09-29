@@ -2,6 +2,7 @@
 title: An agent keeps waiting when its wait runs out, and Review PR works with a review open
 date: 2026-09-28
 kind: fix
+pr: 286
 ---
 
 ## What changed
