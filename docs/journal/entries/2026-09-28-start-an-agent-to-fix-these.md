@@ -2,6 +2,7 @@
 title: Findings nothing is listening for get a way to an agent — including one you start from the review
 date: 2026-09-28
 kind: feature
+pr: 285
 ---
 
 ## What changed
