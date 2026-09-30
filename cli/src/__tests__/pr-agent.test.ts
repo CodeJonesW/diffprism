@@ -130,10 +130,28 @@ describe("Claude Code", () => {
     expect(args(true)).not.toContain("--model");
   });
 
-  it("runs in the PR's checkout, and names how to resume it from anywhere", async () => {
-    const started = await CLAUDE.begin(review({ localRepoPath: "/clones/my widget" }));
-    expect(started.cwd).toBe("/clones/my widget");
-    expect(started.resumeCommand).toBe(`cd '/clones/my widget' && claude --resume ${started.id}`);
+  it("runs in a folder of its own, not the PR's checkout, and names how to resume it from anywhere (#257)", async () => {
+    // Claude Code loads CLAUDE.md, settings and hooks from where it runs; the
+    // checkout is the PR author's code.
+    const r = review({ localRepoPath: "/clones/my widget", folder: () => "/tmp/diffprism agent/session-1" });
+    const started = await CLAUDE.begin(r);
+    expect(started.cwd).toBe("/tmp/diffprism agent/session-1");
+    // Resumed by hand, it still needs the code: added folders aren't kept with the conversation.
+    expect(started.resumeCommand).toBe(`cd '/tmp/diffprism agent/session-1' && claude --resume ${started.id} --add-dir '/clones/my widget'`);
+    // It reads the checkout through --add-dir, which loads none of those.
+    const { args } = CLAUDE.turn(r, started, { first: true, prompt: "p", instructions: "i" });
+    expect(argAfter(args, "--add-dir")).toBe("/clones/my widget");
+  });
+
+  it("tells it where the code is, now that it doesn't run there", () => {
+    expect(agentSystemPrompt(review({ localRepoPath: "/clones/widget" }), "Claude Code")).toContain("The code is at /clones/widget.");
+  });
+
+  it("runs a fixer in the reviewer's own repository, which its edits are scoped to (#279)", async () => {
+    const r = review({ localRepoPath: "/work/app", canEdit: true });
+    const started = await CLAUDE.begin(r);
+    expect(started.cwd).toBe("/work/app");
+    expect(CLAUDE.turn(r, started, { first: true, prompt: "p", instructions: "i" }).args).not.toContain("--add-dir");
   });
 
 });

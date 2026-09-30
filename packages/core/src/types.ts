@@ -257,7 +257,7 @@ export interface GitHubPrMetadata {
   headBranch: string;
   /** The commit the PR's head is at: the one checked out for the review. */
   headSha: string;
-  /** The base branch's commit the PR is measured against. */
+  /** Where the PR branched off its base: the merge base, the old side of the diff GitHub shows (#257). */
   baseSha: string;
   /**
    * The GitHub login DiffPrism posts reviews as, or null when its token has no

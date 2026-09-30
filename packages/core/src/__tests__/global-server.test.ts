@@ -5,6 +5,7 @@ import os from "node:os";
 import * as github from "@diffprism/github";
 import open from "open";
 import net from "node:net";
+import http from "node:http";
 import type { FixAgentOutcome, FixAgentStarter, PrAgentRequest } from "../types.js";
 import { DojoStoppedError } from "../dojo.js";
 import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoSeat, DojoState } from "../dojo.js";
@@ -84,6 +85,9 @@ vi.mock("@diffprism/github", () => ({
   resolveGitHubToken: vi.fn(() => "test-token"),
   createGitHubClient: vi.fn(() => ({})),
   fetchPullRequest: vi.fn(async () => ({
+    // As GitHub names the repo, whatever case it was typed in (#257).
+    owner: "Acme",
+    repo: "Widget",
     title: "Add widget",
     author: "someone",
     url: "https://github.com/acme/widget/pull/7",
@@ -1764,14 +1768,15 @@ describe("session identity", () => {
         const response = await post(baseUrl, "/api/pr/open", { prUrl: "acme/widget#7" });
         const { sessionId, localRepoPath } = (await response.json()) as { sessionId: string; localRepoPath: string };
 
+        // Named as GitHub names the repo, not as typed: one repo, one checkout (#257).
         expect(github.checkoutPullRequest).toHaveBeenCalledWith({
-          owner: "acme",
-          repo: "widget",
+          owner: "Acme",
+          repo: "Widget",
           number: 7,
           headSha: "head-sha",
           baseSha: "base-sha",
           root: path.join(os.homedir(), ".diffprism", "repos"),
-          remoteUrl: "https://github.com/acme/widget.git",
+          remoteUrl: "https://github.com/Acme/Widget.git",
           token: "test-token",
         });
         expect(localRepoPath).toBe("/checkouts/acme/widget/pr-7");
@@ -3002,6 +3007,119 @@ describe("agents' models (#244)", () => {
 
     handle = await startGlobalServer({ silent: true, openBrowser: false });
     expect((await fetch(modelsUrl("cursor"))).status).toBe(404);
+  });
+});
+
+describe("who may use the server (#284)", () => {
+  async function setup() {
+    handle = await startGlobalServer({ silent: true, openBrowser: false });
+    const baseUrl = `http://localhost:${handle.httpPort}`;
+    const { uiUrl } = (await (await fetch(`${baseUrl}/api/status`)).json()) as { uiUrl: string };
+    const dashboard = new URL(uiUrl).origin;
+    const created = await fetch(`${baseUrl}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/repo", diffRef: "staged" }),
+    });
+    const { sessionId } = (await created.json()) as { sessionId: string };
+    const as = (origin: string | undefined, path: string, init: RequestInit = {}) =>
+      fetch(`${baseUrl}${path}`, { ...init, headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}) } });
+    return { baseUrl, dashboard, sessionId, as };
+  }
+  const approve = JSON.stringify({ decision: "approved", comments: [] });
+
+  it("answers nothing from another web page — not a read, and not a decision", async () => {
+    const { sessionId, as } = await setup();
+    const evil = "https://evil.example";
+
+    const read = await as(evil, "/api/reviews");
+    expect(read.status).toBe(403);
+    expect(read.headers.get("access-control-allow-origin")).toBeNull();
+
+    expect((await as(evil, `/api/reviews/${sessionId}/result`, { method: "POST", body: approve })).status).toBe(403);
+    // The commit it would have let through is still waiting.
+    const result = (await (await as(undefined, `/api/reviews/${sessionId}/result`)).json()) as { result: unknown };
+    expect(result.result).toBeNull();
+  });
+
+  it("answers the dashboard in full, naming it rather than any page", async () => {
+    const { sessionId, dashboard, as } = await setup();
+    const read = await as(dashboard, "/api/reviews");
+    expect(read.status).toBe(200);
+    expect(read.headers.get("access-control-allow-origin")).toBe(dashboard);
+
+    const preflight = await as(dashboard, "/api/settings/agent", { method: "OPTIONS" });
+    expect(preflight.headers.get("access-control-allow-methods")).toContain("PUT");
+
+    expect((await as(dashboard, `/api/reviews/${sessionId}/result`, { method: "POST", body: approve })).status).toBe(200);
+  });
+
+  it("lets a browser extension read, and nothing more", async () => {
+    const { sessionId, as } = await setup();
+    const extension = "chrome-extension://abcdefghijklmnop";
+    expect((await as(extension, "/api/status")).status).toBe(200);
+    expect((await as(extension, "/api/reviews")).status).toBe(200);
+    const write = await as(extension, `/api/reviews/${sessionId}/result`, { method: "POST", body: approve });
+    expect(write.status).toBe(403);
+    expect(((await write.json()) as { error: string }).error).toBe("A browser extension can only read from DiffPrism.");
+  });
+
+  /** A request with exactly these headers, as a browser would send them (fetch won't set Host). */
+  function raw(path: string, headers: Record<string, string>): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const req = http.request({ host: "127.0.0.1", port: handle!.httpPort, path, headers }, (res) => {
+        res.resume();
+        resolve(res.statusCode ?? 0);
+      });
+      req.on("error", reject);
+      req.end();
+    });
+  }
+
+  it("refuses a page that pointed its own name at this machine (DNS rebinding)", async () => {
+    const { sessionId } = await setup();
+    // Same-origin to the browser, so no Origin — but its own name as Host.
+    expect(await raw(`/api/reviews/${sessionId}`, { Host: `evil.example:${handle!.httpPort}`, "Sec-Fetch-Site": "same-origin" })).toBe(403);
+    expect(await raw(`/api/reviews/${sessionId}`, { Host: `evil.example:${handle!.httpPort}` })).toBe(403);
+  });
+
+  it("refuses a browser request with no Origin — an <img> or no-cors load — and its effects with it", async () => {
+    const { sessionId, as } = await setup();
+    const host = `localhost:${handle!.httpPort}`;
+    const status = await raw(`/api/reviews/${sessionId}/result?caller=commit&until=${Date.now() + 60_000}`, {
+      Host: host,
+      "Sec-Fetch-Site": "cross-site",
+      "Sec-Fetch-Mode": "no-cors",
+    });
+    expect(status).toBe(403);
+    // Nothing now claims to be waiting on the review.
+    const summary = ((await (await as(undefined, "/api/reviews")).json()) as { sessions: SessionSummary[] }).sessions.find((s) => s.id === sessionId);
+    expect(summary?.caller).toBeUndefined();
+    // A local process — Node's fetch sends Sec-Fetch-Mode, but never Sec-Fetch-Site — is still served.
+    expect(await raw("/api/status", { Host: host, "Sec-Fetch-Mode": "cors" })).toBe(200);
+  });
+
+  it("serves local processes — no Origin — as before, with no CORS header to give away", async () => {
+    const { as } = await setup();
+    const read = await as(undefined, "/api/reviews");
+    expect(read.status).toBe(200);
+    expect(read.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("refuses a WebSocket from another page, and takes the dashboard's", async () => {
+    const { dashboard } = await setup();
+    const { WebSocket } = await import("ws");
+    const connect = (origin: string) =>
+      new Promise<"open" | "refused">((resolve) => {
+        const ws = new WebSocket(`ws://localhost:${handle!.wsPort}`, { origin });
+        ws.on("open", () => {
+          ws.close();
+          resolve("open");
+        });
+        ws.on("error", () => resolve("refused"));
+      });
+    expect(await connect("https://evil.example")).toBe("refused");
+    expect(await connect(dashboard)).toBe("open");
   });
 });
 

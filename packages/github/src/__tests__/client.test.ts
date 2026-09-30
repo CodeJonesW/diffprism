@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Octokit } from "@octokit/rest";
 import { fetchPullRequest, parsePrRef } from "../client.js";
 
@@ -54,17 +54,35 @@ describe("parsePrRef", () => {
 
 describe("fetchPullRequest", () => {
   const pull = {
-    title: "Add widget", user: { login: "octocat" }, html_url: "https://github.com/acme/widget/pull/7",
-    base: { ref: "main" }, head: { ref: "feature" }, body: null,
+    title: "Add widget", user: { login: "octocat" }, html_url: "https://github.com/Acme/Widget/pull/7",
+    base: { ref: "main", sha: "base-tip", repo: { name: "Widget", owner: { login: "Acme" } } },
+    head: { ref: "feature", sha: "head-sha" },
+    body: null,
   };
+  const compare = vi.fn(async () => ({ data: { merge_base_commit: { sha: "merge-base" } } }));
 
-  /** Just the two calls fetchPullRequest makes. */
+  /** Just the calls fetchPullRequest makes. */
   function fakeClient(getAuthenticated: () => Promise<unknown>): Octokit {
     return {
       pulls: { get: async () => ({ data: pull }) },
+      repos: { compareCommitsWithBasehead: compare },
       users: { getAuthenticated },
     } as unknown as Octokit;
   }
+
+  it("measures the PR from its merge base, and names the repo as GitHub does (#257)", async () => {
+    // Typed in lower case; the base branch has moved on since the PR branched.
+    const pr = await fetchPullRequest(fakeClient(async () => ({ data: { login: "cj" } })), "acme", "widget", 7);
+    expect(pr).toMatchObject({ owner: "Acme", repo: "Widget", headSha: "head-sha", baseSha: "merge-base" });
+    expect(compare).toHaveBeenCalledWith(expect.objectContaining({ owner: "Acme", repo: "Widget", basehead: "base-tip...head-sha" }));
+  });
+
+  it("says why when GitHub can't compare the PR", async () => {
+    compare.mockRejectedValueOnce(new Error("Server Error: this diff is taking too long to generate"));
+    await expect(fetchPullRequest(fakeClient(async () => ({ data: { login: "cj" } })), "acme", "widget", 7)).rejects.toThrow(
+      "GitHub couldn't say where Acme/Widget#7 branched off main: Server Error: this diff is taking too long to generate",
+    );
+  });
 
   it("says who the token belongs to, so an author's own PR can be recognized (#191)", async () => {
     const pr = await fetchPullRequest(fakeClient(async () => ({ data: { login: "cj" } })), "acme", "widget", 7);

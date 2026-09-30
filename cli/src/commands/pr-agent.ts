@@ -193,9 +193,10 @@ export function describeToolCall(name: string, input: Record<string, unknown>, r
   }
 }
 
-export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "subject">, label: string): string {
+export function agentSystemPrompt(review: Pick<AgentReview, "reviewSessionId" | "subject" | "localRepoPath">, label: string): string {
   return [
     `You are answering a code reviewer's questions about ${review.subject}, in DiffPrism review ${review.reviewSessionId}.`,
+    `The code is at ${review.localRepoPath}.`,
     "The reviewer comments on lines in the DiffPrism dashboard and reads your answers there. Nobody reads this terminal.",
     `Answer each thread you are given with the DiffPrism reply tool: its id as annotation_id, session_id "${review.reviewSessionId}", source_agent "${label}", and then_wait: false.`,
     "Every thread is on a file and line. Answer about that code: read it first with the DiffPrism get_file_diff or get_file_context tools, and read the rest of the repository as you need to. Keep answers direct and specific.",
@@ -234,11 +235,18 @@ export const CLAUDE: AgentKind = {
   installHint: "https://claude.com/claude-code",
 
   // Claude Code lets us name the conversation up front, and keeps it with the
-  // folder it ran in: the PR's checkout, so it reads the PR's files.
+  // folder it runs in. It loads CLAUDE.md, settings and hooks from that
+  // folder, so an agent that only reads runs in a folder of its own and is
+  // given the code with --add-dir, which loads none of them: a pull
+  // request's checkout is the author's code, and a hook in it would run as
+  // the reviewer (#257). A fixer edits the reviewer's own repository, and
+  // runs in it: its edit permission is relative to where it runs (#279).
   async begin(review) {
     const id = randomUUID();
-    const cwd = review.localRepoPath;
-    return { id, cwd, resumeCommand: `cd ${shellPath(cwd)} && claude --resume ${id}` };
+    const cwd = review.canEdit ? review.localRepoPath : review.folder();
+    // Added folders aren't kept with the conversation, so resuming names it again.
+    const addDir = cwd === review.localRepoPath ? "" : ` --add-dir ${shellPath(review.localRepoPath)}`;
+    return { id, cwd, resumeCommand: `cd ${shellPath(cwd)} && claude --resume ${id}${addDir}` };
   },
 
   turn(review, conversation, { first, prompt, instructions }) {
@@ -257,6 +265,8 @@ export const CLAUDE: AgentKind = {
         "--verbose",
         "--permission-mode",
         "default",
+        // Where the code is, when it isn't where the agent runs.
+        ...(conversation.cwd === review.localRepoPath ? [] : ["--add-dir", review.localRepoPath]),
         "--allowedTools",
         (review.canEdit ? FIXER_ALLOWED_TOOLS : AGENT_ALLOWED_TOOLS).join(","),
         "--disallowedTools",
