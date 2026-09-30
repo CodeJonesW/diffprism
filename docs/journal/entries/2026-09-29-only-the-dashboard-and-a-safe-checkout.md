@@ -2,6 +2,7 @@
 title: Only the dashboard can drive DiffPrism, and a pull request's checkout can't reach you
 date: 2026-09-29
 kind: fix
+pr: 288
 ---
 
 ## What changed
