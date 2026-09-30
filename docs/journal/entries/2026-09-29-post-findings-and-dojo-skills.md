@@ -2,6 +2,7 @@
 title: Post a dojo finding to the pull request, and choose the skills the dojo reviews by
 date: 2026-09-29
 kind: feature
+pr: 294
 ---
 
 ## What changed
