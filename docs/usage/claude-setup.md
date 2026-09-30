@@ -2,6 +2,8 @@
 
 This guide walks you through configuring Claude Code and Claude Desktop to use DiffPrism as an MCP (Model Context Protocol) tool for code review.
 
+Having an agent set it up? Point it at the [Agent Setup Guide](agent-setup.md) instead. It covers Cursor too.
+
 ## Prerequisites
 
 - **Node.js >= 20** — DiffPrism requires Node 20 or later
@@ -17,7 +19,7 @@ npx diffprism setup
 ```
 
 This single command:
-- Adds `.diffprism` to `.gitignore`
+- Adds `.diffprism`, `.mcp.json`, `.claude/settings.json` and `.claude/skills/review/` to `.gitignore`. With no `.gitignore` it asks before creating one. Run without a terminal, as in an agent's shell, it creates one without asking
 - Creates `.mcp.json` with the DiffPrism MCP server config
 - Creates `.claude/settings.json` with auto-approve permissions for all DiffPrism MCP tools
 - Installs the `/review` skill so you can type `/review` in Claude Code at any time

@@ -2,6 +2,8 @@
 
 Local-first code review tool for agent-generated code changes. Opens a browser-based diff viewer from CLI or Claude Code (via MCP).
 
+**Setting DiffPrism up for a user, not changing its code?** Don't clone or build this repo. Follow `docs/usage/agent-setup.md`: it installs the npm package and asks the user what it needs. The rest of this file is for working on DiffPrism itself.
+
 ## Architecture
 
 pnpm monorepo, all ESM (`"type": "module"`), TypeScript strict mode.
