@@ -39,3 +39,29 @@ export async function submitGitHubReview(
 
   return { reviewId: data.id, url: data.html_url };
 }
+
+/**
+ * Post one inline comment on a pull request, straight away, outside any
+ * review (#289): a dojo finding the reviewer chose to put on the PR. It's on
+ * `commitId` (the head the review read), so its line is that commit's.
+ * Errors from GitHub — a line outside the diff, a bad token — propagate.
+ */
+export async function postPullRequestComment(
+  client: Octokit,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  comment: GitHubReviewComment & { commitId: string },
+): Promise<{ url: string }> {
+  const { data } = await client.pulls.createReviewComment({
+    owner,
+    repo,
+    pull_number: prNumber,
+    commit_id: comment.commitId,
+    path: comment.path,
+    line: comment.line,
+    side: comment.side,
+    body: comment.body,
+  });
+  return { url: data.html_url };
+}

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Bot, Check } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check } from "lucide-react";
 import type { AgentModel, AgentSettings, ReviewAgentName } from "../../types";
 import { useHttpApi } from "../../hooks/useHttpApi";
 
@@ -10,23 +10,26 @@ const AGENTS: Array<{ name: ReviewAgentName; label: string }> = [
 
 const labelOf = (name: ReviewAgentName) => AGENTS.find((a) => a.name === name)?.label ?? name;
 
+/** The saved choice in a line: "Review agent: Cursor · gpt-5.3-codex". */
+export function agentSummary(settings: AgentSettings): string {
+  const model = settings.models[settings.agent];
+  return `Review agent: ${labelOf(settings.agent)}${model ? ` · ${model}` : ""}`;
+}
+
 /**
  * Which agent answers your comments on a PR review, and with which model
  * (#226). Saved on the server, in the same file `diffprism config` writes, so
  * the two never disagree. `diffprism review --agent/--model` overrides it for
- * one review.
+ * one review. It's a section of the Settings modal (#290).
  */
-export function AgentSettingsControl() {
-  const { isAvailable, getAgentSettings, saveAgentSettings } = useHttpApi();
-  const [open, setOpen] = useState(false);
+export function AgentSettingsForm({ onSaved }: { onSaved?: (settings: AgentSettings) => void }) {
+  const { getAgentSettings, saveAgentSettings } = useHttpApi();
   const [saved, setSaved] = useState<AgentSettings | null>(null);
   const [draft, setDraft] = useState<AgentSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
-  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isAvailable) return;
     getAgentSettings().then((result) => {
       if (result.ok) {
         setSaved(result.settings);
@@ -35,19 +38,7 @@ export function AgentSettingsControl() {
         setError(result.error);
       }
     });
-  }, [isAvailable, getAgentSettings]);
-
-  // Close on a click outside, like the file menu.
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  if (!isAvailable) return null;
+  }, [getAgentSettings]);
 
   async function save() {
     if (!draft) return;
@@ -58,38 +49,18 @@ export function AgentSettingsControl() {
       setSaved(result.settings);
       setDraft(result.settings);
       setState("saved");
+      onSaved?.(result.settings);
     } else {
       setError(result.error);
       setState("idle");
     }
   }
 
-  const model = saved?.models[saved.agent];
   const changed = JSON.stringify(draft) !== JSON.stringify(saved);
 
   return (
-    <div className="relative" ref={panelRef}>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen((o) => !o);
-          setState("idle");
-        }}
-        aria-expanded={open}
-        className="flex items-center gap-1.5 text-[11px] text-text-secondary hover:text-text-primary transition-colors cursor-pointer"
-        title="Which agent answers your comments on a PR review"
-      >
-        <Bot className="w-3 h-3" />
-        {saved ? `Review agent: ${labelOf(saved.agent)}${model ? ` · ${model}` : ""}` : "Review agent"}
-      </button>
-
-      {open && (
-        <div
-          role="dialog"
-          aria-label="Review agent"
-          className="absolute bottom-full left-0 mb-2 w-72 bg-surface border border-border rounded-lg shadow-lg p-3 z-50 text-xs"
-        >
-          <p className="font-semibold text-text-primary mb-1">Review agent</p>
+    <section aria-label="Review agent" className="text-xs">
+          <h3 className="font-semibold text-text-primary mb-1">Review agent</h3>
           <p className="text-text-secondary mb-3">
             Answers your comments on a pull request review. Applies to the next review you open.
           </p>
@@ -151,9 +122,7 @@ export function AgentSettingsControl() {
               </p>
             </>
           )}
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 

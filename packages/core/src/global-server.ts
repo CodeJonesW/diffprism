@@ -44,7 +44,7 @@ import type {
   AgentModelLister,
   SinceLastLook,
 } from "./types.js";
-import { DojoStoppedError, dojoThreadBody } from "./dojo.js";
+import { DojoStoppedError, dojoGitHubComment, dojoThreadBody } from "./dojo.js";
 import { sinceLastLook } from "./since-last-look.js";
 import type { DojoRunner, DojoSeat, DojoState, DojoSubject } from "./dojo.js";
 import { writeServerFile, removeServerFile } from "./server-file.js";
@@ -59,6 +59,8 @@ import {
   chooseReviewAgent,
 } from "./agent-settings.js";
 import type { AgentSettings, ReviewAgentChoice, ReviewAgentName } from "./agent-settings.js";
+import { listSkills, readDojoSkillIds, resolveDojoSkills, writeDojoSkillIds } from "./dojo-skills.js";
+import type { DojoSkill } from "./dojo-skills.js";
 import {
   resolveUiDist,
   resolveUiRoot,
@@ -507,14 +509,21 @@ function startDojo(
   runner: DojoRunner,
   server: GlobalServerInfo,
   agents: ReviewAgentChoice[],
+  skills: DojoSkill[],
 ): DojoState {
-  const started: DojoState = { status: "running", agents: [], findings: [], startedAt: Date.now() };
+  const started: DojoState = {
+    status: "running",
+    agents: [],
+    findings: [],
+    startedAt: Date.now(),
+    ...(skills.length > 0 ? { skills: skills.map((s) => s.name) } : {}),
+  };
   setDojo(session, started);
   // Still the dojo on screen: not closed, replaced, or already finished.
   const running = () =>
     sessions.get(session.id) === session && session.dojo?.startedAt === started.startedAt && session.dojo.status === "running";
 
-  const run = runner.run({ sessionId: session.id, subject, localRepoPath: session.repoRoot, server, agents });
+  const run = runner.run({ sessionId: session.id, subject, localRepoPath: session.repoRoot, server, agents, skills });
   session.stopDojoRun = (reason) => run.stop(reason);
 
   // Each agent's progress, as it happens, so the reviewer can see the dojo working.
@@ -644,6 +653,9 @@ const CALLER_WORDS: Record<ReviewCallerKind, string> = {
   review: "`diffprism review`",
   agent: "An agent",
 };
+
+/** Dojo findings being posted to GitHub right now, by review, dojo and finding (#289). */
+const findingsPosting = new Set<string>();
 
 /** Reviews a fixer is starting on, until it's running or has failed to start. */
 const fixersStarting = new Set<string>();
@@ -1535,6 +1547,32 @@ async function handleApiRequest(
     return true;
   }
 
+  // GET /api/settings/dojo?session=<id> — the skills there are for the dojo,
+  // and the ones chosen (#290). A local review's repository adds its own; a
+  // PR review's checkout doesn't — it's the PR author's code.
+  if (method === "GET" && url === "/api/settings/dojo") {
+    const sessionId = new URL(req.url ?? "/", "http://localhost").searchParams.get("session");
+    const session = sessionId ? sessions.get(sessionId) : undefined;
+    const projectRoot = session && !session.payload.metadata.githubPr ? session.repoRoot : undefined;
+    try {
+      jsonResponse(res, 200, { skills: listSkills(projectRoot), chosen: readDojoSkillIds() });
+    } catch (err) {
+      jsonResponse(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
+  // PUT /api/settings/dojo — save the dojo's skills. Applies to the next dojo started.
+  if (method === "PUT" && url === "/api/settings/dojo") {
+    try {
+      const body = JSON.parse(await readBody(req)) as { skills?: unknown };
+      jsonResponse(res, 200, { chosen: writeDojoSkillIds(body.skills) });
+    } catch (err) {
+      jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
+    }
+    return true;
+  }
+
   // GET /api/dojo/agents — the agents a review dojo can seat here (#231)
   if (method === "GET" && url === "/api/dojo/agents") {
     if (!dojoRunner) {
@@ -1595,6 +1633,79 @@ async function handleApiRequest(
 
   // POST /api/reviews/:id/dojo — start a review dojo with these agents (#231).
   // Each agent's model comes from the saved settings.
+  // POST /api/reviews/:id/dojo/findings/:findingId/github — put one finding on
+  // the pull request as a comment on its line (#289). Only ever by the
+  // reviewer's choice: the dojo itself posts nothing to GitHub.
+  const postFindingParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo/findings/:findingId/github");
+  if (postFindingParams) {
+    const session = sessions.get(postFindingParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    const pr = session.payload.metadata.githubPr;
+    if (!pr) {
+      jsonResponse(res, 400, { error: "Only a pull request review's findings can go to GitHub." });
+      return true;
+    }
+    const dojo = session.dojo;
+    const finding = dojo?.findings.find((f) => f.id === postFindingParams.findingId);
+    if (!dojo || !finding) {
+      jsonResponse(res, 404, { error: "No such finding in this review's dojo." });
+      return true;
+    }
+    if (finding.githubCommentUrl) {
+      jsonResponse(res, 409, { error: "This finding is already on the pull request.", url: finding.githubCommentUrl });
+      return true;
+    }
+    // One post at a time per finding: two tabs, or a retry of a slow post,
+    // would otherwise both pass the check above and comment twice.
+    const postKey = `${session.id}\0${dojo.startedAt}\0${finding.id}`;
+    if (findingsPosting.has(postKey)) {
+      jsonResponse(res, 409, { error: "This finding is already being posted." });
+      return true;
+    }
+    findingsPosting.add(postKey);
+    try {
+      const { resolveGitHubToken, createGitHubClient, postPullRequestComment } = await import("@diffprism/github");
+      let token: string;
+      try {
+        token = resolveGitHubToken();
+      } catch (err) {
+        jsonResponse(res, 401, { error: err instanceof Error ? err.message : String(err) });
+        return true;
+      }
+      const labels = Object.fromEntries(dojo.agents.map((a) => [a.agent.name, a.label]));
+      let posted: { url: string };
+      try {
+        posted = await postPullRequestComment(createGitHubClient(token), pr.owner, pr.repo, pr.number, {
+          commitId: pr.headSha,
+          path: finding.file,
+          line: finding.line,
+          side: finding.side === "old" ? "LEFT" : "RIGHT",
+          body: dojoGitHubComment(finding, labels),
+        });
+      } catch (err) {
+        jsonResponse(res, 502, { error: `GitHub didn't take the comment: ${err instanceof Error ? err.message : String(err)}` });
+        return true;
+      }
+      // The dojo as it is now, if it's still the one the finding came from.
+      // Finding ids repeat from dojo to dojo (`claude-2`), so a new dojo's
+      // finding must never get this comment's link.
+      const current = session.dojo;
+      if (current && current.startedAt === dojo.startedAt) {
+        setDojo(session, {
+          ...current,
+          findings: current.findings.map((f) => (f.id === finding.id ? { ...f, githubCommentUrl: posted.url } : f)),
+        });
+      }
+      jsonResponse(res, 200, { url: posted.url });
+      return true;
+    } finally {
+      findingsPosting.delete(postKey);
+    }
+  }
+
   const dojoParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo");
   if (dojoParams) {
     const session = sessions.get(dojoParams.id);
@@ -1624,7 +1735,16 @@ async function handleApiRequest(
         jsonResponse(res, 409, { error: refusal });
         return true;
       }
-      jsonResponse(res, 202, { dojo: startDojo(session, subject, dojoRunner, runningServer, agents) });
+      // The skills chosen in Settings (#290). A project's apply only to a
+      // local review; a PR's checkout is its author's code.
+      let skills: DojoSkill[];
+      try {
+        skills = resolveDojoSkills(readDojoSkillIds(), subject.kind === "local" ? session.repoRoot : undefined);
+      } catch (err) {
+        jsonResponse(res, 409, { error: err instanceof Error ? err.message : String(err) });
+        return true;
+      }
+      jsonResponse(res, 202, { dojo: startDojo(session, subject, dojoRunner, runningServer, agents, skills) });
     } catch (err) {
       jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }
@@ -2554,6 +2674,7 @@ export async function startGlobalServer(
     serverUiUrl = null;
     dashboardOrigins = new Set();
     fixersStarting.clear();
+    findingsPosting.clear();
 
     // Close HTTP server
     await new Promise<void>((resolve) => {

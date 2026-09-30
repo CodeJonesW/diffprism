@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, Send, Square, Hourglass } from "lucide-react";
+import { Swords, Loader2, Check, X, PanelRightClose, AlertTriangle, CircleCheck, CircleX, Send, Square, Hourglass, GitPullRequest, ExternalLink } from "lucide-react";
 import type {
   Annotation,
   DojoAvailableAgent,
@@ -79,6 +79,13 @@ export function DojoPanel({ sessionId, dojo, onNavigate, onHide, sendBack }: Doj
         </button>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        {/* What the agents reviewed by, from Settings (#290). */}
+        {!showPicker && dojo?.skills && dojo.skills.length > 0 && (
+          <p className="text-xs text-text-secondary">
+            Reviewing by {dojo.skills.length === 1 ? "the skill" : "the skills"}{" "}
+            <span className="text-text-primary">{dojo.skills.join(", ")}</span>.
+          </p>
+        )}
         {showPicker ? (
           <AgentPicker
             sessionId={sessionId}
@@ -313,6 +320,7 @@ function Results({
   onRunAgain: () => void;
   sendBack?: DojoSendBack;
 }) {
+  const { postFindingToGitHub } = useHttpApi();
   const labels = Object.fromEntries(dojo.agents.map((a) => [a.agent.name, a.label])) as Record<ReviewAgentName, string>;
   const dropped = dojo.agents.filter((a) => a.error);
   const dismissAnnotation = useReviewStore((s) => s.dismissAnnotation);
@@ -384,9 +392,9 @@ function Results({
       {/* A PR review has no agent waiting on it, so nothing to send findings back to (#254). */}
       {!sendBack && dojo.findings.length > 0 && (
         <p className="text-xs text-text-secondary">
-          On a pull request, these findings stay here as threads and aren't posted to GitHub. Raise what matters in
-          your review. Sending findings to an agent to fix is for local reviews, where an agent is waiting on your
-          decision.
+          On a pull request, these findings stay here unless you post one: Post to GitHub puts it on its line of
+          the PR as a comment. Sending findings to an agent to fix is for local reviews, where an agent is waiting
+          on your decision.
         </p>
       )}
       {sendBack && dojo.findings.length > 0 && (
@@ -431,6 +439,8 @@ function Results({
                       setSinceOnly(true);
                       selectFile(key);
                     }}
+                    // A PR review has no agent to send it to; the pull request can have it (#289).
+                    onPostToGitHub={sendBack ? undefined : () => postFindingToGitHub(sessionId, f.id)}
                   />
                 </li>
               ))}
@@ -517,6 +527,56 @@ const ASKED_TEXT: Record<Exclude<NonNullable<FindingSent["asked"]>, "fixed">, st
   answered: "The agent answered — see the thread",
 };
 
+/**
+ * A finding on a PR review, put on the pull request by the reviewer's choice
+ * (#289): a button until it's posted, then the link to it.
+ */
+function PostToGitHub({ finding, onPost }: { finding: DojoCombinedFinding; onPost: () => Promise<{ ok: boolean; error?: string }> }) {
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (finding.githubCommentUrl) {
+    return (
+      <div className="px-3 pb-2">
+        <a
+          href={finding.githubCommentUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-success hover:underline"
+        >
+          <CircleCheck className="w-3.5 h-3.5" />
+          On the pull request
+          <ExternalLink className="w-3 h-3" />
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-3 pb-2 space-y-1">
+      <button
+        onClick={async () => {
+          setPosting(true);
+          setError(null);
+          const result = await onPost();
+          if (!result.ok) setError(result.error ?? "It wasn't posted.");
+          setPosting(false);
+        }}
+        disabled={posting}
+        className="inline-flex items-center gap-1 text-xs text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+      >
+        <GitPullRequest className="w-3.5 h-3.5" />
+        {posting ? "Posting…" : "Post to GitHub"}
+      </button>
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function FindingCard({
   finding,
   labels,
@@ -525,6 +585,7 @@ function FindingCard({
   onDismiss,
   changedSince,
   onShowChanges,
+  onPostToGitHub,
 }: {
   finding: DojoCombinedFinding;
   labels: Record<ReviewAgentName, string>;
@@ -542,12 +603,15 @@ function FindingCard({
   changedSince?: FileSinceLastLook[];
   /** Go to this copy of the file, showing only what changed since the last look. */
   onShowChanges?: (key: string) => void;
+  /** On a PR review: put this finding on the pull request (#289). */
+  onPostToGitHub?: () => Promise<{ ok: boolean; error?: string }>;
 }) {
   const dismissed = !!sent?.dismissed;
   const name = finding.file.split("/").pop();
   return (
     <div className={`w-full rounded-md border border-border bg-background ${dismissed ? "opacity-60" : ""}`}>
       <FindingBody finding={finding} labels={labels} onNavigate={onNavigate} />
+      {onPostToGitHub && <PostToGitHub finding={finding} onPost={onPostToGitHub} />}
       {sent && (sent.asked || dismissed || onDismiss) && (
         <div className="px-3 pb-2 space-y-1">
           {sent.asked === "fixed" ? (

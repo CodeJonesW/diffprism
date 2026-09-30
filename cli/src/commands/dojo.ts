@@ -53,7 +53,7 @@ export function describeSubject(subject: DojoSubject): string {
   return `${LOCAL_CHANGE[subject.diffRef] ?? `the diff ${subject.diffRef}`} in ${subject.repoPath}`;
 }
 
-export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subject" | "localRepoPath">, label: string): string {
+export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subject" | "localRepoPath" | "skills">, label: string): string {
   const { subject } = request;
   const lines = [
     `You are ${label}, one of several AI code reviewers in a review dojo on ${describeSubject(subject)} (DiffPrism review ${request.sessionId}).`,
@@ -69,6 +69,14 @@ export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subje
     "You can't change files, and don't reply to or annotate the review: the dojo posts the combined result itself.",
     "Answer every message with one ```json block and nothing after it. Nobody reads anything else you write.",
   );
+  // The reviewer's chosen skills (#290), in the instructions themselves, so
+  // every agent reviews by them the same way, whether it has them installed or not.
+  if (request.skills.length > 0) {
+    lines.push("", "The reviewer asked the dojo to review by these skills. Follow each as part of how you review; it doesn't change how you answer.");
+    for (const skill of request.skills) {
+      lines.push("", `## Skill: ${skill.name}`, "", skill.instructions);
+    }
+  }
   return lines.join("\n");
 }
 

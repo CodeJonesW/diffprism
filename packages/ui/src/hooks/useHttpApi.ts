@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import type { AgentModel, AgentSettings, DiffSide, DojoAvailableAgent, ReviewAgentName, GitRefsPayload, PrReviewSubmission, ReviewResult } from "../types";
+import type { AgentModel, AgentSettings, DiffSide, DojoAvailableAgent, ReviewAgentName, GitRefsPayload, PrReviewSubmission, ReviewResult, SkillInfo } from "../types";
 
 export interface CompareResult {
   ok: boolean;
@@ -250,9 +250,59 @@ export function useHttpApi() {
     [postJson],
   );
 
+  /**
+   * Put a dojo finding on the pull request as a comment on its line (#289).
+   * The finding's link to it arrives with the dojo's next update.
+   */
+  const postFindingToGitHub = useCallback(
+    (sessionId: string, findingId: string) =>
+      postJson(`/api/reviews/${sessionId}/dojo/findings/${encodeURIComponent(findingId)}/github`, {}),
+    [postJson],
+  );
+
+  /** The skills there are for the dojo, and the ones chosen (#290). A local review's repository adds its own. */
+  const getDojoSettings = useCallback(
+    async (sessionId: string | null): Promise<{ ok: true; skills: SkillInfo[]; chosen: string[] } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const query = sessionId ? `?session=${encodeURIComponent(sessionId)}` : "";
+        const response = await fetch(`http://localhost:${httpPort}/api/settings/dojo${query}`);
+        const data = (await response.json().catch(() => ({}))) as { skills?: SkillInfo[]; chosen?: string[]; error?: string };
+        if (response.ok && data.skills && data.chosen) return { ok: true, skills: data.skills, chosen: data.chosen };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
+  /** Save the dojo's skills; the next dojo started reviews by them. */
+  const saveDojoSkills = useCallback(
+    async (skills: string[]): Promise<{ ok: true; chosen: string[] } | { ok: false; error: string }> => {
+      if (!httpPort) return { ok: false, error: "Not connected to server" };
+      try {
+        const response = await fetch(`http://localhost:${httpPort}/api/settings/dojo`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ skills }),
+        });
+        const data = (await response.json().catch(() => ({}))) as { chosen?: string[]; error?: string };
+        if (response.ok && data.chosen) return { ok: true, chosen: data.chosen };
+        return { ok: false, error: data.error ?? `Server returned ${response.status}` };
+      } catch {
+        return { ok: false, error: "Failed to connect to server" };
+      }
+    },
+    [httpPort],
+  );
+
   return {
     isAvailable,
+    getDojoSettings,
+    saveDojoSkills,
     startFixer,
+    postFindingToGitHub,
     fetchRefs,
     compareAgainst,
     resetCompare,

@@ -299,7 +299,43 @@ describe("sending findings to the agent that made the change (#238)", () => {
     expect(screen.queryByRole("button", { name: /Send to the agent/ })).toBeNull();
     expect(screen.queryByRole("checkbox")).toBeNull();
     // …and says why, so their absence doesn't look like a bug (#254).
-    expect(screen.getByText(/On a pull request, these findings stay here as threads and aren't posted to GitHub/)).toBeDefined();
+    expect(screen.getByText(/On a pull request, these findings stay here unless you post one/)).toBeDefined();
+  });
+
+  it("puts a finding on the pull request when the reviewer posts it, and says where it went (#289)", async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ url: "https://github.com/acme/widget/pull/7#discussion_r1" })));
+    const { rerender } = render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Post to GitHub" })[0]);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://localhost:24680/api/reviews/s1/dojo/findings/claude-1/github",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
+
+    // Its link arrives with the dojo's next update.
+    const posted = { ...done, findings: [{ ...done.findings[0], githubCommentUrl: "https://github.com/acme/widget/pull/7#discussion_r1" }, done.findings[1]] };
+    rerender(<DojoPanel sessionId="s1" dojo={posted} onNavigate={() => {}} onHide={() => {}} />);
+    expect(screen.getByRole("link", { name: /On the pull request/ }).getAttribute("href")).toBe("https://github.com/acme/widget/pull/7#discussion_r1");
+    expect(screen.getAllByRole("button", { name: "Post to GitHub" })).toHaveLength(1);
+  });
+
+  it("says why when GitHub won't take it", async () => {
+    fetchMock.mockImplementationOnce(async () => new Response(JSON.stringify({ error: "GitHub didn't take the comment: line must be part of the diff" }), { status: 502 }));
+    render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Post to GitHub" })[0]);
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "GitHub didn't take the comment: line must be part of the diff");
+  });
+
+  it("says which skills the agents reviewed by (#290)", () => {
+    render(<DojoPanel sessionId="s1" dojo={{ ...done, skills: ["Security review", "house-style"] }} onNavigate={() => {}} onHide={() => {}} />);
+    expect(screen.getByText(/Reviewing by the skills/).textContent).toBe("Reviewing by the skills Security review, house-style.");
+  });
+
+  it("offers no Post to GitHub on a local review", () => {
+    render(<DojoPanel sessionId="s1" dojo={done} onNavigate={() => {}} onHide={() => {}} sendBack={{ annotations: [], agentReadAt: undefined }} />);
+    expect(screen.queryByRole("button", { name: "Post to GitHub" })).toBeNull();
   });
 
   it("ticks the agreed findings, and sends them to the agent to fix on their threads", async () => {
