@@ -241,13 +241,25 @@ function setupSkill(
   return { action, filePath };
 }
 
+/**
+ * Asks a yes/no question at the terminal; the default is yes. Closing it
+ * without an answer (Ctrl+C, Ctrl+D) cancels setup. It used to wait on a
+ * promise nothing resolved, so setup exited 0 having written nothing.
+ */
 async function promptUser(question: string): Promise<boolean> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
   });
   return new Promise((resolve) => {
+    let answered = false;
+    rl.on("close", () => {
+      if (answered) return;
+      console.log("\nSetup cancelled.");
+      process.exit(130);
+    });
     rl.question(question, (answer) => {
+      answered = true;
       rl.close();
       resolve(answer.toLowerCase() !== "n");
     });
@@ -283,10 +295,14 @@ async function setupGitignore(
     return { action: "created", filePath };
   }
 
-  const confirmed = await promptUser(
-    "No .gitignore found. Create one with DiffPrism entries? (Y/n) ",
-  );
-  if (!confirmed) {
+  // Only a terminal can answer. Without one — an agent's shell, CI — the
+  // question would read end-of-input, or wait forever on a pipe that never
+  // closes (#291), so take its default and say so.
+  if (!process.stdin.isTTY) {
+    console.log("No .gitignore found. Creating one with DiffPrism entries.");
+  } else if (
+    !(await promptUser("No .gitignore found. Create one with DiffPrism entries? (Y/n) "))
+  ) {
     console.log(
       "  Warning: DiffPrism files will appear in git status and may be accidentally committed.",
     );

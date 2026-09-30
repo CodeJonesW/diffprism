@@ -35,12 +35,19 @@ Then in Claude Code:
 
 ## Setup
 
+**Let your agent do it.** Give Claude Code, Cursor or any coding agent this repo's link and ask it to set up DiffPrism.
+
+> **Agents:** follow the [Agent Setup Guide](https://github.com/CodeJonesW/diffprism/blob/main/docs/usage/agent-setup.md). It says what to check, what to ask the user, and which commands to run.
+
+**Or do it yourself:**
+
 ```bash
 npm install -g diffprism
-diffprism setup          # Register MCP server with Claude Code
+diffprism setup --global # The /review skill and tool permissions, once per machine
+diffprism setup          # In each repo: register the MCP server with Claude Code
 ```
 
-The server starts on its own the first time you review something.
+The server starts on its own the first time you review something. Using Cursor? See [Cursor](docs/usage/agent-setup.md#cursor).
 
 ## PR Review
 
@@ -309,6 +316,7 @@ cli/                — Commander CLI
 
 ## Documentation
 
+- [Agent Setup Guide](docs/usage/agent-setup.md) — for an agent installing DiffPrism for you, in Claude Code or Cursor
 - [Claude Code Setup Guide](docs/usage/claude-setup.md) — detailed configuration and troubleshooting
 - [Dev Testing Guide](docs/usage/dev-testing.md) — running from source
 

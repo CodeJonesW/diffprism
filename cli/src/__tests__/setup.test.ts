@@ -24,11 +24,13 @@ vi.mock("node:os", () => ({
 // Mock node:readline
 const mockQuestion = vi.fn();
 const mockClose = vi.fn();
+const mockOn = vi.fn();
 vi.mock("node:readline", () => ({
   default: {
     createInterface: vi.fn(() => ({
       question: mockQuestion,
       close: mockClose,
+      on: mockOn,
     })),
   },
 }));
@@ -41,6 +43,11 @@ const mockReadFileSync = vi.mocked(fs.readFileSync);
 const mockWriteFileSync = vi.mocked(fs.writeFileSync);
 const mockMkdirSync = vi.mocked(fs.mkdirSync);
 
+/** Whether setup sees a terminal it can ask questions at. */
+function setStdinTTY(value: boolean | undefined): void {
+  Object.defineProperty(process.stdin, "isTTY", { value, configurable: true });
+}
+
 describe("setup command", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -51,6 +58,7 @@ describe("setup command", () => {
 
     // Default: readline prompt auto-confirms
     mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("Y"));
+    mockOn.mockReset();
 
     // Default: .git exists at /projects/myapp
     mockExistsSync.mockImplementation((p: fs.PathLike) => {
@@ -62,6 +70,7 @@ describe("setup command", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    setStdinTTY(undefined);
   });
 
   describe("git root detection", () => {
@@ -106,9 +115,13 @@ describe("setup command", () => {
 
   describe(".gitignore", () => {
     it("creates .gitignore with all DiffPrism entries when user confirms", async () => {
+      setStdinTTY(true);
       mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("Y"));
 
-      await setup({});
+      // --force skips the first-run wizard, so this is the prompt alone.
+      await setup({ force: true });
+
+      expect(mockQuestion).toHaveBeenCalled();
 
       const gitignoreCall = mockWriteFileSync.mock.calls.find(
         (call) => call[0].toString().endsWith(".gitignore"),
@@ -201,9 +214,10 @@ describe("setup command", () => {
     });
 
     it("skips creation when user declines prompt", async () => {
+      setStdinTTY(true);
       mockQuestion.mockImplementation((_q: string, cb: (answer: string) => void) => cb("n"));
 
-      await setup({});
+      await setup({ force: true });
 
       const gitignoreCall = mockWriteFileSync.mock.calls.find(
         (call) => call[0].toString().endsWith(".gitignore"),
@@ -212,6 +226,35 @@ describe("setup command", () => {
       expect(console.log).toHaveBeenCalledWith(
         expect.stringContaining("Warning"),
       );
+    });
+
+    it("creates .gitignore without asking when there is no terminal", async () => {
+      // An agent's shell or CI: nobody can answer, and a pipe may never close.
+      const outcome = await setup({});
+
+      expect(mockQuestion).not.toHaveBeenCalled();
+      const gitignoreCall = mockWriteFileSync.mock.calls.find(
+        (call) => call[0].toString().endsWith(".gitignore"),
+      );
+      expect(gitignoreCall).toBeDefined();
+      expect(outcome.created).toContain(path.join("/projects/myapp", ".gitignore"));
+      expect(outcome.created).toContain(path.join("/projects/myapp", ".mcp.json"));
+    });
+
+    it("cancels setup when the prompt closes without an answer", async () => {
+      // Ctrl+C at the question closes readline without calling back.
+      setStdinTTY(true);
+      mockQuestion.mockImplementation(() => {});
+      mockOn.mockImplementation((event: string, handler: () => void) => {
+        if (event === "close") handler();
+      });
+      vi.mocked(process.exit).mockImplementation(((code: number) => {
+        throw new Error(`exit ${code}`);
+      }) as never);
+
+      await expect(setup({ force: true })).rejects.toThrow("exit 130");
+
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
     });
   });
 

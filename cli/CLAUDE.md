@@ -28,7 +28,8 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 ### `diffprism setup`
 - Configures DiffPrism for Claude Code integration in one command
 - Creates/merges `.mcp.json` with DiffPrism MCP server entry
-- Creates/merges `.claude/settings.json` with auto-approve permission for `open_review`
+- Creates/merges `.claude/settings.json` with auto-approve permissions for every DiffPrism MCP tool
+- Adds DiffPrism's entries to `.gitignore`. With no `.gitignore` it asks first, but only at a terminal. Without one (an agent's shell, CI) it creates it and says so, rather than exiting 0 with nothing written (#291). Closing the question without an answer (Ctrl+C) cancels setup with exit 130
 - Installs `/review` skill to `.claude/skills/review/SKILL.md`
 - `--global` — Configure globally (skill + permissions at `~/.claude/`, no git repo required)
 - `--force` — Overwrite existing configuration files
