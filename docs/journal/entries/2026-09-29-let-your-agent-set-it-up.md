@@ -2,6 +2,7 @@
 title: Hand your agent the link and it sets DiffPrism up
 date: 2026-09-29
 kind: feature
+pr: 293
 ---
 
 ## What changed
