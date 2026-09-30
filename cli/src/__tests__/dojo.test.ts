@@ -50,6 +50,7 @@ const request: DojoRequest = {
   localRepoPath: "/checkouts/acme/widget/pr-7",
   server: { httpPort: 1, wsPort: 2, pid: 3, startedAt: 0 } as GlobalServerInfo,
   agents: [{ name: "claude" }, { name: "cursor", model: "gpt-5" }],
+  skills: [],
 };
 
 /** Each agent's answers: its round-one findings, and its votes (or a raw output to fail with). */
@@ -136,8 +137,24 @@ describe("runDojo (#231)", () => {
     expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "working-copy" })).toBe("the uncommitted changes in /work/app");
     expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "main..feature" })).toBe("the diff main..feature in /work/app");
     expect(describeSubject({ kind: "pr", url: "https://github.com/acme/widget/pull/7" })).toBe("https://github.com/acme/widget/pull/7");
-    const instructions = dojoInstructions({ sessionId: "s1", localRepoPath: "/work/app", subject: { kind: "local", repoPath: "/work/app", diffRef: "working-copy" } }, "Cursor");
+    const instructions = dojoInstructions({ sessionId: "s1", localRepoPath: "/work/app", skills: [], subject: { kind: "local", repoPath: "/work/app", diffRef: "working-copy" } }, "Cursor");
     expect(instructions).not.toContain("staged version");
+  });
+
+  it("gives every agent the skills the reviewer chose, in its instructions (#290)", () => {
+    const instructions = dojoInstructions(
+      {
+        sessionId: "s1",
+        localRepoPath: "/work/app",
+        subject: { kind: "local", repoPath: "/work/app", diffRef: "staged" },
+        skills: [{ name: "security-review", instructions: "Check every input that crosses a trust boundary." }],
+      },
+      "Cursor",
+    );
+    expect(instructions).toContain("The reviewer asked the dojo to review by these skills.");
+    expect(instructions).toContain("## Skill: security-review\n\nCheck every input that crosses a trust boundary.");
+    // None chosen, none mentioned.
+    expect(dojoInstructions({ ...request, skills: [] }, "Cursor")).not.toContain("Skill:");
   });
 
   it("drops an agent that can't review, says why, and goes on without it", async () => {

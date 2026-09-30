@@ -429,6 +429,8 @@ export interface DojoCombinedFinding {
   votes: DojoVote[];
   consensus: DojoConsensus;
   annotationId?: string;
+  /** On a PR review: the comment it was posted as on GitHub, once the reviewer posts it (#289). */
+  githubCommentUrl?: string;
 }
 
 /** `waiting`: its review is in, and it waits for the others to vote on theirs (#251). */
@@ -455,6 +457,17 @@ export interface DojoState {
   startedAt: number;
   finishedAt?: number;
   error?: string;
+  /** The names of the skills it reviewed by (#290). */
+  skills?: string[];
+}
+
+/** A skill the dojo can review by (#290) — mirrors core. */
+export interface SkillInfo {
+  /** `user:<folder>` or `project:<folder>`. */
+  id: string;
+  scope: "user" | "project";
+  name: string;
+  description?: string;
 }
 
 /** A model an agent can use, as its own CLI names it (#244) — mirrors core. */

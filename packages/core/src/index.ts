@@ -90,8 +90,10 @@ export {
   chooseReviewAgent,
 } from "./agent-settings.js";
 export type { ReviewAgentName, ReviewAgentChoice, AgentSettings } from "./agent-settings.js";
-export { DOJO_SEVERITIES, DojoStoppedError, combineFindings, dojoFindingId, dojoThreadBody } from "./dojo.js";
+export { DOJO_SEVERITIES, DojoStoppedError, combineFindings, dojoFindingId, dojoGitHubComment, dojoThreadBody } from "./dojo.js";
 export { AsyncQueue } from "./async-queue.js";
+export { listSkills, parseSkill, readDojoSkillIds, resolveDojoSkills, writeDojoSkillIds } from "./dojo-skills.js";
+export type { DojoSkill, SkillInfo, SkillScope } from "./dojo-skills.js";
 export type {
   DojoSeverity,
   DojoFinding,

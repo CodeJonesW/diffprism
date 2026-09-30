@@ -1,5 +1,6 @@
 import type { ReviewAgentChoice, ReviewAgentName } from "./agent-settings.js";
 import type { DiffSide, GlobalServerInfo } from "./types.js";
+import type { DojoSkill } from "./dojo-skills.js";
 
 // ─── The review dojo (#231) ───
 //
@@ -47,6 +48,22 @@ export interface DojoCombinedFinding extends DojoFinding {
   consensus: DojoConsensus;
   /** The review thread posted for it on its line, once there is one. */
   annotationId?: string;
+  /** On a PR review: the comment it was posted as on GitHub, once the reviewer posts it (#289). */
+  githubCommentUrl?: string;
+}
+
+/**
+ * A finding as a comment on the pull request (#289): what it is, why, and
+ * where it came from — the reviewer posts it, but an AI raised it, and says so.
+ */
+export function dojoGitHubComment(
+  finding: DojoCombinedFinding,
+  labels: Partial<Record<ReviewAgentName, string>>,
+): string {
+  const name = (agent: ReviewAgentName) => labels[agent] ?? agent;
+  const agreed = finding.votes.filter((v) => v.stance === "agree").map((v) => name(v.agent));
+  const origin = `Raised by ${name(finding.raisedBy)} in a DiffPrism review dojo${agreed.length > 0 ? `; ${agreed.join(" and ")} agreed` : ""}.`;
+  return [`**[${finding.severity}] ${finding.title}**`, "", finding.body, "", `<sub>${origin}</sub>`].join("\n");
 }
 
 /**
@@ -91,6 +108,8 @@ export interface DojoState {
   finishedAt?: number;
   /** Why the whole dojo failed or was stopped, when status is "failed" or "stopped". */
   error?: string;
+  /** The names of the skills it reviewed by (#290); none when none applied. */
+  skills?: string[];
 }
 
 /** An agent the dojo can seat: installed here, with the model it would use. */
@@ -113,6 +132,8 @@ export interface DojoRequest {
   localRepoPath: string;
   server: GlobalServerInfo;
   agents: ReviewAgentChoice[];
+  /** The skills the reviewer chose for the dojo, whose instructions every agent reviews by (#290). */
+  skills: DojoSkill[];
 }
 
 export interface DojoResult {

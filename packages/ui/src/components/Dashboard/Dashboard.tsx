@@ -2,7 +2,7 @@ import { SessionSidebar } from "../SessionSidebar";
 import { ReviewView } from "../ReviewView";
 import { NotificationToggle } from "../NotificationToggle";
 import { FeedbackLink } from "../FeedbackLink";
-import { AgentSettingsControl } from "../AgentSettings";
+import { SettingsControl } from "../Settings";
 import { PrInput } from "../PrInput";
 import type { NotificationPermission } from "../../hooks/useNotifications";
 import type { ReviewResult, SessionSummary } from "../../types";
@@ -303,7 +303,7 @@ export function Dashboard({
                 onToggle={onToggleNotifications}
               />
             )}
-            <AgentSettingsControl />
+            <SettingsControl />
             <FeedbackLink />
           </div>
         </Splitter.Pane>
