@@ -36,8 +36,17 @@ Every session with a diff ref runs `git diff` on a timer, so watchers are budget
   - a PR review;
   - a review of a commit range (only `staged`, `unstaged` and `working-copy` show a fix);
   - a second fixer, including while one is still starting;
-  - any start while a caller is waiting (it gets the findings itself);
-  - a request from a web page other than the dashboard (the API allows any origin, so a request whose `Origin` isn't the dashboard's gets 403). The session summary's `fixer: { label, state, error? }` says it's `running`, then `finished` when the reviewer decides or `failed` with why. It waits on the review without a `caller`, so what was waiting before stays on record.
+  - any start while a caller is waiting (it gets the findings itself).
+
+  The session summary's `fixer: { label, state, error? }` says it's `running`, then `finished` when the reviewer decides or `failed` with why. It waits on the review without a `caller`, so what was waiting before stays on record.
+- **Who may use the server (#284):** `requestOrigin()` sorts each request, and `originAllowed()` decides:
+  - a Host that isn't `localhost`, `127.0.0.1` or `[::1]` on the port it came in on: another page (DNS rebinding);
+  - the dashboard's `Origin` (`http://localhost|127.0.0.1:<uiPort>`): anything;
+  - no `Origin` and no `Sec-Fetch-Site`: a local process (the CLI, the gate, MCP), anything. Browsers send `Sec-Fetch-Site` on every request, even ones without an `Origin` (an `<img>`, a same-origin GET); Node's fetch sends only `Sec-Fetch-Mode`;
+  - a `chrome-extension://` page: GET only (the extension's popup reads status and sessions);
+  - any other page: 403, reads included, since some GETs have effects.
+
+  CORS names the requesting origin, never `*`. The WebSocket server's `verifyClient` allows only local processes and the dashboard.
 - **Landed:** a decided local review whose diff goes empty is removed at once, by the watcher: the change it judged has landed (the commit the gate let through) or been dropped. Left alone, it showed "0 files changed" with the decision buttons until its 5-minute expiry.
 - **Idle expiry:** a session nobody is viewing, waiting on (a blocked caller polling `/result` counts), or changing for `idleSessionTtl` (24h) is removed, and its watcher stops. Before this, a UI-opened session was only removed by an explicit close and an `in_review` session matched no expiry rule, so both could poll forever.
 

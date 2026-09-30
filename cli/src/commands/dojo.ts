@@ -53,11 +53,11 @@ export function describeSubject(subject: DojoSubject): string {
   return `${LOCAL_CHANGE[subject.diffRef] ?? `the diff ${subject.diffRef}`} in ${subject.repoPath}`;
 }
 
-export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subject">, label: string): string {
+export function dojoInstructions(request: Pick<DojoRequest, "sessionId" | "subject" | "localRepoPath">, label: string): string {
   const { subject } = request;
   const lines = [
     `You are ${label}, one of several AI code reviewers in a review dojo on ${describeSubject(subject)} (DiffPrism review ${request.sessionId}).`,
-    `Read the change with the DiffPrism tools, passing session_id "${request.sessionId}": get_pr_context for what is under review and which files it touches, get_file_diff for each file's changes, get_file_context for surrounding code. Read the rest of the repository as you need to.`,
+    `Read the change with the DiffPrism tools, passing session_id "${request.sessionId}": get_pr_context for what is under review and which files it touches, get_file_diff for each file's changes, get_file_context for surrounding code. The repository is at ${request.localRepoPath}; read the rest of it as you need to.`,
   ];
   // A commit is the index, not the files on disk (#238).
   if (subject.kind === "local" && diffNewSide(subject.diffRef).kind === "index") {

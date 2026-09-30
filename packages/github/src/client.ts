@@ -11,7 +11,7 @@ export interface PrMetadata {
   headBranch: string;
   /** The commit the PR's head is at — what a review of it reads. */
   headSha: string;
-  /** The base branch's commit the PR is measured against. */
+  /** Where the PR branched off its base: the merge base, the old side of the diff GitHub shows (#257). */
   baseSha: string;
   body: string | null;
   /**
@@ -62,10 +62,33 @@ export async function fetchPullRequest(
     client.pulls.get({ owner, repo, pull_number: number }),
     fetchViewer(client),
   ]);
+  // GitHub's names for the repo, not as typed: "Acme/Widget" and
+  // "acme/widget" are one repo, and a path built from each would be two
+  // checkouts of it (#257).
+  const canonicalOwner = data.base.repo.owner.login;
+  const canonicalRepo = data.base.repo.name;
+  // The diff GitHub shows is three-dot: from where the head branched off,
+  // not from the base branch's tip, which moves on as others merge (#257).
+  // Reading the old side at the tip would show changes the PR didn't make.
+  // A PR too large for GitHub to compare is one it can't send the diff of
+  // either, which the review needs anyway — so this fails the open, saying why.
+  let comparison: { merge_base_commit: { sha: string } };
+  try {
+    ({ data: comparison } = await client.repos.compareCommitsWithBasehead({
+      owner: canonicalOwner,
+      repo: canonicalRepo,
+      basehead: `${data.base.sha}...${data.head.sha}`,
+      per_page: 1,
+    }));
+  } catch (err) {
+    throw new Error(
+      `GitHub couldn't say where ${canonicalOwner}/${canonicalRepo}#${number} branched off ${data.base.ref}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   return {
-    owner,
-    repo,
+    owner: canonicalOwner,
+    repo: canonicalRepo,
     number,
     title: data.title,
     author: data.user?.login ?? "unknown",
@@ -73,7 +96,7 @@ export async function fetchPullRequest(
     baseBranch: data.base.ref,
     headBranch: data.head.ref,
     headSha: data.head.sha,
-    baseSha: data.base.sha,
+    baseSha: comparison.merge_base_commit.sha,
     body: data.body,
     viewer,
   };

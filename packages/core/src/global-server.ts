@@ -695,15 +695,47 @@ async function startFixer(session: Session, diffRef: FixableDiffRef, starter: Fi
 let dashboardOrigins = new Set<string>();
 
 /**
- * Whether a request may do something with effects beyond the review, such as
- * starting an agent that edits files (#279). The API answers any origin
- * (`Access-Control-Allow-Origin: *`), so without this any web page open in the
- * reviewer's browser could start one. A request from a page must come from
- * the dashboard; one from no page (no Origin) is a local process.
+ * Who may use this server, by the page a request comes from (#284).
+ *
+ * It listens on localhost, where any page open in the reviewer's browser can
+ * reach it. Unchecked, a page could read every review, approve a commit held
+ * at the gate, post a GitHub review, or start agents, one of them able to
+ * edit files (#279). So:
+ * - the dashboard this server serves: anything.
+ * - a browser extension: reads only. The DiffPrism extension's popup shows
+ *   whether the server is up and finds a PR's review; it changes nothing.
+ * - a local process — the CLI, the commit gate, an agent's MCP server:
+ *   anything. It's told apart from a browser by what it doesn't send, and
+ *   that alone isn't enough: a browser leaves `Origin` off navigations,
+ *   no-cors loads such as `<img>`, and same-origin GETs. So it also sends no
+ *   `Sec-Fetch-Site` (which browsers put on every request), and
+ *   names this server by a loopback name as its Host. A page that pointed its
+ *   own name at 127.0.0.1 (DNS rebinding) is same-origin with the server, and
+ *   gives itself away by that name.
+ * - any other page: nothing, not even a GET — some have effects (a `?caller=`
+ *   poll says something is waiting; reading threads marks them picked up).
  */
-function fromDashboardOrLocal(req: http.IncomingMessage): boolean {
+type RequestOrigin = "local" | "dashboard" | "extension" | "foreign";
+
+function requestOrigin(req: http.IncomingMessage): RequestOrigin {
+  const port = req.socket.localPort;
+  const host = req.headers.host?.toLowerCase();
+  if (!host || ![`localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`].includes(host)) return "foreign";
   const origin = req.headers.origin;
-  return origin === undefined || dashboardOrigins.has(origin);
+  if (origin !== undefined) {
+    if (dashboardOrigins.has(origin)) return "dashboard";
+    if (origin.startsWith("chrome-extension://")) return "extension";
+    return "foreign";
+  }
+  // A browser, without saying which page: never trusted. Sec-Fetch-Site, not
+  // Sec-Fetch-Mode: Node's own fetch — the CLI's, MCP's — sends the mode too.
+  if (req.headers["sec-fetch-site"] !== undefined) return "foreign";
+  return "local";
+}
+
+function originAllowed(from: RequestOrigin, method: string): boolean {
+  if (from === "local" || from === "dashboard") return true;
+  return from === "extension" && (method === "GET" || method === "OPTIONS");
 }
 
 /** Open a thread on a session and tell whoever needs to know. */
@@ -1082,10 +1114,25 @@ async function handleApiRequest(
   const method = req.method ?? "GET";
   const url = (req.url ?? "/").split("?")[0];
 
-  // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // Only the dashboard, local processes and (for reads) extensions (#284).
+  const origin = req.headers.origin;
+  const from = requestOrigin(req);
+  if (!originAllowed(from, method)) {
+    jsonResponse(res, 403, {
+      error:
+        from === "extension"
+          ? "A browser extension can only read from DiffPrism."
+          : "DiffPrism only answers its own dashboard and local tools, not other web pages.",
+    });
+    return true;
+  }
+  // CORS names the page it's for, never `*`: another page can't read a response either.
+  if (origin !== undefined) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin");
+    res.setHeader("Access-Control-Allow-Methods", from === "dashboard" ? "GET, POST, PUT, DELETE, OPTIONS" : "GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
 
   if (method === "OPTIONS") {
     res.writeHead(204);
@@ -1306,15 +1353,16 @@ async function handleApiRequest(
       // own. Reading the reviewer's clone meant starting in it, and then
       // reading whatever branch it had checked out rather than the PR (#240).
       // Without the code there's nothing for the agent to read, so a failed
-      // checkout fails the open.
+      // checkout fails the open. It's named as GitHub names the repo, not as
+      // typed, so one repo has one checkout whatever the case (#257).
       const localRepoPath = await checkoutPullRequest({
-        owner,
-        repo,
+        owner: prMetadata.owner,
+        repo: prMetadata.repo,
         number: prNumber,
         headSha: prMetadata.headSha,
         baseSha: prMetadata.baseSha,
         root: path.join(os.homedir(), ".diffprism", "repos"),
-        remoteUrl: `https://github.com/${owner}/${repo}.git`,
+        remoteUrl: `https://github.com/${prMetadata.owner}/${prMetadata.repo}.git`,
         token,
       });
 
@@ -1508,10 +1556,6 @@ async function handleApiRequest(
     const session = sessions.get(fixerParams.id);
     if (!session) {
       jsonResponse(res, 404, { error: "Session not found" });
-      return true;
-    }
-    if (!fromDashboardOrLocal(req)) {
-      jsonResponse(res, 403, { error: "Only the DiffPrism dashboard can start an agent." });
       return true;
     }
     if (!fixAgentStarter || !runningServer) {
@@ -2246,7 +2290,15 @@ export async function startGlobalServer(
   });
 
   // Create WebSocket server on a separate port
-  wss = new WebSocketServer({ port: wsPort });
+  // The same rule as the API (#284): the socket sends every review's contents
+  // and takes changes, so only the dashboard and local processes connect.
+  wss = new WebSocketServer({
+    port: wsPort,
+    verifyClient: ({ req }: { req: http.IncomingMessage }) => {
+      const from = requestOrigin(req);
+      return from === "local" || from === "dashboard";
+    },
+  });
 
   wss.on("connection", (ws, req) => {
     // Start all watchers when first client connects

@@ -136,7 +136,7 @@ describe("runDojo (#231)", () => {
     expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "working-copy" })).toBe("the uncommitted changes in /work/app");
     expect(describeSubject({ kind: "local", repoPath: "/work/app", diffRef: "main..feature" })).toBe("the diff main..feature in /work/app");
     expect(describeSubject({ kind: "pr", url: "https://github.com/acme/widget/pull/7" })).toBe("https://github.com/acme/widget/pull/7");
-    const instructions = dojoInstructions({ sessionId: "s1", subject: { kind: "local", repoPath: "/work/app", diffRef: "working-copy" } }, "Cursor");
+    const instructions = dojoInstructions({ sessionId: "s1", localRepoPath: "/work/app", subject: { kind: "local", repoPath: "/work/app", diffRef: "working-copy" } }, "Cursor");
     expect(instructions).not.toContain("staged version");
   });
 
