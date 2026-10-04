@@ -60,6 +60,18 @@ beforeEach(() => {
   // An existing .gitignore, so a real setup never stops to ask about one.
   fs.writeFileSync(path.join(repo, ".gitignore"), "node_modules\n");
   vi.spyOn(os, "homedir").mockReturnValue(home);
+  // git's global config, too: never the real machine's.
+  vi.stubEnv("GIT_CONFIG_GLOBAL", path.join(home, ".gitconfig"));
+  // And Claude Code's CLI: a stand-in that registers in this home's
+  // ~/.claude.json, as the real one does, so no test reaches the real one.
+  const bin = path.join(home, "bin");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(
+    path.join(bin, "claude"),
+    `#!/bin/sh\nif [ "$2" = "add-json" ]; then printf '{"mcpServers":{"diffprism":%s}}' "$6" > "${path.join(home, ".claude.json")}"; fi\nexit 0\n`,
+  );
+  fs.chmodSync(path.join(bin, "claude"), 0o755);
+  vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH}`);
   vi.spyOn(process, "cwd").mockReturnValue(repo);
   vi.spyOn(console, "log").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -72,6 +84,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.mocked(builtAt).mockReturnValue(null);
   vi.mocked(ensureServer).mockReset();
   process.exitCode = undefined;
@@ -86,6 +99,8 @@ describe("diffprism doctor (#214)", () => {
     expect(states(report)).toEqual({
       "Global:/review skill": "fixable",
       "Global:permissions": "fixable",
+      // Claude Code's CLI is here, and nothing is registered with it yet.
+      "Global:MCP server (every project)": "fixable",
       "Project:.gitignore": "fixable",
       "Project:.mcp.json": "fixable",
       "Project:permissions": "fixable",
@@ -95,6 +110,13 @@ describe("diffprism doctor (#214)", () => {
     });
     expect(fs.existsSync(path.join(home, ".claude"))).toBe(false);
     expect(fs.existsSync(path.join(repo, ".mcp.json"))).toBe(false);
+  });
+
+  it("reports no Claude Code (no `claude` on PATH) as a fact, not a problem: DiffPrism works without it", async () => {
+    // git's folder only, where Claude Code's CLI isn't.
+    vi.stubEnv("PATH", path.dirname(execFileSync("which", ["git"], { encoding: "utf8" }).trim()));
+    const report = await diagnose(repo);
+    expect(states(report)["Global:MCP server (every project)"]).toBe("info");
   });
 
   it("exits non-zero while anything is out of date", async () => {

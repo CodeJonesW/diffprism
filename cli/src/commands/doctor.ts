@@ -48,6 +48,7 @@ function sectionsOf(report: DoctorReport): DoctorSection[] {
 const ARTIFACT_NAMES: Record<SetupArtifact, string> = {
   gitignore: ".gitignore",
   "mcp-json": ".mcp.json",
+  "mcp-server": "MCP server (every project)",
   permissions: "permissions",
   skill: "/review skill",
 };
@@ -63,7 +64,7 @@ export async function diagnose(cwd: string): Promise<DoctorReport> {
 
   const globalPlan = await setup({ global: true, dryRun: true });
   const global: DoctorSection = {
-    title: "Global (~/.claude)",
+    title: "Global (every project and worktree)",
     checks: globalPlan.steps.map((step) => setupCheck(step, home)),
   };
 
@@ -95,11 +96,17 @@ function setupCheck(step: SetupStep, baseDir: string): DoctorCheck {
   const name = ARTIFACT_NAMES[step.artifact];
   switch (step.action) {
     case "skipped":
-      return { name, state: "ok", detail: where };
+      return { name, state: "ok", detail: step.note ? `${where} — ${step.note}` : where };
     case "created":
       return { name, state: "fixable", detail: `${where} — missing` };
     case "updated":
       return { name, state: "fixable", detail: `${where} — out of date for this version` };
+    case "unavailable":
+      // No Claude Code here: DiffPrism works without it, so a fact, not a problem.
+      return { name, state: "info", detail: `${where} — ${step.note ?? "not available here"}` };
+    case "failed":
+      // --fix tries again; the note says why it didn't work last time.
+      return { name, state: "fixable", detail: `${where} — ${step.note ?? "couldn't be set up"}` };
   }
 }
 

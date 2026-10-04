@@ -31,7 +31,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - Creates/merges `.claude/settings.json` with auto-approve permissions for every DiffPrism MCP tool
 - Adds DiffPrism's entries to `.gitignore`. With no `.gitignore` it asks first, but only at a terminal. Without one (an agent's shell, CI) it creates it and says so, rather than exiting 0 with nothing written (#291). Closing the question without an answer (Ctrl+C) cancels setup with exit 130
 - Installs `/review` skill to `.claude/skills/review/SKILL.md`
-- `--global` — Configure globally (skill + permissions at `~/.claude/`, no git repo required)
+- `--global` — Configure globally: skill + permissions at `~/.claude/`, and DiffPrism's MCP server for every project (Claude Code's user scope, through `claude mcp add-json --scope user`): `diffprism serve` when `diffprism` is on PATH (a linked dev build is), else `npx -y diffprism@latest serve`, wrapped in `cmd /c` on Windows — never a path into one build, which an npx cache, worktree or Node version could take away. Every repository and worktree then has DiffPrism with nothing per repository; per-repo `.mcp.json` is in `.gitignore`, so a new worktree never had it. It only ever adds: a registration that's already there stays, whatever it runs, even with `--force` (one that isn't setup's own is reported as kept). Claude Code's CLI runs through cross-spawn, which quotes the JSON argument for Windows' `claude.cmd` shim. With no `claude` on PATH the MCP step is `unavailable`, with why (doctor: info, as DiffPrism works without Claude Code). An unreadable `~/.claude.json` (in `CLAUDE_CONFIG_DIR` when set), or a registration Claude Code refused, is `failed` with why, which `doctor --fix` retries; a missing one is only "nothing registered yet". The server's automatic repair (`isGlobalSetupDone`, `skipMcpServer`) leaves the MCP registration alone, so a server started in the background never rewrites Claude Code's config. No git repo required
 - `--force` — Overwrite existing configuration files
 - Idempotent: skips files that are already correctly configured
 - Upgrades what older versions wrote: prunes permissions for retired tools, and removes hooks that call DiffPrism commands which no longer exist (`notify-stop`, #215)
@@ -40,6 +40,7 @@ Commander-based CLI entry point. Thin wrapper around core pipeline.
 - Reports every artifact DiffPrism installs and whether it matches this build: global and project `/review` skill and permissions, `.gitignore`, `.mcp.json` (and what it launches), the pre-commit hook's diffprism block, and the running server (port, PID, uptime, version)
 - Read-only. It asks the installers — `setup({ dryRun })`, `hookStatus()`, `decideOnRunningServer()` — rather than keeping its own idea of "current" (#214)
 - `--fix` — apply what setup would, refresh a stale hook block, and replace an older server nobody is reviewing in. A server kept up by open reviews is reported, not stopped
+- The global section also reports the MCP server for every project
 - Exits 1 while anything is out of date
 
 ### `diffprism teardown`

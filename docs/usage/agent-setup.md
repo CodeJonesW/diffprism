@@ -52,16 +52,20 @@ If a global install fails on permissions, tell the user rather than reaching for
 
 ### Claude Code
 
-Once per machine, then once in each repository the user chose:
+Once per machine, and that's all:
 
 ```bash
-diffprism setup --global    # the /review skill and tool permissions, in ~/.claude
-cd <repo>
-diffprism setup             # .mcp.json, project permissions, /review skill, .gitignore entries
+diffprism setup --global    # DiffPrism's MCP tools for every project, the /review skill and tool permissions
 ```
 
-`diffprism setup` never overwrites what's there. It merges into existing files and skips what's
-already configured, so it's safe to run again.
+It registers DiffPrism's MCP server with Claude Code for every project (`claude mcp add-json --scope user`),
+so every repository and every worktree has DiffPrism's tools with nothing per repository. Agents
+that create worktrees get DiffPrism in each one straight away. Restart Claude Code afterwards.
+
+`diffprism setup` (without `--global`) still writes per-repository files (`.mcp.json`, project
+permissions, the `/review` skill) for a repository that wants its own. It's not needed otherwise.
+Setup never overwrites what's there: it merges into existing files and skips what's already
+configured, so it's safe to run again.
 
 ### Cursor
 
@@ -85,7 +89,7 @@ Cursor asks before it runs each tool. The user can allow them from Cursor's MCP 
 ### Only if the user said yes
 
 ```bash
-diffprism hook install                  # in each chosen repo: gate large commits on a review
+diffprism hook install                  # in each chosen repo: gate large commits on a review (its worktrees share it)
 diffprism config set agent cursor       # Cursor answers PR review comments instead of Claude Code
 ```
 

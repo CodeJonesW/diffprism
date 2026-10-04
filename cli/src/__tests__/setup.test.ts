@@ -692,12 +692,12 @@ describe("setup command", () => {
     it("prints global-specific instructions", async () => {
       await setup({ global: true });
 
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining("globally"),
-      );
-      expect(console.log).toHaveBeenCalledWith(
-        expect.stringContaining("diffprism server"),
-      );
+      // No per-project step any more: the global setup covers every project and worktree.
+      expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining("In each project"));
+      // This test's home has no Claude Code, so the tools aren't registered, and it says so
+      // rather than claiming they are.
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining("See above about DiffPrism's MCP server"));
+      expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining("every project and worktree now has DiffPrism's tools"));
     });
   });
 
