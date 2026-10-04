@@ -2,6 +2,7 @@
 title: DiffPrism's tools in every repository and worktree, set up once
 date: 2026-10-04
 kind: fix
+pr: 298
 ---
 
 ## What changed
