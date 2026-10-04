@@ -19,11 +19,13 @@
     "@diffprism/github": "workspace:*",
     "@diffprism/mcp-server": "workspace:*",
     "commander": "^13.0.0",
+    "cross-spawn": "^7.0.6",
     "open": "^10.1.0",
     "tsx": "^4.19.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.4.0",
+    "@types/cross-spawn": "^6.0.6",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

@@ -43,9 +43,11 @@ Then in Claude Code:
 
 ```bash
 npm install -g diffprism
-diffprism setup --global # The /review skill and tool permissions, once per machine
-diffprism setup          # In each repo: register the MCP server with Claude Code
+diffprism setup --global       # Once per machine: DiffPrism's tools, /review and permissions, in every repo and worktree
+diffprism hook install         # Optional, once per repo: gate large commits on a review (its worktrees share it)
 ```
+
+Nothing else is needed per repository, so a worktree an agent creates has DiffPrism straight away.
 
 The server starts on its own the first time you review something. Using Cursor? See [Cursor](docs/usage/agent-setup.md#cursor).
 
@@ -175,6 +177,8 @@ before it can land.
 diffprism hook install              # Add the gate to this repo's pre-commit hook
 diffprism hook uninstall            # Remove it
 ```
+
+One install covers every worktree of the repository: git keeps one hooks folder for a repository and all its worktrees. A repository that keeps its hooks in a folder of its own files (Husky's `.husky`, say) gets the gate there, so commit it for the other worktrees.
 
 The review says when a git commit is waiting on it, what Approve and Request Changes do to that commit, and how long it will wait. If the commit stops waiting, the review says your decision is kept for the next `git commit`. While findings you sent are with the agent, it says so, and that there's nothing to decide yet. When they come back, it says it's your turn.
 

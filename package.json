@@ -44,7 +44,8 @@
     "get-port": "^7.1.0",
     "commander": "^13.0.0",
     "@modelcontextprotocol/sdk": "^1.4.0",
-    "zod": "^3.24.0"
+    "zod": "^3.24.0",
+    "cross-spawn": "^7.0.6"
   },
   "devDependencies": {
     "tsup": "^8.5.1"

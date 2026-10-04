@@ -43,7 +43,7 @@ export async function server(flags: ServerFlags): Promise<void> {
     if (!isDaemon) {
       console.log("Running global setup...\n");
     }
-    await setup({ global: true, quiet: isDaemon });
+    await setup({ global: true, quiet: isDaemon, skipMcpServer: true });
     if (!isDaemon) {
       console.log("");
     }

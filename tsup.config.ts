@@ -32,5 +32,6 @@ export default defineConfig({
     "@modelcontextprotocol/sdk",
     "zod",
     "vite",
+    "cross-spawn",
   ],
 });
