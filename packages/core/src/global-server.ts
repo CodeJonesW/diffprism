@@ -1190,10 +1190,12 @@ async function handleApiRequest(
   if (method === "POST" && url === "/api/reviews") {
     try {
       const body = await readBody(req);
-      const { payload, projectPath, diffRef } = JSON.parse(body) as {
+      const { payload, projectPath, diffRef, headless } = JSON.parse(body) as {
         payload: ReviewInitPayload;
         projectPath: string;
         diffRef?: string;
+        /** Opened for a headless dojo (#301): nobody is meant to watch, so no tab opens. */
+        headless?: boolean;
       };
 
       const identity = localIdentity(projectPath);
@@ -1207,7 +1209,7 @@ async function handleApiRequest(
       });
 
       // Re-open browser if no UI clients are connected
-      reopenBrowserIfNeeded?.();
+      if (!headless) reopenBrowserIfNeeded?.();
 
       jsonResponse(res, reused ? 200 : 201, { sessionId: session.id });
     } catch {
@@ -1704,6 +1706,19 @@ async function handleApiRequest(
     } finally {
       findingsPosting.delete(postKey);
     }
+  }
+
+  // GET /api/reviews/:id/dojo — the dojo on this review, null before one starts.
+  // How a headless dojo (#301) learns it's done, the way waitForDecision polls /result.
+  const readDojoParams = matchRoute(method, url, "GET", "/api/reviews/:id/dojo");
+  if (readDojoParams) {
+    const session = sessions.get(readDojoParams.id);
+    if (!session) {
+      jsonResponse(res, 404, { error: "Session not found" });
+      return true;
+    }
+    jsonResponse(res, 200, { dojo: session.dojo ?? null });
+    return true;
   }
 
   const dojoParams = matchRoute(method, url, "POST", "/api/reviews/:id/dojo");

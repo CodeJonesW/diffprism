@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server exposing DiffPrism tools to Claude Code and 
 
 ## Key Files
 
-- `src/index.ts` — `createMcpServer()` builds an McpServer with its 14 tools registered; `startMcpServer()` connects it to StdioServerTransport. `resolveTarget()` decides which session a tool acts on.
+- `src/index.ts` — `createMcpServer()` builds an McpServer with its 16 tools registered; `startMcpServer()` connects it to StdioServerTransport. `resolveTarget()` decides which session a tool acts on.
 - `src/file-context.ts` — `readFileContext()`: how `get_file_context` reads a file, treating the agent's `file` and `ref` as untrusted (#263).
 
 ## Session targeting
@@ -37,6 +37,14 @@ There is no module-level "last session" and no "most recent session across all r
 #### `get_review_result`
 - **Params:** targeting, `wait`, `timeout` (seconds, default 300, max 600)
 - **Behavior:** Checks an already-open review — after `open_review` with `wait: false`, or after a timeout. Returns the `ReviewResult`, or `{ status: "pending" }`. With `wait`, uses the same `waitForDecision` as `open_review`, so it also returns `reviewer_asked`.
+
+#### `run_dojo`
+- **Params:** `diff_ref` (default `"working-copy"`), `agents` (default: the saved agent), `fail_on` (default `"major"`), `reasoning`, `timeout` (seconds, default 600, max 600)
+- **Behavior:** `openHeadlessDojo()` opens a review with `headless: true` (no tab opens) and starts a dojo on it, then `waitForDojo()` polls `GET /api/reviews/:id/dojo`. Returns `dojoReport()`: `{ status, sessionId, failOn, passed, blocking, findings, agents }`, or `{ status: "running" }` when the wait runs out, or `{ status: "no_changes", passed: true }`. Refuses PR refs.
+
+#### `get_dojo_result`
+- **Params:** targeting, `fail_on`, `wait`, `timeout` (seconds, default 600, max 600)
+- **Behavior:** Reads the dojo on the resolved review, the same report as `run_dojo`. Errors when no dojo has run on it.
 
 #### `update_review_context`
 - **Params:** targeting, `reasoning`, `title`, `description`

@@ -261,3 +261,65 @@ export function dojoThreadBody(
   }
   return lines.join("\n");
 }
+
+// ─── A dojo's verdict, for a caller with no dashboard (#301) ───
+
+/**
+ * The findings that fail a dojo run headless: at or above `failOn`, as the
+ * agent that raised it judged it, and not disputed by another agent. A
+ * single-agent dojo's findings are `solo`, so it can still fail.
+ */
+export function blockingFindings(findings: DojoCombinedFinding[], failOn: DojoSeverity): DojoCombinedFinding[] {
+  const limit = DOJO_SEVERITIES.indexOf(failOn);
+  return findings.filter((f) => f.consensus !== "disputed" && DOJO_SEVERITIES.indexOf(f.severity) <= limit);
+}
+
+/** One agent's part in a dojo, as a headless caller reads it. */
+export interface DojoReportAgent {
+  name: ReviewAgentName;
+  label: string;
+  stage: DojoStage;
+  raised?: number;
+  error?: string;
+}
+
+/**
+ * What `diffprism dojo` prints and `run_dojo` returns: the dojo on one
+ * review, and whether it passed. Only a finished dojo can pass.
+ */
+export interface DojoReport {
+  status: DojoStatus;
+  sessionId: string;
+  failOn: DojoSeverity;
+  passed: boolean;
+  /** The findings that failed it; see blockingFindings. */
+  blocking: DojoCombinedFinding[];
+  findings: DojoCombinedFinding[];
+  agents: DojoReportAgent[];
+  /** Why it failed or was stopped. */
+  error?: string;
+}
+
+export function dojoReport(sessionId: string, dojo: DojoState, failOn: DojoSeverity): DojoReport {
+  const blocking = blockingFindings(dojo.findings, failOn);
+  return {
+    status: dojo.status,
+    sessionId,
+    failOn,
+    passed: dojo.status === "done" && blocking.length === 0,
+    blocking,
+    findings: dojo.findings,
+    agents: dojo.agents.map((seat) => ({
+      name: seat.agent.name,
+      label: seat.label,
+      stage: seat.stage,
+      ...(seat.raised !== undefined ? { raised: seat.raised } : {}),
+      ...(seat.error ? { error: seat.error } : {}),
+    })),
+    ...(dojo.error ? { error: dojo.error } : {}),
+  };
+}
+
+export function isDojoSeverity(value: unknown): value is DojoSeverity {
+  return typeof value === "string" && (DOJO_SEVERITIES as readonly string[]).includes(value);
+}

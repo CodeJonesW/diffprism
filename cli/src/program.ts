@@ -10,7 +10,8 @@ import { preCommitHook, installHook, uninstallHook } from "./commands/hook.js";
 import { feedback } from "./commands/feedback.js";
 import { reply } from "./commands/reply.js";
 import { doctor } from "./commands/doctor.js";
-import { describeVersion, currentVersion, REVIEW_AGENTS } from "@diffprism/core";
+import { headlessDojo } from "./commands/headless-dojo.js";
+import { describeVersion, currentVersion, DOJO_SEVERITIES, REVIEW_AGENTS } from "@diffprism/core";
 import { configGet, configSet, configUnset, CONFIG_KEYS } from "./commands/config.js";
 
 /** The full command tree, built without parsing argv. */
@@ -47,6 +48,21 @@ export function createProgram(): Command {
     .option("--model <model>", "For a PR review, the model the agent uses")
     .option("--no-agent", "For a PR review, don't start an agent to answer your comments")
     .action(review);
+
+  program
+    .command("dojo [ref]")
+    .description("Run a review dojo on local changes with no dashboard and print what it found (exit 0 passed, 1 findings, 2 unfinished)")
+    .option("--staged", "Review staged changes")
+    .option("--unstaged", "Review unstaged changes")
+    .option("--agents <list>", `Comma-separated agents to seat: ${REVIEW_AGENTS.join(", ")} (default: your saved agent)`)
+    .addOption(
+      new Option("--fail-on <severity>", "Fail on findings at this severity or above that no agent disputed (default: major)").choices([
+        ...DOJO_SEVERITIES,
+      ]),
+    )
+    .option("--json", "Print the result as JSON on stdout")
+    .option("--timeout <minutes>", "Stop the dojo if it hasn't finished after this many minutes (default: 30)")
+    .action(headlessDojo);
 
   // Hidden alias for backwards compatibility
   program

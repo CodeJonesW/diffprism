@@ -10,8 +10,10 @@ import type { FixAgentOutcome, FixAgentStarter, PrAgentRequest } from "../types.
 import { DojoStoppedError } from "../dojo.js";
 import type { DojoCombinedFinding, DojoRequest, DojoResult, DojoRunner, DojoSeat, DojoState } from "../dojo.js";
 import { AsyncQueue } from "../async-queue.js";
+import { startDojoOnServer, stopDojoOnServer, waitForDojo } from "../server-client.js";
 import type {
   GlobalServerHandle,
+  GlobalServerInfo,
   ReviewInitPayload,
   ReviewBriefing,
   DiffSet,
@@ -2944,6 +2946,17 @@ describe("reusing an open dashboard tab (#188)", () => {
     expect(open).toHaveBeenCalledTimes(1);
   });
 
+  it("opens no tab for a review opened for a headless dojo (#301)", async () => {
+    handle = await startGlobalServer({ silent: true, openBrowser: false, reconnectGraceMs: 0 });
+    const res = await fetch(`http://localhost:${handle.httpPort}/api/reviews`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: makePayload(), projectPath: "/headless", headless: true }),
+    });
+    expect(res.status).toBe(201);
+    expect(open).not.toHaveBeenCalled();
+  });
+
   // #223: `diffprism review <PR>` started a review nobody could see.
   describe("for a pull request", () => {
     const openPr = (baseUrl: string) =>
@@ -3864,5 +3877,68 @@ describe("the review dojo (#231)", () => {
     const sessionId = await openPr(baseUrl);
     expect((await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] })).status).toBe(404);
     expect((await fetch(`${baseUrl}/api/dojo/agents`)).status).toBe(404);
+  });
+
+  describe("run headless (#301)", () => {
+    const serverInfo = (): GlobalServerInfo => ({ httpPort: handle!.httpPort, wsPort: handle!.wsPort, pid: process.pid, startedAt: Date.now() });
+
+    it("reads the dojo on a review: none yet, then running, then done with its findings", async () => {
+      const { dojo, finish } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      const read = async () => ((await (await fetch(`${baseUrl}/api/reviews/${sessionId}/dojo`)).json()) as { dojo: DojoState | null }).dojo;
+
+      expect(await read()).toBeNull();
+      await send(baseUrl, `/api/reviews/${sessionId}/dojo`, { agents: ["claude"] });
+      expect((await read())!.status).toBe("running");
+      finish({ agents, findings: [finding] });
+      await settle();
+
+      const done = (await read())!;
+      expect(done.status).toBe("done");
+      expect(done.findings[0]).toMatchObject({ id: "claude-1", annotationId: expect.any(String) });
+    });
+
+    it("has no dojo to read on a review that doesn't exist", async () => {
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo: runner().dojo });
+      expect((await fetch(`http://localhost:${handle.httpPort}/api/reviews/session-nope/dojo`)).status).toBe(404);
+    });
+
+    it("is started, waited on and read back by the client helpers", async () => {
+      const { dojo, finish } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const sessionId = await openLocal(`http://localhost:${handle.httpPort}`);
+
+      expect((await startDojoOnServer(serverInfo(), sessionId, ["claude"])).status).toBe("running");
+      // A wait that runs out returns the dojo still running.
+      expect((await waitForDojo(serverInfo(), sessionId, 0)).status).toBe("running");
+
+      const waiting = waitForDojo(serverInfo(), sessionId, 5000, { pollIntervalMs: 10 });
+      finish({ agents, findings: [finding] });
+      const done = await waiting;
+      expect(done.status).toBe("done");
+      expect(done.findings).toHaveLength(1);
+    });
+
+    it("is stopped by the client helper, which leaves nothing running", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const sessionId = await openLocal(`http://localhost:${handle.httpPort}`);
+      await startDojoOnServer(serverInfo(), sessionId, ["claude"]);
+
+      await stopDojoOnServer(serverInfo(), sessionId);
+
+      expect(stop).toHaveBeenCalled();
+      expect((await waitForDojo(serverInfo(), sessionId, 0)).status).toBe("stopped");
+      // Stopping again finds nothing running, and that's not an error.
+      await expect(stopDojoOnServer(serverInfo(), sessionId)).resolves.toBeUndefined();
+    });
+
+    it("says no dojo has run when there is none to read", async () => {
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo: runner().dojo });
+      const sessionId = await openLocal(`http://localhost:${handle.httpPort}`);
+      await expect(waitForDojo(serverInfo(), sessionId, 0)).rejects.toThrow("No dojo has run on this review.");
+    });
   });
 });

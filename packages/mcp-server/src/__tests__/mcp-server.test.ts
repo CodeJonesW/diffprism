@@ -9,6 +9,7 @@ import path from "node:path";
 const mockEnsureServer = vi.fn();
 const mockSubmitReviewToServer = vi.fn();
 const mockIsServerAlive = vi.fn();
+const mockOpenHeadlessDojo = vi.fn();
 vi.mock("@diffprism/core", async () => {
   const actual = await vi.importActual<typeof import("@diffprism/core")>("@diffprism/core");
   return {
@@ -26,6 +27,12 @@ vi.mock("@diffprism/core", async () => {
     REPORT_HINT: "report hint",
     awaitingAgent: actual.awaitingAgent,
     diffNewSide: actual.diffNewSide,
+    openHeadlessDojo: (...args: unknown[]) => mockOpenHeadlessDojo(...args),
+    // The real wait and report, over the stubbed fetch, as for decisions.
+    waitForDojo: actual.waitForDojo,
+    dojoReport: actual.dojoReport,
+    DOJO_SEVERITIES: actual.DOJO_SEVERITIES,
+    REVIEW_AGENTS: actual.REVIEW_AGENTS,
   };
 });
 
@@ -97,6 +104,7 @@ beforeEach(() => {
   mockEnsureServer.mockReset().mockResolvedValue(serverInfo);
   mockSubmitReviewToServer.mockReset();
   mockIsServerAlive.mockReset().mockResolvedValue(serverInfo);
+  mockOpenHeadlessDojo.mockReset();
   mockIsPrRef.mockReset().mockReturnValue(false);
 });
 
@@ -829,5 +837,79 @@ describe("get_file_context", () => {
     const result = await (await tool("get_file_context"))({ file: "b.ts", session_id: "s1" });
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain(`File not found: "b.ts" at ${headSha}`);
+  });
+});
+
+describe("run_dojo and get_dojo_result (#301)", () => {
+  const finding = {
+    id: "claude-1", raisedBy: "claude", file: "src/a.ts", line: 3, side: "new", severity: "major",
+    title: "Leaks", body: "Never closed.", votes: [], consensus: "solo",
+  };
+  const seat = { agent: { name: "claude" }, label: "Claude Code", stage: "done", stageStartedAt: 1, raised: 1 };
+  const dojo = (over: Record<string, unknown> = {}) => ({ status: "done", agents: [seat], findings: [finding], startedAt: 1, ...over });
+
+  it("opens a headless review, waits for the dojo and returns its report", async () => {
+    mockOpenHeadlessDojo.mockResolvedValue({ kind: "started", sessionId: "s1", dojo: dojo({ status: "running", findings: [] }) });
+    stubFetch({ [`${base}/api/reviews/s1/dojo`]: () => json({ dojo: dojo() }) });
+
+    const result = await (await tool("run_dojo"))({ diff_ref: "staged", agents: ["claude"] });
+
+    expect(mockOpenHeadlessDojo).toHaveBeenCalledWith(serverInfo, "staged", expect.objectContaining({ agents: ["claude"], cwd: process.cwd() }));
+    expect(parse(result)).toMatchObject({
+      status: "done",
+      sessionId: "s1",
+      failOn: "major",
+      passed: false,
+      blocking: [expect.objectContaining({ id: "claude-1" })],
+      agents: [{ name: "claude", label: "Claude Code", stage: "done", raised: 1 }],
+    });
+  });
+
+  it("passes when nothing reaches fail_on", async () => {
+    mockOpenHeadlessDojo.mockResolvedValue({ kind: "started", sessionId: "s1", dojo: dojo({ status: "running" }) });
+    stubFetch({ [`${base}/api/reviews/s1/dojo`]: () => json({ dojo: dojo() }) });
+
+    const result = await (await tool("run_dojo"))({ fail_on: "critical" });
+
+    expect(parse(result)).toMatchObject({ passed: true, blocking: [], failOn: "critical" });
+  });
+
+  it("says the dojo is still running when the wait runs out, and how to keep waiting", async () => {
+    mockOpenHeadlessDojo.mockResolvedValue({ kind: "started", sessionId: "s1", dojo: dojo({ status: "running" }) });
+    stubFetch({ [`${base}/api/reviews/s1/dojo`]: () => json({ dojo: dojo({ status: "running" }) }) });
+
+    const body = parse(await (await tool("run_dojo"))({ timeout: 0 }));
+
+    expect(body).toMatchObject({ status: "running", sessionId: "s1" });
+    expect(body.message).toContain("get_dojo_result");
+  });
+
+  it("passes with nothing to review", async () => {
+    mockOpenHeadlessDojo.mockResolvedValue({ kind: "no_changes" });
+    expect(parse(await (await tool("run_dojo"))({}))).toMatchObject({ status: "no_changes", passed: true });
+  });
+
+  it("refuses pull requests without opening anything", async () => {
+    mockIsPrRef.mockReturnValue(true);
+    const result = await (await tool("run_dojo"))({ diff_ref: "acme/widget#7" });
+    expect(result.isError).toBe(true);
+    expect(mockOpenHeadlessDojo).not.toHaveBeenCalled();
+  });
+
+  it("reads a finished dojo back with get_dojo_result", async () => {
+    stubFetch({ [`${base}/api/reviews/s1/dojo`]: () => json({ dojo: dojo({ status: "failed", error: "cursor exited" }) }) });
+
+    const body = parse(await (await tool("get_dojo_result"))({ session_id: "s1" }));
+
+    expect(body).toMatchObject({ status: "failed", passed: false, error: "cursor exited" });
+  });
+
+  it("says so when no dojo has run on the review", async () => {
+    stubFetch({ [`${base}/api/reviews/s1/dojo`]: () => json({ dojo: null }) });
+
+    const result = await (await tool("get_dojo_result"))({ session_id: "s1" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("No dojo has run on this review.");
   });
 });

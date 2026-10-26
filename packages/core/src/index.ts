@@ -63,7 +63,18 @@ export type { DiffPoller, DiffPollerOptions } from "./diff-poller.js";
 export { hashDiff, detectChangedFiles, fileKey } from "./diff-utils.js";
 export { sinceLastLook } from "./since-last-look.js";
 export { startGlobalServer } from "./global-server.js";
-export { ensureServer, decideOnRunningServer, submitReviewToServer, waitForDecision, ReviewTimeoutError, ReviewerAskedError } from "./server-client.js";
+export {
+  ensureServer,
+  decideOnRunningServer,
+  submitReviewToServer,
+  waitForDecision,
+  startDojoOnServer,
+  stopDojoOnServer,
+  waitForDojo,
+  openHeadlessDojo,
+  ReviewTimeoutError,
+  ReviewerAskedError,
+} from "./server-client.js";
 export { getBuildInfo, describeVersion, builtAt } from "./build-info.js";
 export { MCP_TOOL_NAMES, RETIRED_MCP_TOOL_NAMES, mcpToolPermission } from "./mcp-tools.js";
 export { DEFAULT_DIFF_REF, COMMIT_GATE_DIFF_REF, DIFF_REF_DESCRIPTION, diffNewSide } from "./diff-scope.js";
@@ -90,7 +101,17 @@ export {
   chooseReviewAgent,
 } from "./agent-settings.js";
 export type { ReviewAgentName, ReviewAgentChoice, AgentSettings } from "./agent-settings.js";
-export { DOJO_SEVERITIES, DojoStoppedError, combineFindings, dojoFindingId, dojoGitHubComment, dojoThreadBody } from "./dojo.js";
+export {
+  DOJO_SEVERITIES,
+  DojoStoppedError,
+  blockingFindings,
+  combineFindings,
+  dojoFindingId,
+  dojoGitHubComment,
+  dojoReport,
+  dojoThreadBody,
+  isDojoSeverity,
+} from "./dojo.js";
 export { AsyncQueue } from "./async-queue.js";
 export { listSkills, parseSkill, readDojoSkillIds, resolveDojoSkills, writeDojoSkillIds } from "./dojo-skills.js";
 export type { DojoSkill, SkillInfo, SkillScope } from "./dojo-skills.js";
@@ -112,11 +133,14 @@ export type {
   DojoRunner,
   DojoRoundOne,
   DojoRoundTwo,
+  DojoReport,
+  DojoReportAgent,
 } from "./dojo.js";
 export type { BuildInfo } from "./build-info.js";
 export type {
   EnsureServerOptions,
   SubmitReviewOptions,
+  HeadlessDojoStart,
 } from "./server-client.js";
 export {
   writeServerFile,

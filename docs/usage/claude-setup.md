@@ -128,6 +128,8 @@ By default, Claude Code prompts for confirmation each time an MCP tool is called
     "allow": [
       "mcp__diffprism__open_review",
       "mcp__diffprism__get_review_result",
+      "mcp__diffprism__run_dojo",
+      "mcp__diffprism__get_dojo_result",
       "mcp__diffprism__update_review_context",
       "mcp__diffprism__get_diff",
       "mcp__diffprism__analyze_diff",
@@ -169,7 +171,7 @@ Claude will call the `open_review` MCP tool. The DiffPrism server auto-starts as
 
 ## Tool Reference
 
-The MCP server exposes 14 tools.
+The MCP server exposes 16 tools.
 
 **Reviews are one per repo.** Opening a review for a repo that already has one updates that session — new diff, same id, annotations kept. A git worktree counts as its own repo.
 
@@ -209,6 +211,31 @@ Checks the decision on a review that is already open — after `wait: false`, or
 | targeting | No       | See above |
 | `wait`    | No       | Block until a decision arrives |
 | `timeout` | No       | Max wait in seconds when `wait` is true (default 300, max 600) |
+
+### `run_dojo`
+
+Runs a review dojo on local changes with no dashboard, and returns what it found. Opens a review of the diff that no browser tab opens for, seats the agents, waits while they review and vote on each other's findings, and returns `{ status, sessionId, failOn, passed, blocking, findings, agents }`. `passed` is true when the dojo finished with no finding at `fail_on` or above that another agent disputed. The dojo agents only read: the calling agent fixes what it agrees with and runs `run_dojo` again. If the wait runs out first, returns `{ status: "running", sessionId }`; the dojo keeps going. The review stays open, with each finding as a thread.
+
+The same thing from a shell: `diffprism dojo [ref] [--staged] [--agents claude,cursor] [--fail-on major] [--json] [--timeout <minutes>]`, which exits 0 when it passed, 1 on blocking findings, and 2 when the dojo didn't finish.
+
+| Parameter   | Required | Description |
+|-------------|----------|-------------|
+| `diff_ref`  | No       | The diff to review (default `"working-copy"`). Not a pull request |
+| `agents`    | No       | Agents to seat, each once: `claude`, `cursor` (default: the saved agent) |
+| `fail_on`   | No       | `critical`, `major`, `minor` or `nit` (default `major`) |
+| `reasoning` | No       | What the change is for, shown on the review |
+| `timeout`   | No       | Max wait in seconds (default 600, max 600) |
+
+### `get_dojo_result`
+
+Checks the dojo on a review: after `run_dojo` returned `running`, or for a dojo started from the dashboard. Returns the same report, or `{ status: "running" }`.
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| targeting | No       | See above |
+| `fail_on` | No       | As for `run_dojo` (default `major`) |
+| `wait`    | No       | Block until the dojo finishes |
+| `timeout` | No       | Max wait in seconds when `wait` is true (default 600, max 600) |
 
 ### `update_review_context`
 
