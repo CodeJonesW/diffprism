@@ -2,6 +2,7 @@
 title: Run the review dojo with nobody watching
 date: 2026-10-25
 kind: feature
+pr: 302
 ---
 
 ## What changed
