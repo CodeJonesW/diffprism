@@ -214,7 +214,7 @@ Checks the decision on a review that is already open — after `wait: false`, or
 
 ### `run_dojo`
 
-Runs a review dojo on local changes with no dashboard, and returns what it found. Opens a review of the diff that no browser tab opens for, seats the agents, waits while they review and vote on each other's findings, and returns `{ status, sessionId, failOn, passed, blocking, findings, agents }`. `passed` is true when the dojo finished with no finding at `fail_on` or above that another agent disputed. The dojo agents only read: the calling agent fixes what it agrees with and runs `run_dojo` again. If the wait runs out first, returns `{ status: "running", sessionId }`; the dojo keeps going. The review stays open, with each finding as a thread.
+Runs a review dojo on local changes with no dashboard, and returns what it found. Opens a review of the diff that no browser tab opens for, seats the agents, waits while they review and vote on each other's findings, and returns `{ status, sessionId, failOn, passed, blocking, findings, agents }`. `passed` is true when the dojo finished with no finding at `fail_on` or above that another agent disputed. The dojo agents only read: the calling agent fixes what it agrees with and runs `run_dojo` again. If the wait runs out first, returns `{ status: "running", sessionId }`; the dojo keeps going. The review stays open, with each finding as a thread. Deciding that review in the dashboard doesn't stop the dojo, since a caller is waiting on it; closing the review does.
 
 The same thing from a shell: `diffprism dojo [ref] [--staged] [--agents claude,cursor] [--fail-on major] [--json] [--timeout <minutes>]`, which exits 0 when it passed, 1 on blocking findings, and 2 when the dojo didn't finish.
 

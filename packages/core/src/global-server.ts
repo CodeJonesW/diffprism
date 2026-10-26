@@ -124,6 +124,11 @@ interface Session {
   dojo?: DojoState;
   /** Stops the dojo running on this review; set while one is (#252). */
   stopDojoRun?: (reason: string) => void;
+  /**
+   * The running dojo was started headless (#301): a caller is waiting on its
+   * findings, so a decision on the review doesn't stop it. Closing the review still does.
+   */
+  dojoHeadless?: boolean;
   /** What is blocked on this review's decision, as it last said while polling (#204). */
   caller?: ReviewCaller;
   /** When the reviewer last decided on it. Kept into the next round, so fixes can be told from older ones. */
@@ -510,6 +515,7 @@ function startDojo(
   server: GlobalServerInfo,
   agents: ReviewAgentChoice[],
   skills: DojoSkill[],
+  headless = false,
 ): DojoState {
   const started: DojoState = {
     status: "running",
@@ -525,6 +531,7 @@ function startDojo(
 
   const run = runner.run({ sessionId: session.id, subject, localRepoPath: session.repoRoot, server, agents, skills });
   session.stopDojoRun = (reason) => run.stop(reason);
+  session.dojoHeadless = headless;
 
   // Each agent's progress, as it happens, so the reviewer can see the dojo working.
   void (async () => {
@@ -1070,7 +1077,8 @@ function broadcastSessionList(): void {
 /** Record a reviewer's decision, noting which diff it was a decision about. */
 function recordVerdict(session: Session, result: ReviewResult): void {
   // The round is over: nobody will act on findings still coming in (#242).
-  stopDojo(session, "Stopped: the review was decided.");
+  // Unless a headless caller is waiting on them (#301).
+  if (!session.dojoHeadless) stopDojo(session, "Stopped: the review was decided.");
   session.result = result;
   session.status = "submitted";
   session.decidedAt = Date.now();
@@ -1733,7 +1741,7 @@ async function handleApiRequest(
       return true;
     }
     try {
-      const { agents: names } = JSON.parse(await readBody(req)) as { agents?: unknown };
+      const { agents: names, headless } = JSON.parse(await readBody(req)) as { agents?: unknown; headless?: unknown };
       if (!Array.isArray(names) || !names.every(isReviewAgent)) {
         jsonResponse(res, 400, { error: `agents must be a list of ${REVIEW_AGENTS.join(", ")}.` });
         return true;
@@ -1759,7 +1767,7 @@ async function handleApiRequest(
         jsonResponse(res, 409, { error: err instanceof Error ? err.message : String(err) });
         return true;
       }
-      jsonResponse(res, 202, { dojo: startDojo(session, subject, dojoRunner, runningServer, agents, skills) });
+      jsonResponse(res, 202, { dojo: startDojo(session, subject, dojoRunner, runningServer, agents, skills, headless === true) });
     } catch (err) {
       jsonResponse(res, 400, { error: err instanceof Error ? err.message : String(err) });
     }

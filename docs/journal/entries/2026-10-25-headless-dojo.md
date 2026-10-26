@@ -29,6 +29,8 @@ The dojo was the most thorough review DiffPrism had, and it only ran when someon
 
 **Polled, like a decision.** The server already answers "is it decided yet" by being asked every two seconds (`waitForDecision`). The dojo works the same way, through a new `GET /api/reviews/:id/dojo`, rather than a long-held request the server would need new machinery for.
 
+**A decision on the review doesn't stop a headless dojo.** A dojo started from the dashboard stops when its review is decided (#242), since the person who'd read its findings has moved on. A headless one has a caller waiting on them instead. The first real run showed why it matters: the review opened in a dashboard tab that was still open, it got approved there out of habit eight seconds in, and that killed the dojo. Reviews are one per repo, so anything that decides it (a person, the commit gate, another agent's `open_review`) would do the same. Closing the review still stops it.
+
 **Stopped when the wait runs out on the command line, kept going for an agent.** `diffprism dojo` stops the dojo at `--timeout`, so nothing keeps spending tokens after the command has given up. `run_dojo`'s wait is capped at ten minutes like every other blocking tool, and a dojo can take longer. There, the dojo keeps running, and the agent picks the result up with `get_dojo_result`.
 
 ## What we learned

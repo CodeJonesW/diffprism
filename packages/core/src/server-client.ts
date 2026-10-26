@@ -506,16 +506,20 @@ async function dojoRequest(response: Response, action: string): Promise<DojoStat
   return data.dojo;
 }
 
-/** Start a dojo on an open review with these agents. Returns it as it starts. */
+/**
+ * Start a dojo on an open review with these agents. Returns it as it starts.
+ * `headless`: a caller waits on its findings, so deciding the review doesn't stop it.
+ */
 export async function startDojoOnServer(
   serverInfo: GlobalServerInfo,
   sessionId: string,
   agents: ReviewAgentName[],
+  options: { headless?: boolean } = {},
 ): Promise<DojoState> {
   const response = await fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/dojo`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ agents }),
+    body: JSON.stringify({ agents, ...(options.headless ? { headless: true } : {}) }),
   });
   return dojoRequest(response, "start");
 }
@@ -574,5 +578,5 @@ export async function openHeadlessDojo(
   });
   if (!sessionId) return { kind: "no_changes" };
   const agents = options.agents ?? [readAgentSettings().agent];
-  return { kind: "started", sessionId, dojo: await startDojoOnServer(serverInfo, sessionId, agents) };
+  return { kind: "started", sessionId, dojo: await startDojoOnServer(serverInfo, sessionId, agents, { headless: true }) };
 }

@@ -3935,6 +3935,37 @@ describe("the review dojo (#231)", () => {
       await expect(stopDojoOnServer(serverInfo(), sessionId)).resolves.toBeUndefined();
     });
 
+    it("keeps running when the review is decided, so its caller still gets the findings", async () => {
+      const { dojo, stop, finish } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await startDojoOnServer(serverInfo(), sessionId, ["claude"], { headless: true });
+
+      // Someone approves the review in the dashboard while the dojo runs.
+      await send(baseUrl, `/api/reviews/${sessionId}/result`, { decision: "approved", comments: [] });
+      await settle();
+      expect(stop).not.toHaveBeenCalled();
+
+      finish({ agents, findings: [finding] });
+      const done = await waitForDojo(serverInfo(), sessionId, 5000, { pollIntervalMs: 10 });
+      expect(done.status).toBe("done");
+      expect(done.findings).toHaveLength(1);
+    });
+
+    it("still stops when the review is closed", async () => {
+      const { dojo, stop } = runner();
+      handle = await startGlobalServer({ silent: true, openBrowser: false, dojo });
+      const baseUrl = `http://localhost:${handle.httpPort}`;
+      const sessionId = await openLocal(baseUrl);
+      await startDojoOnServer(serverInfo(), sessionId, ["claude"], { headless: true });
+
+      await fetch(`${baseUrl}/api/reviews/${sessionId}`, { method: "DELETE" });
+      await settle();
+
+      expect(stop).toHaveBeenCalledWith("Stopped: the review was closed.");
+    });
+
     it("says no dojo has run when there is none to read", async () => {
       handle = await startGlobalServer({ silent: true, openBrowser: false, dojo: runner().dojo });
       const sessionId = await openLocal(`http://localhost:${handle.httpPort}`);
