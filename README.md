@@ -105,7 +105,7 @@ A PR review runs from any folder. DiffPrism fetches the PR's head commit, and it
 
 ## MCP Tools
 
-DiffPrism exposes 14 MCP tools to your AI.
+DiffPrism exposes 16 MCP tools to your AI.
 
 Reviews are **one per repo**: opening a review for a repo that already has one updates it instead of starting another, and keeps its annotations. Tools that work on an open review act on the one for the repo your AI is running in, or take `session_id` / `repo_path` — and if that's ambiguous they say so rather than guess.
 
@@ -114,6 +114,8 @@ Reviews are **one per repo**: opening a review for a repo that already has one u
 |------|---------|
 | `open_review` | Open a review of local changes and **wait for the decision** (`wait: false` to return at once) |
 | `get_review_result` | Check the decision on a review already open |
+| `run_dojo` | Run a review dojo on local changes with no dashboard, and get its findings back |
+| `get_dojo_result` | Check a dojo that was still running when `run_dojo` returned |
 | `update_review_context` | Push updated reasoning/description to an open review |
 
 ### Analysis
@@ -221,7 +223,7 @@ skill tells them so.
 
 ## Features
 
-- **AI-powered PR review** — Your AI gets full codebase context via 14 MCP tools
+- **AI-powered PR review** — Your AI gets full codebase context via 16 MCP tools
 - **Live annotations** — AI findings appear inline on the diff in real-time
 - **Full repo context** — Full file content at the PR's head, not just diff hunks, with no checkout of your own
 - **No vendor lock-in** — Works with Claude Code, Cursor, or any MCP client
@@ -237,6 +239,7 @@ skill tells them so.
 ```bash
 diffprism demo                      # Open a sample review
 diffprism review <ref>              # Open a review (PR URL, git ref, or flags)
+diffprism dojo [ref]                # Run a review dojo with no dashboard and print its findings (--json, --agents, --fail-on; exit 0/1/2)
 diffprism setup                     # Configure Claude Code integration
 diffprism setup --global            # Global setup (no git repo needed)
 diffprism server                    # Start the background server
@@ -308,7 +311,7 @@ packages/core       — Server, types, server-client utilities
 packages/git        — Git diff extraction + parser
 packages/analysis   — Deterministic review briefing
 packages/ui         — React 19 + Vite 6 + Tailwind + Zustand
-packages/mcp-server — MCP tool server (14 tools)
+packages/mcp-server — MCP tool server (16 tools)
 packages/github     — GitHub PR fetching + review submission
 cli/                — Commander CLI
 ```

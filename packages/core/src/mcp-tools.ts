@@ -11,6 +11,8 @@
 export const MCP_TOOL_NAMES = [
   "open_review",
   "get_review_result",
+  "run_dojo",
+  "get_dojo_result",
   "update_review_context",
   "get_diff",
   "analyze_diff",

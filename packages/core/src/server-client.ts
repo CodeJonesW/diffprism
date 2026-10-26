@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { isServerAlive, readServerFile, removeServerFile } from "./server-file.js";
 import { builtAt } from "./build-info.js";
 import { awaitingAgent } from "./threads.js";
+import { readAgentSettings } from "./agent-settings.js";
+import type { ReviewAgentName } from "./agent-settings.js";
+import type { DojoState } from "./dojo.js";
 import type {
   Annotation,
   GlobalServerInfo,
@@ -359,6 +362,8 @@ export interface SubmitReviewOptions {
   timeoutMs?: number;
   /** What is waiting on the decision, so the review can say so (#204). */
   caller?: ReviewCallerKind;
+  /** Opened for a headless dojo (#301): don't open a dashboard tab for it. */
+  headless?: boolean;
 }
 
 /**
@@ -439,6 +444,7 @@ export async function submitReviewToServer(
         payload,
         projectPath,
         diffRef: options.diffRef ?? diffRef,
+        ...(options.headless ? { headless: true } : {}),
       }),
     },
   );
@@ -485,4 +491,88 @@ export async function submitReviewToServer(
   }
 
   return { result: await waitForDecision(serverInfo, sessionId, maxWaitMs, { caller: options.caller }), sessionId };
+}
+
+// ─── A dojo run headless (#301) ───
+
+async function dojoRequest(response: Response, action: string): Promise<DojoState> {
+  const data = (await response.json().catch(() => ({}))) as { dojo?: DojoState | null; error?: string };
+  if (!response.ok) {
+    throw new Error(`Could not ${action} the dojo: ${data.error ?? `server returned ${response.status}`}`);
+  }
+  if (!data.dojo) {
+    throw new Error(action === "read" ? "No dojo has run on this review." : `Could not ${action} the dojo: the server returned none.`);
+  }
+  return data.dojo;
+}
+
+/** Start a dojo on an open review with these agents. Returns it as it starts. */
+export async function startDojoOnServer(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+  agents: ReviewAgentName[],
+): Promise<DojoState> {
+  const response = await fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/dojo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agents }),
+  });
+  return dojoRequest(response, "start");
+}
+
+/** Stop the dojo running on a review, e.g. when the caller's wait runs out. */
+export async function stopDojoOnServer(serverInfo: GlobalServerInfo, sessionId: string): Promise<void> {
+  const response = await fetch(`http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/dojo/stop`, { method: "POST" });
+  if (!response.ok && response.status !== 409) {
+    throw new Error(`Could not stop the dojo: server returned ${response.status}`);
+  }
+}
+
+/**
+ * Wait for the dojo on a review to finish, polling as waitForDecision does.
+ * Returns its state once it's no longer running, or when maxWaitMs runs out,
+ * still running. `onUpdate` sees each state polled, for progress output.
+ */
+export async function waitForDojo(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+  maxWaitMs: number,
+  options: { pollIntervalMs?: number; onUpdate?: (dojo: DojoState) => void } = {},
+): Promise<DojoState> {
+  const { pollIntervalMs = 2000, onUpdate } = options;
+  const url = `http://localhost:${serverInfo.httpPort}/api/reviews/${sessionId}/dojo`;
+  const start = Date.now();
+  for (;;) {
+    const dojo = await dojoRequest(await fetch(url), "read");
+    onUpdate?.(dojo);
+    if (dojo.status !== "running" || Date.now() - start >= maxWaitMs) return dojo;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+}
+
+/** A headless dojo, once asked for: started on its review, or nothing to review. */
+export type HeadlessDojoStart = { kind: "started"; sessionId: string; dojo: DojoState } | { kind: "no_changes" };
+
+/**
+ * Open a review of `diffRef` that no tab opens for, and start a dojo on it
+ * (#301). The review is a normal one: anyone can still open it in the
+ * dashboard, where the dojo's findings show as threads. With no agents
+ * given, the dojo seats the reviewer's default agent (`diffprism config`).
+ */
+export async function openHeadlessDojo(
+  serverInfo: GlobalServerInfo,
+  diffRef: string,
+  options: { cwd?: string; agents?: ReviewAgentName[]; title?: string; reasoning?: string } = {},
+): Promise<HeadlessDojoStart> {
+  const { sessionId } = await submitReviewToServer(serverInfo, diffRef, {
+    cwd: options.cwd,
+    diffRef,
+    title: options.title,
+    reasoning: options.reasoning,
+    timeoutMs: 0,
+    headless: true,
+  });
+  if (!sessionId) return { kind: "no_changes" };
+  const agents = options.agents ?? [readAgentSettings().agent];
+  return { kind: "started", sessionId, dojo: await startDojoOnServer(serverInfo, sessionId, agents) };
 }

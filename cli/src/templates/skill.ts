@@ -5,7 +5,7 @@ description: Open current code changes in DiffPrism's browser-based review UI fo
 
 # DiffPrism Review
 
-You have 14 DiffPrism MCP tools. Use the analysis tools proactively; open a human review only when asked.
+You have 16 DiffPrism MCP tools. Use the analysis tools proactively; open a human review only when asked.
 
 ## How reviews work
 
@@ -100,6 +100,8 @@ A PR review and a working-copy review can be open for the same clone at once. If
 |------|---------|
 | \`open_review\` | Open a review of local changes and wait for the decision. |
 | \`get_review_result\` | Check the decision on a review already open (after \`wait: false\` or a timeout). |
+| \`run_dojo\` | Run a review dojo on local changes with no dashboard; returns \`{ status, passed, blocking, findings }\`. Fix what you agree with, then run it again. |
+| \`get_dojo_result\` | Check a dojo still running after \`run_dojo\`'s wait ran out (\`wait: true\` to block). |
 | \`update_review_context\` | Update reasoning, title, or description on an open review. |
 
 ### Headless analysis

@@ -8,6 +8,11 @@ import {
   ReviewTimeoutError,
   ReviewerAskedError,
   waitForDecision,
+  openHeadlessDojo,
+  waitForDojo,
+  dojoReport,
+  DOJO_SEVERITIES,
+  REVIEW_AGENTS,
   currentVersion,
   recordError,
   awaitingAgent,
@@ -19,6 +24,7 @@ import {
 import type {
   Annotation,
   ContextUpdatePayload,
+  DojoSeverity,
   DiffNewSide,
   DiffSet,
   GitHubPrMetadata,
@@ -288,6 +294,35 @@ async function withSession(
   }
 }
 
+/** Every dojo tool takes the bar it must clear the same way, with the same default. */
+const failOnParam = z
+  .enum(DOJO_SEVERITIES)
+  .optional()
+  .describe(
+    "Severity at which a finding fails the dojo (default major): findings at this level or above, as the agent that raised it judged, that no other agent disputed.",
+  );
+
+/** Longest a dojo tool waits in one call, like get_review_result. */
+const DOJO_MAX_WAIT_SECONDS = 600;
+
+/** A dojo as a tool result: its report once it's finished, or how to keep waiting (#301). */
+async function dojoResult(
+  serverInfo: GlobalServerInfo,
+  sessionId: string,
+  failOn: DojoSeverity,
+  waitMs: number,
+): Promise<McpToolResult> {
+  const dojo = await waitForDojo(serverInfo, sessionId, waitMs);
+  if (dojo.status === "running") {
+    return jsonResult({
+      status: "running",
+      sessionId,
+      message: `The dojo is still running. Wait for it with get_dojo_result (session_id: ${sessionId}, wait: true).`,
+    });
+  }
+  return jsonResult(dojoReport(sessionId, dojo, failOn));
+}
+
 /** Every tool that takes a scope accepts it the same way, with the same default. */
 const diffRefParam = z.string().optional().describe(DIFF_REF_DESCRIPTION);
 
@@ -454,6 +489,68 @@ export function createMcpServer(): McpServer {
           }
           throw err;
         }
+      }),
+  );
+
+  server.tool(
+    "run_dojo",
+    "Run a review dojo on local git changes with no dashboard and get its findings back. Opens a review of the diff that no browser tab opens for, seats the agents (default: the user's saved agent), waits while they review and vote on each other's findings, and returns { status, passed, blocking, findings, agents }. passed is true when the dojo finished with no finding at fail_on or above that another agent disputed. The dojo agents only read: fix what you agree with yourself, then call run_dojo again on the new diff. If the wait runs out first, the dojo keeps going; check it with get_dojo_result. The review stays open, so the user can read every finding as a thread in the dashboard.",
+    {
+      diff_ref: diffRefParam,
+      agents: z
+        .array(z.enum(REVIEW_AGENTS))
+        .optional()
+        .describe("The agents to seat, each at most once (default: the user's saved agent, from `diffprism config`)"),
+      fail_on: failOnParam,
+      reasoning: z
+        .string()
+        .optional()
+        .describe("What the change is for, in plain English. Shown on the review in the dashboard."),
+      timeout: z
+        .number()
+        .optional()
+        .describe(`Max wait in seconds (default ${DOJO_MAX_WAIT_SECONDS}, max ${DOJO_MAX_WAIT_SECONDS}). A dojo often takes several minutes.`),
+    },
+    async ({ diff_ref = DEFAULT_DIFF_REF, agents, fail_on = "major", reasoning, timeout }) => {
+      if (isPrRef(diff_ref)) {
+        return toolError("run_dojo reviews local changes. Run a dojo on a pull request from its review in the DiffPrism dashboard.");
+      }
+      try {
+        const serverInfo = await ensureServer({ silent: true });
+        const started = await openHeadlessDojo(serverInfo, diff_ref, {
+          cwd: process.cwd(),
+          agents,
+          title: `Dojo: ${diff_ref}`,
+          reasoning,
+        });
+        if (started.kind === "no_changes") {
+          return jsonResult({ status: "no_changes", passed: true, message: `No changes in ${diff_ref} to review.` });
+        }
+        const waitSeconds = Math.min(timeout ?? DOJO_MAX_WAIT_SECONDS, DOJO_MAX_WAIT_SECONDS);
+        return await dojoResult(serverInfo, started.sessionId, fail_on, waitSeconds * 1000);
+      } catch (err) {
+        recordError("serve (MCP) run_dojo", err);
+        return toolError(`Error: ${errorMessage(err)}\n${REPORT_HINT}`);
+      }
+    },
+  );
+
+  server.tool(
+    "get_dojo_result",
+    "Check the dojo on a review: after run_dojo said it was still running, or for a dojo started from the dashboard. Returns { status, passed, blocking, findings, agents } once it has finished, or status \"running\". Set wait: true to block until it finishes.",
+    {
+      ...targetParams,
+      fail_on: failOnParam,
+      wait: z.boolean().optional().describe("Block until the dojo finishes (up to timeout)"),
+      timeout: z
+        .number()
+        .optional()
+        .describe(`Max wait in seconds when wait is true (default ${DOJO_MAX_WAIT_SECONDS}, max ${DOJO_MAX_WAIT_SECONDS})`),
+    },
+    async ({ session_id, repo_path, fail_on = "major", wait, timeout }) =>
+      withSession({ session_id, repo_path }, async ({ serverInfo, sessionId }) => {
+        const waitSeconds = wait ? Math.min(timeout ?? DOJO_MAX_WAIT_SECONDS, DOJO_MAX_WAIT_SECONDS) : 0;
+        return dojoResult(serverInfo, sessionId, fail_on, waitSeconds * 1000);
       }),
   );
 
