@@ -4,7 +4,7 @@ Git diff extraction and unified diff parser. No runtime dependencies beyond Node
 
 ## Key Files
 
-- `src/local.ts` — `getGitDiff(ref)` shells out to `git diff` via `execSync`. Translates "staged"/"unstaged" to flags.
+- `src/local.ts` — `getGitDiff(ref)` runs `git diff` via `execFileSync` with an argv array (never a shell: refs come from the API, WebSocket and MCP). Translates "staged"/"unstaged" to flags; any other ref goes after `--end-of-options`. Anything built from input must go through `execFileSync`, not `execSync`.
 - `src/parser.ts` — `parseDiff(rawDiff, baseRef, headRef)` parses unified diff format into `DiffSet`.
 - `src/index.ts` — `getDiff(ref)` combines both, returns `{ diffSet, rawDiff }`.
 
