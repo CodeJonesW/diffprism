@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { CommitInfo, BranchList } from "@diffprism/core";
@@ -33,32 +33,39 @@ export function getGitDiff(
     );
   }
 
-  // Build the git diff command
-  let command: string;
+  // Build the git diff arguments. They go to git as an argv array, never
+  // through a shell: `ref` comes from the HTTP API, the WebSocket and agents'
+  // MCP calls, so a shell would run whatever it carries.
+  let args: string[];
   let includeUntracked = false;
   switch (ref) {
     case "staged":
-      command = "git diff --staged --no-color";
+      args = ["diff", "--staged", "--no-color"];
       break;
     case "unstaged":
-      command = "git diff --no-color";
+      args = ["diff", "--no-color"];
       includeUntracked = true;
       break;
     case "all":
-      command = "git diff HEAD --no-color";
+      args = ["diff", "HEAD", "--no-color"];
       includeUntracked = true;
       break;
     default:
-      command = `git diff --no-color ${ref}`;
+      // One ref or range ("HEAD~3..HEAD", "main..feature"). After
+      // --end-of-options git reads it as a revision even if it starts with
+      // "-", so it can't become an option such as --output=<file>; the
+      // trailing "--" stops it being read as a path.
+      args = ["diff", "--no-color", "--end-of-options", ref, "--"];
       break;
   }
 
   let output: string;
   try {
-    output = execSync(command, {
+    output = execFileSync("git", args, {
       cwd,
       encoding: "utf-8",
       maxBuffer: 50 * 1024 * 1024, // 50 MB
+      stdio: ["pipe", "pipe", "pipe"],
     });
   } catch (err) {
     const message =
@@ -141,8 +148,9 @@ export function listCommits(options?: { cwd?: string; limit?: number }): CommitI
   const cwd = options?.cwd ?? process.cwd();
   const limit = options?.limit ?? 50;
   try {
-    const output = execSync(
-      `git log --format='%H<<>>%h<<>>%s<<>>%an<<>>%aI' -n ${limit}`,
+    const output = execFileSync(
+      "git",
+      ["log", "--format=%H<<>>%h<<>>%s<<>>%an<<>>%aI", "-n", String(limit)],
       { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
     ).trim();
 

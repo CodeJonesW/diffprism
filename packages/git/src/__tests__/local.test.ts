@@ -4,21 +4,23 @@ import { getGitDiff, getGitHubRemotes, listBranches, listCommits } from "../loca
 // Mock child_process and fs
 vi.mock("node:child_process", () => ({
   execSync: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
 }));
 
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const mockExecSync = vi.mocked(execSync);
+const mockExecFileSync = vi.mocked(execFileSync);
 const mockReadFileSync = vi.mocked(readFileSync);
 
 /**
- * Set up execSync to pass git --version and git rev-parse checks,
- * then return the given diff output for the actual diff command.
+ * Set up execSync to pass git --version and git rev-parse checks, and
+ * execFileSync to return the given diff output for the git diff call.
  */
 function setupGitMocks(diffOutput: string, untrackedList = "") {
   mockExecSync.mockImplementation((cmd: string, _opts?: unknown) => {
@@ -27,10 +29,17 @@ function setupGitMocks(diffOutput: string, untrackedList = "") {
     if (command === "git rev-parse --is-inside-work-tree") return "true";
     if (command === "git ls-files --others --exclude-standard")
       return untrackedList;
-    // Any git diff command
-    if (command.startsWith("git diff")) return diffOutput;
     return "";
   });
+  mockExecFileSync.mockReturnValue(diffOutput);
+}
+
+/** The argv of the single git diff call. */
+function diffArgs(): readonly string[] {
+  expect(mockExecFileSync).toHaveBeenCalledTimes(1);
+  const [file, args] = mockExecFileSync.mock.calls[0];
+  expect(file).toBe("git");
+  return args as readonly string[];
 }
 
 describe("getGitDiff", () => {
@@ -38,15 +47,12 @@ describe("getGitDiff", () => {
     vi.clearAllMocks();
   });
 
-  describe("ref to command mapping", () => {
+  describe("ref to argv mapping", () => {
     it('maps "staged" to git diff --staged --no-color', () => {
       setupGitMocks("staged diff output");
       const result = getGitDiff("staged");
 
-      const diffCall = mockExecSync.mock.calls.find(
-        (c) => String(c[0]).startsWith("git diff"),
-      );
-      expect(String(diffCall?.[0])).toBe("git diff --staged --no-color");
+      expect(diffArgs()).toEqual(["diff", "--staged", "--no-color"]);
       expect(result).toBe("staged diff output");
     });
 
@@ -54,10 +60,7 @@ describe("getGitDiff", () => {
       setupGitMocks("unstaged diff output", "");
       const result = getGitDiff("unstaged");
 
-      const diffCall = mockExecSync.mock.calls.find(
-        (c) => String(c[0]) === "git diff --no-color",
-      );
-      expect(diffCall).toBeDefined();
+      expect(diffArgs()).toEqual(["diff", "--no-color"]);
       expect(result).toBe("unstaged diff output");
     });
 
@@ -65,24 +68,36 @@ describe("getGitDiff", () => {
       setupGitMocks("all diff output", "");
       const result = getGitDiff("all");
 
-      const diffCall = mockExecSync.mock.calls.find(
-        (c) => String(c[0]) === "git diff HEAD --no-color",
-      );
-      expect(diffCall).toBeDefined();
+      expect(diffArgs()).toEqual(["diff", "HEAD", "--no-color"]);
       expect(result).toBe("all diff output");
     });
 
-    it("maps a custom ref range to git diff --no-color <ref>", () => {
+    it("passes a custom ref range as one argument after --end-of-options", () => {
       setupGitMocks("custom diff output");
       const result = getGitDiff("HEAD~3..HEAD");
 
-      const diffCall = mockExecSync.mock.calls.find(
-        (c) => String(c[0]).startsWith("git diff --no-color"),
-      );
-      expect(String(diffCall?.[0])).toBe(
-        "git diff --no-color HEAD~3..HEAD",
-      );
+      expect(diffArgs()).toEqual([
+        "diff",
+        "--no-color",
+        "--end-of-options",
+        "HEAD~3..HEAD",
+        "--",
+      ]);
       expect(result).toBe("custom diff output");
+    });
+
+    it("passes shell metacharacters and option-like refs through as one literal argument", () => {
+      for (const ref of ["HEAD; touch pwned", "$(id)", "`id`", "--output=/tmp/x"]) {
+        vi.clearAllMocks();
+        setupGitMocks("");
+        getGitDiff(ref);
+
+        expect(diffArgs()).toEqual(["diff", "--no-color", "--end-of-options", ref, "--"]);
+        // Nothing built from the ref ever reaches a shell.
+        for (const [cmd] of mockExecSync.mock.calls) {
+          expect(String(cmd)).not.toContain(ref);
+        }
+      }
     });
   });
 
@@ -112,13 +127,9 @@ describe("getGitDiff", () => {
     });
 
     it("throws with a descriptive message when git diff fails", () => {
-      mockExecSync.mockImplementation((cmd: string) => {
-        const command = String(cmd);
-        if (command === "git --version") return "git version 2.40.0";
-        if (command === "git rev-parse --is-inside-work-tree") return "true";
-        if (command.startsWith("git diff"))
-          throw new Error("fatal: bad revision");
-        return "";
+      setupGitMocks("");
+      mockExecFileSync.mockImplementation(() => {
+        throw new Error("fatal: bad revision");
       });
 
       expect(() => getGitDiff("nonexistent..HEAD")).toThrow(
@@ -187,10 +198,13 @@ describe("getGitDiff", () => {
   });
 
   describe("cwd option", () => {
-    it("passes cwd to execSync", () => {
+    it("passes cwd to every git call", () => {
       setupGitMocks("");
       getGitDiff("staged", { cwd: "/tmp/my-repo" });
 
+      expect(
+        (mockExecFileSync.mock.calls[0][2] as { cwd?: string }).cwd,
+      ).toBe("/tmp/my-repo");
       for (const call of mockExecSync.mock.calls) {
         const opts = call[1] as { cwd?: string } | undefined;
         expect(opts?.cwd).toBe("/tmp/my-repo");
@@ -286,7 +300,7 @@ describe("listCommits", () => {
   });
 
   it("parses commit log output", () => {
-    mockExecSync.mockReturnValue(
+    mockExecFileSync.mockReturnValue(
       "abc123full<<>>abc123<<>>Initial commit<<>>John Doe<<>>2025-01-15T10:30:00Z\n" +
       "def456full<<>>def456<<>>Add feature<<>>Jane Doe<<>>2025-01-14T09:00:00Z\n",
     );
@@ -305,7 +319,7 @@ describe("listCommits", () => {
   });
 
   it("returns empty array on failure", () => {
-    mockExecSync.mockImplementation(() => {
+    mockExecFileSync.mockImplementation(() => {
       throw new Error("not a git repo");
     });
 
@@ -315,7 +329,7 @@ describe("listCommits", () => {
   });
 
   it("returns empty array for empty output", () => {
-    mockExecSync.mockReturnValue("");
+    mockExecFileSync.mockReturnValue("");
 
     const result = listCommits();
 
@@ -323,16 +337,17 @@ describe("listCommits", () => {
   });
 
   it("uses custom limit", () => {
-    mockExecSync.mockReturnValue("");
+    mockExecFileSync.mockReturnValue("");
 
     listCommits({ limit: 10 });
 
-    const cmd = String(mockExecSync.mock.calls[0][0]);
-    expect(cmd).toContain("-n 10");
+    const [file, args] = mockExecFileSync.mock.calls[0];
+    expect(file).toBe("git");
+    expect(args).toEqual(["log", "--format=%H<<>>%h<<>>%s<<>>%an<<>>%aI", "-n", "10"]);
   });
 
   it("skips malformed lines", () => {
-    mockExecSync.mockReturnValue(
+    mockExecFileSync.mockReturnValue(
       "abc123full<<>>abc123<<>>Good commit<<>>Author<<>>2025-01-15T10:30:00Z\nbad line\n",
     );
 
